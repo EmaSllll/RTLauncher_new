@@ -1,144 +1,72 @@
-name: 'Tauri App Build PR Test'
+name: 'Tauri Hybrid Build (Local & Cloud)'
 
 on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
-    types: [opened, synchronize, labeled]
 
 jobs:
-  test-tauri:
-    if: |
-      github.event_name == 'push' ||
-      github.event.action == 'opened' || 
-      github.event.action == 'synchronize' || 
-      (github.event.action == 'labeled' && github.event.label.name == '需要 Action 构建')
-    
-    permissions:
-      contents: read
-      pull-requests: write
-
+  publish:
     strategy:
       fail-fast: false
       matrix:
         include:
+          # --- 在你的 Ubuntu 主机上跑 (Linux & Windows) ---
+          - platform: 'self-hosted'
+            target: 'x86_64-unknown-linux-gnu'
+            os_tag: 'linux-x64'
+          - platform: 'self-hosted'
+            target: 'x86_64-pc-windows-gnu'
+            os_tag: 'windows-x64'
+          
+          # --- 在 GitHub 官方托管环境跑 (macOS) ---
           - platform: 'macos-latest'
-            args: '--target aarch64-apple-darwin'
-            name: 'macOS ARM64'
-            artifact_name: 'macos-arm64'
-            bundle_path: 'src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg'
-          - platform: 'macos-latest'
-            args: '--target x86_64-apple-darwin'
-            name: 'macOS x64'
-            artifact_name: 'macos-x64'
-            bundle_path: 'src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg'
-          - platform: 'ubuntu-22.04'
-            args: ''
-            name: 'Linux'
-            artifact_name: 'linux'
-            bundle_path: 'src-tauri/target/release/bundle/deb/*.deb'
-          - platform: 'windows-latest'
-            args: ''
-            name: 'Windows'
-            artifact_name: 'windows'
-            # 核心修改：专门提取 NSIS 生成的 setup.exe 文件
-            bundle_path: 'src-tauri/target/release/bundle/nsis/*.exe'
+            target: 'aarch64-apple-darwin'
+            os_tag: 'macos-arm64'
 
     runs-on: ${{ matrix.platform }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v3
-        with:
-          version: 8
-
-      - name: Setup Node.js
+      - name: setup node
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
-          cache: 'pnpm'
 
-      - name: Setup Rust toolchain
+      - name: install frontend dependencies
+        run: |
+          corepack enable
+          pnpm install
+
+      - name: install rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.target }}
 
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: "src-tauri -> target"
-          key: ${{ matrix.platform }}-${{ matrix.args }}-${{ hashFiles('src-tauri/Cargo.lock') }}
-
-      - if: matrix.platform == 'ubuntu-22.04'
-        name: Install Linux dependencies
+      # 只有在本地 Ubuntu 跑 Linux 编译时，才需要确保系统依赖（虽然你手动装过了，这里保留作为双重保障）
+      - name: install system dependencies (linux only)
+        if: matrix.target == 'x86_64-unknown-linux-gnu' && matrix.platform != 'self-hosted'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
-      - name: Install JS dependencies
-        run: pnpm install --ignore-workspace
-
-      - name: Build Tauri App
+      - name: build tauri app
         uses: tauri-apps/tauri-action@v0
-        id: tauri-build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CARGO_INCREMENTAL: 1
-          RUSTFLAGS: ${{ matrix.platform == 'macos-latest' && '-C split-debuginfo=unpacked' || '' }}
         with:
-          args: ${{ matrix.args }}
+          args: --target ${{ matrix.target }}
 
-      - name: Upload Bundles
+      - name: upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}-bundle
-          path: ${{ matrix.bundle_path }}
-          if-no-files-found: error
-          retention-days: 7
-
-    outputs:
-      result: ${{ job.status }}
-
-  report-status:
-    needs: test-tauri
-    if: always() && github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-    steps:
-      - name: Report build status
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
-            let body = ('${{ needs.test-tauri.result }}' === 'success') 
-              ? `### ✅ 构建成功！\n\nWindows 版 Setup.exe 及其他平台安装包已生成。\n\n[点击前往下载页面](${runUrl})` 
-              : `### ❌ 构建失败\n\n请检查 [错误日志](${runUrl})`;
-
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: body
-            });
-
-      - name: Remove build label
-        if: always() && github.event.action == 'labeled' && github.event.label.name == '需要 Action 构建'
-        continue-on-error: true
-        uses: actions/github-script@v7
-        with:
-          script: |
-            try {
-              await github.rest.issues.removeLabel({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                name: '需要 Action 构建'
-              });
-            } catch (e) {}
+          name: tauri-app-${{ matrix.os_tag }}
+          path: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.dmg
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.app
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.AppImage
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.deb
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.exe
+            src-tauri/target/${{ matrix.target }}/release/bundle/**/*.msi
+          if-no-files-found: warn
