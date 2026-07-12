@@ -1,0 +1,37 @@
+name: Next.js CI/CD (pnpm)
+
+on:
+  push:
+    branches: [ main, achieve-RTLauncher ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 拉取代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. 设置 Node.js 环境
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.16.0'
+
+      # 3. 安装 pnpm
+      - name: Install pnpm
+        run: npm install -g pnpm
+
+      # 4. 安装依赖（使用 pnpm）
+      - name: Install dependencies
+        run: pnpm install
+
+      # 5. 构建项目（使用 pnpm）
+      - name: Build project
+        run: pnpm tauri build
+
+      # 6. 运行测试（可选）
+      - name: Run tests
+        run: pnpm tauri test
