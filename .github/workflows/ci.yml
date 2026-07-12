@@ -1,34 +1,61 @@
-name: Next.js CI/CD (pnpm)
+
+
+name: Tauri Build
 
 on:
   push:
     branches:
       - main
       - achieve-RTLauncher
-  workflow_dispatch: 
+  workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      # 1. 拉取代码
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # 2. 设置 Node.js 环境
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '24.16.0'
+          cache: 'pnpm'
 
-      # 3. 安装 pnpm
       - name: Install pnpm
         run: npm install -g pnpm
 
-      # 4. 安装依赖（使用 pnpm）
-      - name: Install dependencies
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Tauri dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            build-essential \
+            libwebkit2gtk-4.0-dev \
+            libgtk-3-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libglib2.0-dev \
+            libgobject-2.0-dev \
+            libgio-2.0-dev \
+            libpango1.0-dev \
+            libcairo2-dev \
+            pkg-config
+
+      - name: Set PKG_CONFIG_PATH
+        run: |
+          echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig" >> $GITHUB_ENV
+
+      - name: Install project dependencies
         run: pnpm install
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # 5. 构建项目（使用 pnpm）
       - name: Build project
