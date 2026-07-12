@@ -39,3 +39,14 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+output.log
+/.claude
+
+# RTLauncher runtime data
+/RTL/
+
+# Tauri signing keys (NEVER commit these!)
+signing-keys/
+*.key
+no-password-key.txt
+no-password-key.txt.pub

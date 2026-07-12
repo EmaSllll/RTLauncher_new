@@ -4,9 +4,15 @@
 import {
   Home,
   Download,
+  Rocket,
   Wrench,
   Settings,
+  Globe,
+  Gamepad2,
 } from "lucide-react"
+import Link from "next/link"
+import { usePathname } from "next/navigation"
+import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -27,50 +33,58 @@ interface SidebarProps {
 interface NavItem {
   icon: React.ReactNode
   label: string
-  href?: string
+  href: string
   isAvatar?: boolean
 }
 
 // 顶部导航项
 const topNavItems: NavItem[] = [
   { icon: <Home className="size-4" />, label: "首页", href: "/" },
-  { icon: <Download className="size-4" />, label: "下载", href: "/downloads" },
+  { icon: <Gamepad2 className="size-4" />, label: "游戏设置", href: "/game-settings" },
+  { icon: <Rocket className="size-4" />, label: "启动", href: "/launch" },
+  { icon: <Download className="size-4" />, label: "下载", href: "/download" },
+  { icon: <Globe className="size-4" />, label: "联机", href: "/multiplayer" },
   { icon: <Wrench className="size-4" />, label: "工具", href: "/tools" },
 ]
 
-// 底部导航项
-const bottomNavItems: NavItem[] = [
-  { icon: <Settings className="size-4" />, label: "设置", href: "/settings" },
-  {
-    icon: (
-      <Avatar size="sm">
-        <AvatarImage src="https://github.com/shadcn.png" alt="User" />
-        <AvatarFallback>U</AvatarFallback>
-      </Avatar>
-    ),
-    label: "个人",
-    href: "/profile",
-    isAvatar: true,
-  },
-]
+// 底部导航项（已移除设置和个人按钮）
+const bottomNavItems: NavItem[] = []
 
 // 导航按钮
-function NavButton({ item }: { item: NavItem }) {
+function NavButton({ item, isActive }: { item: NavItem; isActive: boolean }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        {item.isAvatar ? (
-          <button
-            type="button"
-            className="flex size-9 items-center justify-center rounded-4xl"
-          >
-            {item.icon}
-          </button>
-        ) : (
-          <Button variant="ghost" size="icon">
-            {item.icon}
-          </Button>
-        )}
+        <Link href={item.href}>
+          {item.isAvatar ? (
+            <span
+              className={cn(
+                "flex size-9 items-center justify-center rounded-4xl transition-colors duration-200",
+                isActive && "ring-2 ring-primary ring-offset-2 ring-offset-sidebar"
+              )}
+            >
+              {item.icon}
+            </span>
+          ) : (
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "relative overflow-hidden touch-manipulation",
+                isActive && "text-accent-foreground"
+              )}
+            >
+              {isActive && (
+                <motion.span
+                  layoutId="active-nav-indicator"
+                  className="absolute inset-0 rounded-md bg-accent"
+                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                />
+              )}
+              <span className="relative z-10">{item.icon}</span>
+            </Button>
+          )}
+        </Link>
       </TooltipTrigger>
       <TooltipContent side="right">
         <p>{item.label}</p>
@@ -81,6 +95,13 @@ function NavButton({ item }: { item: NavItem }) {
 
 // 左侧边栏
 export function Sidebar({ className }: SidebarProps) {
+  const pathname = usePathname()
+
+  const isActive = (href: string) => {
+    if (href === "/") return pathname === "/"
+    return pathname.startsWith(href)
+  }
+
   return (
     <aside
       className={cn(
@@ -89,14 +110,14 @@ export function Sidebar({ className }: SidebarProps) {
       )}
     >
       <nav className="flex flex-1 flex-col items-center gap-2 p-2">
-        {topNavItems.map((item, index) => (
-          <NavButton key={index} item={item} />
+        {topNavItems.map((item) => (
+          <NavButton key={item.href} item={item} isActive={isActive(item.href)} />
         ))}
       </nav>
 
       <div className="flex flex-col items-center gap-2 border-t border-border p-2">
-        {bottomNavItems.map((item, index) => (
-          <NavButton key={index} item={item} />
+        {bottomNavItems.map((item) => (
+          <NavButton key={item.href} item={item} isActive={isActive(item.href)} />
         ))}
       </div>
     </aside>
