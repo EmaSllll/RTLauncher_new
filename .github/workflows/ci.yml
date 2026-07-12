@@ -2,8 +2,10 @@ name: Next.js CI/CD (pnpm)
 
 on:
   push:
-    branches: [ main, achieve-RTLauncher ]
-  workflow_dispatch:
+    branches:
+      - main
+      - achieve-RTLauncher
+  workflow_dispatch: 
 
 jobs:
   build:
@@ -23,24 +25,6 @@ jobs:
       # 3. 安装 pnpm
       - name: Install pnpm
         run: npm install -g pnpm
-
-     - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Tauri dependencies (Ubuntu)
-        if: matrix.platform == 'ubuntu-latest'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.0-dev \
-            libgtk-3-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            libglib2.0-dev \
-            libgobject-2.0-dev \
-            pkg-config
-
 
       # 4. 安装依赖（使用 pnpm）
       - name: Install dependencies
