@@ -3,10 +3,10 @@ name: 'Tauri App Build PR Test'
 on:
   push:
     branches:
-      - main
+      - achieve-RTLauncher
   pull_request:
     branches:
-      - main
+      - achieve-RTLauncher
     types: [opened, synchronize, labeled]
 
 jobs:
