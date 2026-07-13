@@ -50,18 +50,18 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # --- 1. 前端环境与缓存优化 ---
       - name: Setup pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v6
         with:
-          version: 8
+          version: 10
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: lts/*
+          node-version: 24
           cache: 'pnpm'
 
       # --- 2. Rust 环境与增量编译缓存 ---
@@ -88,7 +88,7 @@ jobs:
 
       # --- 4. 执行 Tauri 构建 ---
       - name: Build Tauri App
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1
         id: tauri-build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -99,7 +99,7 @@ jobs:
 
       # --- 5. 产物上传 (只提取 .dmg/.msi/.deb) ---
       - name: Upload Bundles
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact_name }}-bundle
           path: ${{ matrix.bundle_path }}
@@ -118,7 +118,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Report build status
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
@@ -140,7 +140,7 @@ jobs:
       - name: Remove build label
         if: always() && github.event.action == 'labeled' && github.event.label.name == '需要 Action 构建'
         continue-on-error: true
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             try {
