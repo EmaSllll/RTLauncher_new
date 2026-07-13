@@ -1,4 +1,5 @@
 use crate::downloader::original_dwl::process_version;
+use crate::handler::config::{get_launcher_paths_config, LauncherPathsConfig};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -30,25 +31,16 @@ struct DownloadFinishedPayload {
     failed_count: usize,
 }
 pub fn get_minecraft_dir() -> Result<PathBuf, String> {
-    #[cfg(target_os = "macos")]
-    {
-        let home = std::env::var("HOME").map_err(|_| "无法获取 HOME 环境变量".to_string())?;
-        Ok(PathBuf::from(home).join("Library/Application Support/RTLauncher/version"))
+    let config = get_launcher_paths_config();
+    minecraft_dir_from_config(&config)
+}
+
+fn minecraft_dir_from_config(config: &LauncherPathsConfig) -> Result<PathBuf, String> {
+    if config.selected_minecraft_path.trim().is_empty() {
+        return Err("未配置 Minecraft 游戏目录".to_string());
     }
-    #[cfg(target_os = "linux")]
-    {
-        let home = std::env::var("HOME").map_err(|_| "无法获取 HOME 环境变量".to_string())?;
-        Ok(PathBuf::from(home).join(".minecraft"))
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let exe_dir = std::env::current_exe()
-            .map_err(|e| format!("无法获取当前可执行文件路径: {}", e))?
-            .parent()
-            .ok_or_else(|| "无法获取可执行文件父目录".to_string())?
-            .to_path_buf();
-        Ok(exe_dir.join("minecraft"))
-    }
+
+    Ok(PathBuf::from(&config.selected_minecraft_path))
 }
 #[tauri::command]
 pub async fn download_patcher(app: AppHandle, mcVersion: String) -> Result<u64, String> {
@@ -125,4 +117,29 @@ pub async fn cancel_download(taskId: u64) -> Result<(), String> {
         info.cancel.store(true, Ordering::SeqCst);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::minecraft_dir_from_config;
+    use crate::handler::config::LauncherPathsConfig;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    #[test]
+    fn download_directory_uses_selected_minecraft_path() {
+        let config = LauncherPathsConfig {
+            java_paths: Vec::new(),
+            selected_java_path: String::new(),
+            java_installations: HashMap::new(),
+            minecraft_paths: vec!["old-default".to_string(), "new-selected".to_string()],
+            selected_minecraft_path: "new-selected".to_string(),
+            default_minecraft_path: "old-default".to_string(),
+        };
+
+        assert_eq!(
+            minecraft_dir_from_config(&config),
+            Ok(PathBuf::from("new-selected"))
+        );
+    }
 }
