@@ -259,7 +259,7 @@ fn platform_drop_file_caches(methods: &mut Vec<String>) {
 
 /// （权限允许时）尝试排空系统 standby/cache：真正意义上的"释放系统整体内存"
 /// 权限不足就忽略，而不是让整个调用失败
-fn platform_try_empty_system_caches(methods: &mut Vec<String>) {
+fn platform_try_empty_system_caches(_methods: &mut Vec<String>) {
     #[cfg(target_os = "windows")]
     {
         // ============================================================
@@ -324,7 +324,7 @@ fn platform_try_empty_system_caches(methods: &mut Vec<String>) {
                     success_count += 1;
                     CloseHandle(handle);
                 }
-                methods.push(format!(
+                _methods.push(format!(
                     "windows.empty_working_set({} processes)",
                     success_count
                 ));
@@ -333,7 +333,7 @@ fn platform_try_empty_system_caches(methods: &mut Vec<String>) {
             // SetSystemFileCacheSize(0, SIZE_MAX, FILE_CACHE_MAX_HARD_DISABLE)
             // 强制收缩系统文件缓存工作集
             if SetSystemFileCacheSize(0, usize::MAX, 2) != 0 {
-                methods.push("windows.system_cache_hard_trim".to_string());
+                _methods.push("windows.system_cache_hard_trim".to_string());
             }
 
             // 管理员模式大招：NtSetSystemInformation(80)
@@ -341,7 +341,7 @@ fn platform_try_empty_system_caches(methods: &mut Vec<String>) {
             // 普通用户调了会失败（静默忽略）
             let status = NtSetSystemInformation(80, std::ptr::null_mut(), 0);
             if status == 0 {
-                methods.push("windows.purge_standby_list(admin)".to_string());
+                _methods.push("windows.purge_standby_list(admin)".to_string());
             }
         }
     }
@@ -357,7 +357,7 @@ fn platform_try_empty_system_caches(methods: &mut Vec<String>) {
             .open("/proc/sys/vm/drop_caches")
         {
             if f.write_all(b"3\n").is_ok() {
-                methods.push("linux.drop_caches(3)".to_string());
+                _methods.push("linux.drop_caches(3)".to_string());
             }
         }
     }
