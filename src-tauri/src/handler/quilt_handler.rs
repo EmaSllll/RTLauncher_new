@@ -84,6 +84,7 @@ pub async fn install_quilt_loader(
         &mc_version,
         &loader_version,
         &minecraft_path.to_string_lossy().to_string(),
+        None,
     )
     .await
     .map_err(|e| format!("安装 Quilt Loader 失败: {}", e))?;
@@ -106,6 +107,7 @@ pub async fn install_quilt_api(
         &mc_version,
         &api_version,
         &minecraft_path.to_string_lossy().to_string(),
+        None,
     )
     .await
     .map_err(|e| format!("安装 Quilt API 失败: {}", e))?;
@@ -198,23 +200,43 @@ pub async fn download_and_install_quilt(
 
             let minecraft_path_str = mc_path_b.to_string_lossy().to_string();
 
-            // 安装 Quilt Loader (60-80%)
-            quilt_installer::install_quilt_loader(
-                &version_b,
-                &loader_ver_b,
-                &minecraft_path_str,
-            )
-            .await
-            .map_err(|e| format!("Quilt Loader 安装失败: {}", e))?;
+            // 安装 Quilt Loader (60-85%)，使用子进度 channel
+            {
+                let (sub_tx, mut sub_rx) = tokio::sync::mpsc::channel::<f64>(64);
+                let sub_tx_out = tx_for_quilt.clone();
+                tokio::spawn(async move {
+                    while let Some(percent) = sub_rx.recv().await {
+                        let mapped = 60.0 + percent * 0.25;
+                        let _ = sub_tx_out.send(mapped).await;
+                    }
+                });
+                quilt_installer::install_quilt_loader(
+                    &version_b,
+                    &loader_ver_b,
+                    &minecraft_path_str,
+                    Some(sub_tx),
+                )
+                .await
+                .map_err(|e| format!("Quilt Loader 安装失败: {}", e))?;
+            }
 
-            let _ = tx_for_quilt.send(80.0).await;
+            let _ = tx_for_quilt.send(85.0).await;
 
-            // 安装 Quilt API (80-100%)
+            // 安装 Quilt API (85-100%)，使用子进度 channel
             if let Some(api_ver) = api_ver_b {
+                let (sub_tx, mut sub_rx) = tokio::sync::mpsc::channel::<f64>(64);
+                let sub_tx_out = tx_for_quilt.clone();
+                tokio::spawn(async move {
+                    while let Some(percent) = sub_rx.recv().await {
+                        let mapped = 85.0 + percent * 0.15;
+                        let _ = sub_tx_out.send(mapped).await;
+                    }
+                });
                 quilt_installer::install_quilt_api(
                     &version_b,
                     &api_ver,
                     &minecraft_path_str,
+                    Some(sub_tx),
                 )
                 .await
                 .map_err(|e| format!("Quilt API 安装失败: {}", e))?;

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashSet, HashMap},
     path::PathBuf,
+    sync::{Mutex, OnceLock},
 };
 use std::env::consts::OS;
 use os_info::Type;
@@ -9,10 +10,37 @@ use anyhow::Context;
 use regex::Regex;
 use std::{
     io::{BufRead, BufReader},
-    process::{Command, Stdio},
+    process::{Command, Stdio, Child},
     thread,
 };
 use tauri::Emitter;
+
+/// 全局游戏进程跟踪（存储 Child 所有权 + PID，便于 kill）
+struct GameProcess {
+    child: Option<Child>,
+    pid: u32,
+    fully_started: bool,
+}
+
+fn game_process_store() -> &'static Mutex<Option<GameProcess>> {
+    static STORE: OnceLock<Mutex<Option<GameProcess>>> = OnceLock::new();
+    STORE.get_or_init(|| Mutex::new(None))
+}
+
+/// 检测游戏是否完全启动（JVM 启动、加载完资源、主窗口就绪）
+/// 通过 Minecraft 日志中的标志性字符串判断
+fn is_game_fully_started(line: &str) -> bool {
+    // 原版 Minecraft: "Minecraft client started" / "Preparing spawn area" / "Minecraft initialized"
+    // 常见 Mod 加载器: "mod loading complete" / "Minecraft is ready to start" / "Launching game"
+    let lower = line.to_lowercase();
+    lower.contains("minecraft client started")
+        || lower.contains("minecraft is ready to start")
+        || lower.contains("preparing spawn area")
+        || lower.contains("minecraft initialized")
+        || lower.contains("launching game")
+        || lower.contains("loading complete") && lower.contains("mod")
+        || lower.contains("minecraft client has started")
+}
 
 /// 游戏日志事件，发送给前端的结构体
 #[derive(Debug, Clone, Serialize)]
@@ -309,9 +337,23 @@ pub fn run_command(args: Vec<String>, javaPath: PathBuf, MCPath: PathBuf, app_ha
             let stdout = child.stdout.take();
             let stderr = child.stderr.take();
 
+            // 存储到全局进程表（启动中，尚未完成初始化）
+            {
+                let mut store = game_process_store().lock().unwrap();
+                *store = Some(GameProcess {
+                    child: Some(child),
+                    pid,
+                    fully_started: false,
+                });
+            }
+
+            // 用于检测"完全启动"的共享 flag
+            let fully_started_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
             // 读取 stdout 并逐行转发给前端
             if let Some(out) = stdout {
                 let handle = app_handle.clone();
+                let flag = fully_started_flag.clone();
                 thread::spawn(move || {
                     let reader = BufReader::new(out);
                     for line in reader.lines() {
@@ -319,9 +361,22 @@ pub fn run_command(args: Vec<String>, javaPath: PathBuf, MCPath: PathBuf, app_ha
                             let level = parse_log_level(&line).to_string();
                             println!("[{}] {}", level, line);
                             let _ = handle.emit("game-log", GameLogEvent {
-                                level,
-                                message: line,
+                                level: level.clone(),
+                                message: line.clone(),
                             });
+                            // 检测游戏是否已完全启动
+                            if !flag.load(std::sync::atomic::Ordering::SeqCst)
+                                && is_game_fully_started(&line)
+                            {
+                                flag.store(true, std::sync::atomic::Ordering::SeqCst);
+                                {
+                                    let mut store = game_process_store().lock().unwrap();
+                                    if let Some(gp) = store.as_mut() {
+                                        gp.fully_started = true;
+                                    }
+                                }
+                                let _ = handle.emit("game-fully-started", pid);
+                            }
                         }
                     }
                 });
@@ -330,6 +385,7 @@ pub fn run_command(args: Vec<String>, javaPath: PathBuf, MCPath: PathBuf, app_ha
             // 读取 stderr 并逐行转发给前端（通常为错误/警告信息）
             if let Some(err) = stderr {
                 let handle = app_handle.clone();
+                let flag = fully_started_flag.clone();
                 thread::spawn(move || {
                     let reader = BufReader::new(err);
                     for line in reader.lines() {
@@ -337,9 +393,22 @@ pub fn run_command(args: Vec<String>, javaPath: PathBuf, MCPath: PathBuf, app_ha
                             let level = parse_log_level(&line).to_string();
                             println!("[{}] {}", level, line);
                             let _ = handle.emit("game-log", GameLogEvent {
-                                level,
-                                message: line,
+                                level: level.clone(),
+                                message: line.clone(),
                             });
+                            // 同样在 stderr 中检测启动完成（有些启动日志走 stderr）
+                            if !flag.load(std::sync::atomic::Ordering::SeqCst)
+                                && is_game_fully_started(&line)
+                            {
+                                flag.store(true, std::sync::atomic::Ordering::SeqCst);
+                                {
+                                    let mut store = game_process_store().lock().unwrap();
+                                    if let Some(gp) = store.as_mut() {
+                                        gp.fully_started = true;
+                                    }
+                                }
+                                let _ = handle.emit("game-fully-started", pid);
+                            }
                         }
                     }
                 });
@@ -347,17 +416,33 @@ pub fn run_command(args: Vec<String>, javaPath: PathBuf, MCPath: PathBuf, app_ha
 
             // 在后台线程中等待进程结束，结束时向前端发送事件
             thread::spawn(move || {
-                match child.wait() {
-                    Ok(status) => {
-                        let exit_code = status.code().unwrap_or(-1);
-                        println!("游戏进程 {} 已结束，退出状态: {}", pid, status);
-                        let _ = app_handle.emit("game-exited", exit_code);
+                // 从全局 store 中取出 child 所有权以 wait
+                let child_to_wait = {
+                    let mut store = game_process_store().lock().unwrap();
+                    store.as_mut().and_then(|gp| gp.child.take())
+                };
+
+                let exit_code = if let Some(mut c) = child_to_wait {
+                    match c.wait() {
+                        Ok(status) => status.code().unwrap_or(-1),
+                        Err(e) => {
+                            println!("等待游戏进程 {} 时出错: {}", pid, e);
+                            -1
+                        }
                     }
-                    Err(e) => {
-                        println!("等待游戏进程 {} 时出错: {}", pid, e);
-                        let _ = app_handle.emit("game-exited", -1i32);
-                    }
+                } else {
+                    -1
+                };
+
+                println!("游戏进程 {} 已结束，退出码: {}", pid, exit_code);
+
+                // 清空全局进程表
+                {
+                    let mut store = game_process_store().lock().unwrap();
+                    *store = None;
                 }
+
+                let _ = app_handle.emit("game-exited", exit_code);
             });
             Ok(())
         }
@@ -370,6 +455,58 @@ pub fn run_command(args: Vec<String>, javaPath: PathBuf, MCPath: PathBuf, app_ha
             println!("{}", msg);
             Err(msg.into())
         }
+    }
+}
+
+/// 终止当前游戏进程（在游戏未完全启动前可调用）
+#[tauri::command]
+pub fn kill_game_process() -> Result<String, String> {
+    let mut store = game_process_store().lock().map_err(|e| e.to_string())?;
+
+    let process_info = match store.as_mut() {
+        Some(gp) => {
+            let pid = gp.pid;
+            let started = gp.fully_started;
+            // 尝试直接 kill
+            let result = if let Some(c) = gp.child.as_mut() {
+                c.kill().map(|_| ()).map_err(|e| e.to_string())
+            } else {
+                Err("没有进程句柄".to_string())
+            };
+
+            // 跨平台兜底：如果 child.kill() 失败，用系统命令 kill
+            if result.is_err() {
+                #[cfg(windows)]
+                {
+                    let _ = std::process::Command::new("taskkill")
+                        .args(["/F", "/PID", &pid.to_string()])
+                        .output();
+                }
+                #[cfg(not(windows))]
+                {
+                    let _ = std::process::Command::new("kill")
+                        .args(["-9", &pid.to_string()])
+                        .output();
+                }
+            }
+
+            Some((pid, started))
+        }
+        None => None,
+    };
+
+    // 清空 store
+    *store = None;
+
+    match process_info {
+        Some((pid, started)) => {
+            if started {
+                Ok(format!("游戏进程 (PID {}) 已终止", pid))
+            } else {
+                Ok(format!("启动中的游戏进程 (PID {}) 已取消", pid))
+            }
+        }
+        None => Err("当前没有运行中的游戏进程".to_string()),
     }
 }
 
@@ -1501,7 +1638,44 @@ fn build_jvm_arguments_inner(
 
     let arg = args.join(" ");
     println!("{}", arg);
-    run_command(args, PathBuf::from(java_path), minecraft_path_buf.clone(), app_handle)
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
     Ok(arg)
+}
+
+/// 启动游戏（构建参数并执行 Java 进程）
+#[tauri::command]
+pub fn launch_game(
+    app: tauri::AppHandle,
+    minecraft_path: &str,
+    java_path: &str,
+    wrapper_path: &str,
+    max_memory: &str,
+    version_name: &str,
+    player_name: &str,
+    auth_token: &str,
+    uuid: &str,
+    authlib_injector_path: &str,
+    yggdrasil_api: &str,
+    prefetched_data: &str,
+    loadType: &str,
+    loadName: &str,
+    window_width: &str,
+    window_height: &str
+) -> Result<String, String> {
+    // 先构建参数
+    let arg_string = build_jvm_arguments_inner(
+        app.clone(),
+        minecraft_path, java_path, wrapper_path, max_memory, version_name,
+        player_name, auth_token, uuid, authlib_injector_path, yggdrasil_api,
+        prefetched_data, loadType, loadName, window_width, window_height,
+    ).map_err(|e| e.to_string())?;
+
+    // 再启动游戏
+    run_command(
+        arg_string.split_whitespace().map(|s| s.to_string()).collect(),
+        PathBuf::from(java_path),
+        PathBuf::from(minecraft_path),
+        app,
+    ).map_err(|e| e.to_string())?;
+
+    Ok(arg_string)
 }

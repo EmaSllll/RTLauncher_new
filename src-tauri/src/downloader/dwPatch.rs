@@ -1,5 +1,5 @@
 use crate::downloader::original_dwl::process_version;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -29,26 +29,69 @@ struct DownloadFinishedPayload {
     error: Option<String>,
     failed_count: usize,
 }
-pub fn get_minecraft_dir() -> Result<PathBuf, String> {
+/// 获取平台默认游戏目录（作为 get_minecraft_dir 的回退值）
+pub fn default_minecraft_dir() -> PathBuf {
     #[cfg(target_os = "macos")]
     {
-        let home = std::env::var("HOME").map_err(|_| "无法获取 HOME 环境变量".to_string())?;
-        Ok(PathBuf::from(home).join("Library/Application Support/RTLauncher/version"))
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        return PathBuf::from(format!("{}/Library/Application Support/minecraft", home));
     }
     #[cfg(target_os = "linux")]
     {
-        let home = std::env::var("HOME").map_err(|_| "无法获取 HOME 环境变量".to_string())?;
-        Ok(PathBuf::from(home).join(".minecraft"))
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        return PathBuf::from(format!("{}/.minecraft", home));
     }
     #[cfg(target_os = "windows")]
     {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            return PathBuf::from(appdata).join(".minecraft");
+        }
         let exe_dir = std::env::current_exe()
-            .map_err(|e| format!("无法获取当前可执行文件路径: {}", e))?
-            .parent()
-            .ok_or_else(|| "无法获取可执行文件父目录".to_string())?
-            .to_path_buf();
-        Ok(exe_dir.join("minecraft"))
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+            .unwrap_or_else(|| PathBuf::from("."));
+        return exe_dir.join(".minecraft");
     }
+}
+
+/// 获取 launcher.json 的配置路径
+fn launcher_config_path() -> PathBuf {
+    #[cfg(target_os = "macos")]
+    let dir = {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        PathBuf::from(format!("{}/Library/Application Support/RTLauncher/config", home))
+    };
+    #[cfg(not(target_os = "macos"))]
+    let dir = PathBuf::from("./RTL/config");
+
+    let _ = std::fs::create_dir_all(&dir);
+    dir.join("launcher.json")
+}
+
+/// 从 launcher.json 读取 selected_minecraft_path
+fn read_selected_minecraft_path_from_config() -> Option<String> {
+    let path = launcher_config_path();
+    if !path.exists() {
+        return None;
+    }
+    let text = std::fs::read_to_string(&path).ok()?;
+    #[derive(Deserialize)]
+    struct Cfg {
+        selected_minecraft_path: Option<String>,
+    }
+    let cfg: Cfg = serde_json::from_str(&text).ok()?;
+    cfg.selected_minecraft_path.filter(|s| !s.is_empty())
+}
+
+/// 获取当前游戏目录。
+/// 优先级：launcher.json -> selected_minecraft_path > 平台默认路径
+pub fn get_minecraft_dir() -> Result<PathBuf, String> {
+    // 优先使用用户在启动页选择的路径（持久化到 launcher.json）
+    if let Some(selected) = read_selected_minecraft_path_from_config() {
+        return Ok(PathBuf::from(selected));
+    }
+    // 回退到平台默认路径
+    Ok(default_minecraft_dir())
 }
 #[tauri::command]
 pub async fn download_patcher(app: AppHandle, mcVersion: String) -> Result<u64, String> {

@@ -63,7 +63,6 @@ tauri-plugin-single-instance = "2"
 
 [target."cfg(unix)".dependencies]
 nix = { version = "0.27", default-features = false, features = ["user"] }
-libc = "0.2"
 
 # ===== Release 体积优化配置 =====
 # 这会显著减小最终 exe 体积（从 ~20MB → ~8-10MB）

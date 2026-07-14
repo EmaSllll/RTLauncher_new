@@ -50,4 +50,3 @@ signing-keys/
 *.key
 no-password-key.txt
 no-password-key.txt.pub
-/.omc
