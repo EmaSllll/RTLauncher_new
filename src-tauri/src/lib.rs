@@ -6,6 +6,8 @@ mod version_management;
 mod http_client;
 use handler::config::{get_launcher_paths_config, save_launcher_paths_config, get_java_download_dir};
 use handler::launcher::build_jvm_arguments;
+use handler::launcher::kill_game_process;
+use handler::launcher::launch_game;
 use handler::skinloader::get_avatar_base64;
 use handler::system::{get_system_memory, write_file, optimize_memory_usage, ensure_launcher_profiles_on_startup, open_external, read_file_base64};
 use handler::java_downloader::{get_java_versions, download_java_runtime};
@@ -67,6 +69,8 @@ pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             build_jvm_arguments,
+            launch_game,
+            kill_game_process,
             download_patcher,
             cancel_download,
             classify_minecraft_versions,

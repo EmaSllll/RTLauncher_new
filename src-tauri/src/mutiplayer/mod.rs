@@ -3,7 +3,6 @@ use std::path::{PathBuf, Path};
 use std::process::{Command, Child, Stdio};
 use std::sync::Mutex;
 use std::env;
-#[cfg(target_os = "windows")]
 use std::io;
 use std::fs;
 use std::thread;
@@ -484,7 +483,7 @@ fn kill_all_openp2p_processes() {
     }
     #[cfg(target_os = "macos")]
     {
-        const MAX_ATTEMPTS: u64 = 6;
+        const MAX_ATTEMPTS: u32 = 6;
         for attempt in 0..MAX_ATTEMPTS {
             let _ = Command::new("killall").args(["-9", "openp2p"]).output();
             let _ = Command::new("pkill").args(["-9", "-f", "openp2p"]).output();

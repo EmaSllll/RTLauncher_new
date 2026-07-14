@@ -28,15 +28,17 @@ import type { LauncherPathsConfig } from "@/types";
 interface MemoryInfo {
   totalMB: number;
   usedMB: number;
+  availableMB: number;
+  recommendedMB: number;
 }
 
 function useSystemMemory(): MemoryInfo {
-  const [info, setInfo] = useState<MemoryInfo>({ totalMB: 0, usedMB: 0 });
+  const [info, setInfo] = useState<MemoryInfo>({ totalMB: 0, usedMB: 0, availableMB: 0, recommendedMB: 0 });
 
   useEffect(() => {
-    invoke<{ total_mb: number; used_mb: number }>("get_system_memory")
-      .then(({ total_mb, used_mb }) =>
-        setInfo({ totalMB: total_mb, usedMB: used_mb })
+    invoke<{ total_mb: number; used_mb: number; available_mb: number; recommended_mb: number }>("get_system_memory")
+      .then(({ total_mb, used_mb, available_mb, recommended_mb }) =>
+        setInfo({ totalMB: total_mb, usedMB: used_mb, availableMB: available_mb, recommendedMB: recommended_mb })
       )
       .catch(() => {});
   }, []);
@@ -106,7 +108,7 @@ function PathItem({
 export function LaunchConfigCard() {
   const { config, updateConfig } = useLaunchContext();
   const { selectedProfile } = useAccountContext();
-  const { totalMB, usedMB } = useSystemMemory();
+  const { totalMB, usedMB, availableMB, recommendedMB } = useSystemMemory();
 
   const [pathsCfg, setPathsCfg] = useState<LauncherPathsConfig>({
     java_paths: [],
@@ -462,17 +464,16 @@ ${result}
             {totalMB > 0 && (
               <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
                 <span>系统总计 <span className="text-foreground font-medium">{totalMB >= 1024 ? `${(totalMB / 1024).toFixed(1)} GB` : `${totalMB} MB`}</span></span>
-                {usedMB > 0 && (
+                {availableMB > 0 && (
                   <>
                     <span className="text-muted-foreground/40">·</span>
-                    <span>可用 <span className="text-foreground font-medium">{((totalMB - usedMB) / 1024).toFixed(1)} GB</span></span>
+                    <span>可用 <span className="text-foreground font-medium">{availableMB >= 1024 ? `${(availableMB / 1024).toFixed(1)} GB` : `${availableMB} MB`}</span></span>
                   </>
                 )}
               </div>
             )}
           </div>
-          {totalMB > 0 && usedMB > 0 && (() => {
-            const availableMB = totalMB - usedMB;
+          {totalMB > 0 && availableMB > 0 && (() => {
             const percentage = Math.min(100, (Number(config.maxMemory) / availableMB) * 100);
             return (
               <div className="w-full h-1 rounded-full bg-muted overflow-hidden">
@@ -487,8 +488,8 @@ ${result}
             <input
               type="range"
               min={1024}
-              max={totalMB > 0 && usedMB > 0 ? Math.max(1024, totalMB - usedMB) : 16384}
-              step={512}
+              max={availableMB > 0 ? Math.max(1024, availableMB) : totalMB > 0 ? Math.max(1024, Math.floor(totalMB * 0.75)) : 32768}
+              step={1}
               value={Number(config.maxMemory) || 4096}
               onChange={(e) => updateConfig({ maxMemory: e.target.value })}
               className="flex-1 h-1.5 accent-primary cursor-pointer"
@@ -499,16 +500,33 @@ ${result}
               onChange={(e) => updateConfig({ maxMemory: e.target.value })}
               className="w-20 text-xs h-8 text-center"
               min={512}
-              max={32768}
+              max={availableMB > 0 ? availableMB : 65536}
             />
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0 h-8 px-3 text-[10px] gap-1"
+              disabled={recommendedMB === 0}
+              onClick={() => {
+                if (recommendedMB > 0) {
+                  updateConfig({ maxMemory: String(recommendedMB) });
+                }
+              }}
+            >
+              自动分配
+              {recommendedMB > 0 && (
+                <span className="text-[9px] text-muted-foreground/70">
+                  {recommendedMB >= 1024 ? `${(recommendedMB / 1024).toFixed(1)}GB` : `${recommendedMB}MB`}
+                </span>
+              )}
+            </Button>
           </div>
           <p className="text-[10px] text-muted-foreground">
             建议分配可用内存的 50%–75%
-            {totalMB > 0 && usedMB > 0 && (() => {
-              const availableMB = totalMB - usedMB;
+            {availableMB > 0 && (() => {
               return (
                 <span className="ml-1 text-muted-foreground/60">
-                  （{Math.round(availableMB * 0.5)}–{Math.round(availableMB * 0.75)} MB）
+                  （{Math.round(availableMB * 0.5)}–{Math.round(availableMB * 0.75)} MB，推荐 {recommendedMB} MB）
                 </span>
               );
             })()}
