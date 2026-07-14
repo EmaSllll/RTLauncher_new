@@ -45,8 +45,6 @@ interface LaunchContextValue {
   errorMessage: string | null;
   /** 启动游戏 */
   launchGame: (overrides?: Partial<LaunchConfig>) => Promise<void>;
-  /** 终止/取消启动中的游戏进程 */
-  cancelLaunch: () => Promise<void>;
   /** 清空日志 */
   clearLogs: () => void;
   /** 最后一次启动的完整命令参数（调试用） */
@@ -193,49 +191,6 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
     return () => { unlisten?.(); };
   }, []);
 
-  // 监听游戏完全启动事件（JVM 启动完成、资源加载完成）
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    listen<number>("game-fully-started", (event) => {
-      const pid = event.payload;
-      setStatus("running");
-      setLogs((prev) => [
-        ...prev,
-        {
-          id: ++logIdRef.current,
-          timestamp: new Date().toLocaleTimeString(),
-          level: "info",
-          message: `游戏已完全启动 (PID ${pid})，停止 JVM 追踪`,
-        },
-      ]);
-    }).then((fn) => { unlisten = fn; });
-    return () => { unlisten?.(); };
-  }, []);
-
-  const cancelLaunch = useCallback(
-    async () => {
-      if (status !== "preparing" && status !== "launching" && status !== "running") {
-        return;
-      }
-      try {
-        const result = await invoke<string>("kill_game_process");
-        setLogs((prev) => [
-          ...prev,
-          {
-            id: ++logIdRef.current,
-            timestamp: new Date().toLocaleTimeString(),
-            level: "warn",
-            message: result,
-          },
-        ]);
-        setStatus("idle");
-      } catch (e) {
-        setErrorMessage(e instanceof Error ? e.message : String(e));
-      }
-    },
-    [status]
-  );
-
   const launchGame = useCallback(
     async (overrides?: Partial<LaunchConfig>) => {
       const merged = { ...config, ...overrides };
@@ -272,7 +227,7 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
           addLog("info", `加载器: ${merged.loadName}`);
         }
 
-        const result = await invoke<string>("launch_game", {
+        const result = await invoke<string>("build_jvm_arguments", {
           minecraftPath: merged.minecraftPath,
           javaPath: merged.javaPath,
           wrapperPath: merged.wrapperPath,
@@ -312,7 +267,6 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
         logs,
         errorMessage,
         launchGame,
-        cancelLaunch,
         clearLogs,
         lastCommandArgs,
         lastLaunchTime,

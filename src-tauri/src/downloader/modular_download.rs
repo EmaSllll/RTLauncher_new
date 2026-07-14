@@ -9,42 +9,38 @@ use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, Semaphore};
 
-pub const MAX_CONCURRENT_FILES: usize = 256;
+pub const MAX_CONCURRENT_FILES: usize = 128;
 pub const THROTTLE_MS_AFTER_FILE: u64 = 0;
-pub const MAX_TOTAL_CONNECTIONS: usize = 512;
-const CHUNKED_THRESHOLD: u64 = 256 * 1024;
-const SMALL_CHUNK: u64 = 256 * 1024;
-const MEDIUM_CHUNK: u64 = 1 * 1024 * 1024;
-const LARGE_CHUNK: u64 = 4 * 1024 * 1024;
-const MIN_WORKERS_PER_FILE: usize = 4;
-const MAX_WORKERS_PER_FILE: usize = 32;
-const MAX_TOTAL_WORKERS_PER_FILE: usize = 96;
-const LAST_MILE_THRESHOLD: f64 = 0.5;
-const FINAL_SPRINT_THRESHOLD: f64 = 0.8;
-const STALL_BYTES_PER_SEC: u64 = 30 * 1024;
+pub const MAX_TOTAL_CONNECTIONS: usize = 256;
+const CHUNKED_THRESHOLD: u64 = 512 * 1024;
+const SMALL_CHUNK: u64 = 512 * 1024;
+const MEDIUM_CHUNK: u64 = 2 * 1024 * 1024;
+const LARGE_CHUNK: u64 = 8 * 1024 * 1024;
+const MIN_WORKERS_PER_FILE: usize = 2;
+const MAX_WORKERS_PER_FILE: usize = 16;
+const MAX_TOTAL_WORKERS_PER_FILE: usize = 48;
+const LAST_MILE_THRESHOLD: f64 = 0.65;
+const FINAL_SPRINT_THRESHOLD: f64 = 0.9;
+const STALL_BYTES_PER_SEC: u64 = 60 * 1024;
 const STALL_DETECTION_INTERVAL: Duration = Duration::from_secs(2);
-const MAX_RETRIES_PER_URL: u32 = 8;
-const MAX_RETRIES_PER_CHUNK: u32 = 5;
-const CHUNK_TIMEOUT_BASE: Duration = Duration::from_secs(15);
-const OVERALL_TIMEOUT_SECONDS: u64 = 600;
+const MAX_RETRIES_PER_URL: u32 = 2;
+const MAX_RETRIES_PER_CHUNK: u32 = 3;
+const CHUNK_TIMEOUT_BASE: Duration = Duration::from_secs(10);
+const OVERALL_TIMEOUT_SECONDS: u64 = 300;
 
 fn workers_for_size(size: u64) -> usize {
     if size == 0 {
         MIN_WORKERS_PER_FILE
-    } else if size < 128 * 1024 {
+    } else if size < 256 * 1024 {
+        2
+    } else if size < 1 * 1024 * 1024 {
         4
-    } else if size < 512 * 1024 {
+    } else if size < 5 * 1024 * 1024 {
         6
-    } else if size < 2 * 1024 * 1024 {
+    } else if size < 15 * 1024 * 1024 {
         8
-    } else if size < 8 * 1024 * 1024 {
-        12
-    } else if size < 20 * 1024 * 1024 {
-        16
     } else if size < 50 * 1024 * 1024 {
-        24
-    } else if size < 100 * 1024 * 1024 {
-        28
+        12
     } else {
         MAX_WORKERS_PER_FILE
     }
@@ -721,34 +717,14 @@ async fn try_download_to_temp(
 ) -> Result<()> {
     let mut url_to_use = url.to_string();
     
-    // CurseForge: 尝试多个 CDN 备用地址
-    let mut curseforge_urls: Vec<String> = Vec::new();
-    if url.contains("curseforge.com") || url.contains("edge.forgecdn.net") || url.contains("files-cf.curseforge.com") {
-        if let Some((pid, fid)) = extract_cf_ids(url) {
-            let first4 = fid / 1000;
-            let last3 = fid % 1000;
-            curseforge_urls.push(format!("https://edge.forgecdn.net/files/{}/{:03}/", first4, last3));
-            curseforge_urls.push(format!("https://files-cf.curseforge.com/file/curseforge-files/{}/{:03}/", first4, last3));
-            curseforge_urls.push(format!("https://www.curseforge.com/minecraft/mc-mods/{}/download/{}/file", pid, fid));
-            curseforge_urls.push(format!("https://www.curseforge.com/api/v1/mods/{}/files/{}/download", pid, fid));
-        }
-    }
-    
-    // 如果是 CurseForge API URL，解析为 CDN 列表
     if url.contains("api.curseforge.com/v1/mods/") {
         if let Some((pid, fid)) = extract_cf_ids(url) {
             if let Some((_, _, cdn)) = resolve_cf_download_info(pid, fid).await {
-                url_to_use = cdn.clone();
-                let first4 = fid / 1000;
-                let last3 = fid % 1000;
-                curseforge_urls.push(cdn);
-                curseforge_urls.push(format!("https://edge.forgecdn.net/files/{}/{:03}/", first4, last3));
-                curseforge_urls.push(format!("https://files-cf.curseforge.com/file/curseforge-files/{}/{:03}/", first4, last3));
+                url_to_use = cdn;
             }
         }
     }
     
-    // 处理 Modrinth CDN 重定向
     if url_to_use.contains("cdn.modrinth.com") || url_to_use.contains("github.com") || url_to_use.contains("//cdn") {
         if let Ok(resolved) = crate::http_client::resolve_redirect_url(&url_to_use).await {
             if resolved != url_to_use {
@@ -758,46 +734,16 @@ async fn try_download_to_temp(
         }
     }
     
-    // Modrinth CDN
     if url_to_use.contains("cdn.modrinth.com") {
         println!("[Download]   使用浏览器风格下载 (Modrinth CDN)");
         return browser_style_download(&url_to_use, temp_path, sha1, progress_tx, cancel, "modrinth").await;
-    }
-    
-    // CurseForge 多 CDN 容错：逐个尝试不同的 CDN 地址
-    if !curseforge_urls.is_empty() {
-        let mut last_err: Option<String> = None;
-        for (i, cdn_url) in curseforge_urls.iter().enumerate() {
-            println!("[Download]   尝试 CurseForge CDN [{}]: {}", i + 1, cdn_url);
-            match browser_style_download(cdn_url, temp_path, sha1, progress_tx.clone(), cancel.clone(), "curseforge").await {
-                Ok(()) => return Ok(()),
-                Err(e) => {
-                    last_err = Some(e.to_string());
-                    println!("[Download]   ✗ CurseForge CDN [{}] 失败: {}", i + 1, e);
-                    let _ = std::fs::remove_file(&temp_path);
-                }
-            }
-        }
-        return Err(anyhow!("所有 CurseForge CDN 均失败: {}", last_err.unwrap_or_else(|| "未知错误".to_string())));
     }
     
     if url_to_use.contains("curseforge.com") || url_to_use.contains("edge.forgecdn.net") {
         println!("[Download]   使用浏览器风格下载 (CurseForge)");
         return browser_style_download(&url_to_use, temp_path, sha1, progress_tx, cancel, "curseforge").await;
     }
-
-
-    let is_maven_repo = url_to_use.contains("maven.neoforged.net/releases/")
-        || url_to_use.contains("files.minecraftforge.net/maven/")
-        || url_to_use.contains("bmclapi2.bangbang93.com/maven/")
-        || url_to_use.contains("repo1.maven.org/maven2/")
-        || url_to_use.contains("maven.fabricmc.net/");
-    if is_maven_repo {
-        println!("[Download]   使用单线程下载 (Maven 仓库)");
-        let client = crate::http_client::shared_client().await;
-        return single_threaded_download(&client, &url_to_use, temp_path, progress_tx, cancel).await;
-    }
-
+    
     let client = crate::http_client::shared_client().await;
     let first_range_end = (MEDIUM_CHUNK - 1).min(u32::MAX as u64);
     
@@ -1089,27 +1035,21 @@ async fn try_download_to_temp(
             let mut should_spawn = false;
             let mut num_new: u64 = 0;
             
-            // 早期阶段也主动增加 worker
-            if ratio < 0.2 && in_flight > 0 {
-                if current_worker_count < (MAX_TOTAL_WORKERS_PER_FILE as u64) / 2 {
-                    num_new = 4;
-                    should_spawn = true;
-                }
-            } else if ratio >= FINAL_SPRINT_THRESHOLD && in_flight > 0 {
-                num_new = (in_flight as u64).min(24).max(8);
+            if ratio >= FINAL_SPRINT_THRESHOLD && in_flight > 0 {
+                num_new = (in_flight as u64).min(12).max(4);
                 should_spawn = true;
             } else if ratio >= LAST_MILE_THRESHOLD {
-                if avg_bps < STALL_BYTES_PER_SEC * 6 && in_flight > 0 {
-                    num_new = (in_flight as u64).min(16).max(6);
+                if avg_bps < STALL_BYTES_PER_SEC * 4 && in_flight > 0 {
+                    num_new = (in_flight as u64).min(8).max(3);
                     should_spawn = true;
                 }
             } else if alloc_done && in_flight > 0 {
-                if avg_bps < STALL_BYTES_PER_SEC * 6 {
-                    num_new = (in_flight as u64).min(12).max(5);
+                if avg_bps < STALL_BYTES_PER_SEC * 4 {
+                    num_new = (in_flight as u64).min(8).max(3);
                     should_spawn = true;
                 }
-            } else if avg_bps < STALL_BYTES_PER_SEC * 2 && in_flight > 0 {
-                num_new = 5;
+            } else if avg_bps < STALL_BYTES_PER_SEC && in_flight > 0 {
+                num_new = 3;
                 should_spawn = true;
             }
             
@@ -1193,7 +1133,7 @@ async fn worker_loop(
     writer: mpsc::UnboundedSender<(u64, Vec<u8>)>,
 ) {
     let start = Instant::now();
-    let hard_timeout = Duration::from_secs(120);
+    let hard_timeout = Duration::from_secs(25);
     let mut tick_counter: u64 = 0;
     
     loop {
@@ -1420,77 +1360,43 @@ async fn single_threaded_download(
     let mut reporter_tick = Instant::now();
     let mut last_bytes_tick = Instant::now();
     let mut last_received: u64 = 0;
-    let stall_timeout = Duration::from_secs(25);
-    let mut chunk_error_count: u32 = 0;
-    const MAX_CHUNK_ERRORS: u32 = 8;
+    let stall_timeout = Duration::from_secs(15);
     
-    loop {
-        let chunk_with_timeout = tokio::time::timeout(Duration::from_secs(30), stream.next()).await;
+    while let Some(chunk_result) = tokio::time::timeout(Duration::from_secs(20), stream.next())
+        .await
+        .map_err(|_| anyhow!("读取超时"))?
+    {
+        if cancel.load(Ordering::SeqCst) {
+            return Err(anyhow!("已取消"));
+        }
         
-        match chunk_with_timeout {
-            Err(_) => {
-                chunk_error_count += 1;
-                if chunk_error_count > MAX_CHUNK_ERRORS {
-                    return Err(anyhow!("读取超时 (连续 {} 次无数据)", MAX_CHUNK_ERRORS));
-                }
-                println!("[Download]   ! chunk 30s无响应 ({}/{}), 等待重试...", chunk_error_count, MAX_CHUNK_ERRORS);
-                tokio::time::sleep(Duration::from_millis(500)).await;
-                continue;
+        if start.elapsed() > hard_timeout {
+            return Err(anyhow!("单线程下载整体超时"));
+        }
+        
+        let data = chunk_result.with_context(|| "读取字节流失败")?;
+        file.write_all(&data).await.with_context(|| "写入失败")?;
+        received += data.len() as u64;
+        
+        if reporter_tick.elapsed() > Duration::from_millis(2000) {
+            if let Some(ref tx) = progress_tx {
+                let _ = tx.try_send((received, total_size));
             }
-            Ok(None) => break,
-            Ok(Some(chunk_result)) => {
-                if cancel.load(Ordering::SeqCst) {
-                    return Err(anyhow!("已取消"));
-                }
-                
-                if start.elapsed() > hard_timeout {
-                    return Err(anyhow!("单线程下载整体超时"));
-                }
-                
-                let data = match chunk_result {
-                    Ok(d) => d,
-                    Err(e) => {
-                        chunk_error_count += 1;
-                        if chunk_error_count > MAX_CHUNK_ERRORS {
-                            return Err(anyhow!("读取字节流失败 (连续 {} 次错误): {}", MAX_CHUNK_ERRORS, e));
-                        }
-                        println!("[Download]   ! chunk错误 ({}/{}): {}, 重试中...", chunk_error_count, MAX_CHUNK_ERRORS, e);
-                        tokio::time::sleep(Duration::from_millis(300)).await;
-                        continue;
-                    }
-                };
-                
-                chunk_error_count = 0;
-                
-                if data.is_empty() {
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                    continue;
-                }
-                
-                file.write_all(&data).await.with_context(|| "写入失败")?;
-                received += data.len() as u64;
-                
-                if reporter_tick.elapsed() > Duration::from_millis(2000) {
-                    if let Some(ref tx) = progress_tx {
-                        let _ = tx.try_send((received, total_size));
-                    }
-                    
-                    let pct = if total_size > 0 { received as f64 / total_size as f64 * 100.0 } else { 0.0 };
-                    let speed_kb = received as f64 / 1024.0 / start.elapsed().as_secs_f64().max(0.1);
-                    
-                    println!("[Download]     ↓ 单线程进度: {:.1}% ({}/{} bytes) | 速度: {:.0} KB/s",
-                        pct, received, total_size, speed_kb);
-                    
-                    reporter_tick = Instant::now();
-                }
-                
-                if received > last_received {
-                    last_received = received;
-                    last_bytes_tick = Instant::now();
-                } else if last_bytes_tick.elapsed() > stall_timeout {
-                    return Err(anyhow!("下载停滞超过 {}s", stall_timeout.as_secs()));
-                }
-            }
+            
+            let pct = if total_size > 0 { received as f64 / total_size as f64 * 100.0 } else { 0.0 };
+            let speed_kb = received as f64 / 1024.0 / start.elapsed().as_secs_f64().max(0.1);
+            
+            println!("[Download]     ↓ 单线程进度: {:.1}% ({}/{} bytes) | 速度: {:.0} KB/s",
+                pct, received, total_size, speed_kb);
+            
+            reporter_tick = Instant::now();
+        }
+        
+        if received > last_received {
+            last_received = received;
+            last_bytes_tick = Instant::now();
+        } else if last_bytes_tick.elapsed() > stall_timeout {
+            return Err(anyhow!("下载停滞超过 {}s", stall_timeout.as_secs()));
         }
     }
     
@@ -1563,81 +1469,49 @@ async fn browser_style_download(
     let mut reporter_tick = Instant::now();
     let mut last_bytes_tick = Instant::now();
     let mut last_received: u64 = 0;
-    let stall_timeout = Duration::from_secs(30);
-    let mut chunk_error_count: u32 = 0;
-    const MAX_CHUNK_ERRORS: u32 = 10;
+    let stall_timeout = Duration::from_secs(20);
     
-    loop {
-        let chunk_with_timeout = tokio::time::timeout(Duration::from_secs(45), stream.next()).await;
+    while let Some(chunk_result) = tokio::time::timeout(Duration::from_secs(30), stream.next())
+        .await
+        .map_err(|_| anyhow!("读取超时"))?
+    {
+        if cancel.load(Ordering::SeqCst) {
+            return Err(anyhow!("已取消"));
+        }
         
-        match chunk_with_timeout {
-            Err(_) => {
-                // 45秒内没有新chunk，可能网络抖动，短暂休眠后重试
-                chunk_error_count += 1;
-                if chunk_error_count > MAX_CHUNK_ERRORS {
-                    return Err(anyhow!("读取超时 (连续 {} 次无数据)", MAX_CHUNK_ERRORS));
-                }
-                println!("[Download]   ! chunk {}s无响应 ({}/{}), 等待重试...", 45, chunk_error_count, MAX_CHUNK_ERRORS);
-                tokio::time::sleep(Duration::from_millis(500)).await;
-                continue;
+        if start.elapsed() > hard_timeout {
+            return Err(anyhow!("浏览器风格下载超时"));
+        }
+        
+        let data = chunk_result.with_context(|| "读取字节流失败")?;
+        
+        if data.is_empty() {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            continue;
+        }
+        
+        file.write_all(&data).await.with_context(|| "写入失败")?;
+        received += data.len() as u64;
+        
+        if reporter_tick.elapsed() > Duration::from_millis(2000) {
+            if let Some(ref tx) = progress_tx {
+                let _ = tx.try_send((received, total_size));
             }
-            Ok(None) => {
-                // 流结束
-                break;
-            }
-            Ok(Some(chunk_result)) => {
-                if cancel.load(Ordering::SeqCst) {
-                    return Err(anyhow!("已取消"));
-                }
-                
-                if start.elapsed() > hard_timeout {
-                    return Err(anyhow!("浏览器风格下载超时"));
-                }
-                
-                let data = match chunk_result {
-                    Ok(d) => d,
-                    Err(e) => {
-                        chunk_error_count += 1;
-                        if chunk_error_count > MAX_CHUNK_ERRORS {
-                            return Err(anyhow!("读取字节流失败 (连续 {} 次错误): {}", MAX_CHUNK_ERRORS, e));
-                        }
-                        println!("[Download]   ! chunk错误 ({}/{}): {}, 重试中...", chunk_error_count, MAX_CHUNK_ERRORS, e);
-                        tokio::time::sleep(Duration::from_millis(300)).await;
-                        continue;
-                    }
-                };
-                
-                chunk_error_count = 0;
-                
-                if data.is_empty() {
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                    continue;
-                }
-                
-                file.write_all(&data).await.with_context(|| "写入失败")?;
-                received += data.len() as u64;
-                
-                if reporter_tick.elapsed() > Duration::from_millis(2000) {
-                    if let Some(ref tx) = progress_tx {
-                        let _ = tx.try_send((received, total_size));
-                    }
-                    
-                    let pct = if total_size > 0 { received as f64 / total_size as f64 * 100.0 } else { 0.0 };
-                    let speed_kb = received as f64 / 1024.0 / start.elapsed().as_secs_f64().max(0.1);
-                    
-                    println!("[Download]     ↓ 浏览器风格进度: {:.1}% ({}/{} bytes) | 速度: {:.0} KB/s",
-                        pct, received, total_size, speed_kb);
-                    
-                    reporter_tick = Instant::now();
-                }
-                
-                if received > last_received {
-                    last_received = received;
-                    last_bytes_tick = Instant::now();
-                } else if last_bytes_tick.elapsed() > stall_timeout {
-                    return Err(anyhow!("下载停滞超过 {}s", stall_timeout.as_secs()));
-                }
-            }
+            
+            let pct = if total_size > 0 { received as f64 / total_size as f64 * 100.0 } else { 0.0 };
+            let speed_kb = received as f64 / 1024.0 / start.elapsed().as_secs_f64().max(0.1);
+            
+            println!("[Download]     ↓ 浏览器风格进度: {:.1}% ({}/{} bytes) | 速度: {:.0} KB/s",
+                pct, received, total_size, speed_kb);
+            
+            reporter_tick = Instant::now();
+        }
+        
+        if received > last_received {
+            last_received = received;
+            last_bytes_tick = Instant::now();
+        } else if last_bytes_tick.elapsed() > stall_timeout {
+            return Err(anyhow!("下载停滞超过 {}s", stall_timeout.as_secs()));
         }
     }
     
@@ -1964,8 +1838,6 @@ async fn spawn_adaptive_tuner(sem: AdaptiveSemaphore) {
         let mut last_throughput: VecDeque<u64> = VecDeque::new();
         let mut last_time = Instant::now();
         let mut last_done: u64 = 0;
-        let mut stable_high_count = 0usize;
-        let mut low_count = 0usize;
         
         loop {
             tokio::time::sleep(Duration::from_secs(2)).await;
@@ -1995,34 +1867,12 @@ async fn spawn_adaptive_tuner(sem: AdaptiveSemaphore) {
             let current_permits = sem.sem.available_permits();
             let total_in_flight = target.saturating_sub(current_permits);
             
-            // 吞吐量低时小幅降低并发（更温和）
             if avg_bps < STALL_BYTES_PER_SEC && total_in_flight > 0 {
-                low_count += 1;
-                if low_count >= 3 {
-                    let new_target = (target as f64 * 0.85).max(4.0) as usize;
-                    sem.target_permits.store(new_target as u64, Ordering::SeqCst);
-                    low_count = 0;
-                }
-            } else if avg_bps > STALL_BYTES_PER_SEC * 5 && current_permits == 0 {
-                // 高吞吐量且满负载时，更激进地增加并发
-                stable_high_count += 1;
-                if stable_high_count >= 1 {
-                    let multiplier = if avg_bps > STALL_BYTES_PER_SEC * 20 {
-                        1.5
-                    } else if avg_bps > STALL_BYTES_PER_SEC * 10 {
-                        1.4
-                    } else {
-                        1.25
-                    };
-                    let new_target = (target as f64 * multiplier).min(MAX_CONCURRENT_FILES as f64) as usize;
-                    if new_target > target {
-                        sem.target_permits.store(new_target as u64, Ordering::SeqCst);
-                    }
-                    stable_high_count = 0;
-                }
-            } else {
-                stable_high_count = 0;
-                low_count = 0;
+                let new_target = (target as f64 * 0.7).max(1.0) as usize;
+                sem.target_permits.store(new_target as u64, Ordering::SeqCst);
+            } else if avg_bps > STALL_BYTES_PER_SEC * 10 && current_permits == 0 {
+                let new_target = (target as f64 * 1.3).min(MAX_CONCURRENT_FILES as f64) as usize;
+                sem.target_permits.store(new_target as u64, Ordering::SeqCst);
             }
         }
     });

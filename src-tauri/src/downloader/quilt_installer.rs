@@ -5,7 +5,6 @@ use crate::http_client::shared_client;
 use serde_json;
 use std::fs;
 use std::path::PathBuf;
-use tokio::sync::mpsc;
 
 /// 获取 Quilt Loader 版本列表
 pub async fn get_quilt_loader_versions(mc_version: &str) -> Result<Vec<String>> {
@@ -41,12 +40,7 @@ pub async fn get_quilt_api_versions(mc_version: &str) -> Result<Vec<String>> {
 }
 
 /// 安装 Quilt Loader
-pub async fn install_quilt_loader(
-    mc_version: &str,
-    quilt_version: &str,
-    mc_folder_path: &str,
-    progress_tx: Option<mpsc::Sender<f64>>,
-) -> Result<String> {
+pub async fn install_quilt_loader(mc_version: &str, quilt_version: &str, mc_folder_path: &str) -> Result<String> {
     let url = format!("https://meta.quiltmc.org/v3/versions/loader/{}/{}/profile/json", mc_version, quilt_version);
     let client = shared_client().await;
     let resp = client.get(&url).send().await?;
@@ -72,8 +66,7 @@ pub async fn install_quilt_loader(
     download_libraries(
         &profile.libraries,
         "https://maven.quiltmc.org/repository/release",
-        mc_folder_path,
-        progress_tx,
+        mc_folder_path
     ).await?;
 
     println!("Quilt Loader 安装完成，版本 ID: {}", version_id);
@@ -81,12 +74,7 @@ pub async fn install_quilt_loader(
 }
 
 /// 安装 Quilt API
-pub async fn install_quilt_api(
-    mc_version: &str,
-    quilt_api_version: &str,
-    mc_folder_path: &str,
-    progress_tx: Option<mpsc::Sender<f64>>,
-) -> Result<()> {
+pub async fn install_quilt_api(mc_version: &str, quilt_api_version: &str, mc_folder_path: &str) -> Result<()> {
     let quilt_api_url = format!(
         "https://maven.quiltmc.org/repository/release/org/quiltmc/quilted-fabric-api/quilted-fabric-api/{0}/quilted-fabric-api-{0}.jar",
         quilt_api_version
@@ -102,32 +90,11 @@ pub async fn install_quilt_api(
         urls: vec![quilt_api_url],
         sha1: None,
     };
-    // 将 mpsc::Sender<f64> 转为 download_file 需要的 mpsc::Sender<(u64, u64)>
-    // download_file 不需要文件级进度，直接下载单个文件，发送 0→100 的简单进度
-    if let Some(tx) = progress_tx.as_ref() {
-        let _ = tx.try_send(0.0);
-    }
-    let single_progress = progress_tx.as_ref().map(|tx| {
-        let tx = tx.clone();
-        let (inner_tx, mut inner_rx) = mpsc::channel::<(u64, u64)>(16);
-        tokio::spawn(async move {
-            while let Some((done, total)) = inner_rx.recv().await {
-                if total > 0 {
-                    let pct = (done as f64 / total as f64) * 100.0;
-                    let _ = tx.send(pct).await;
-                }
-            }
-        });
-        inner_tx
-    });
-    match concurrent_download::download_file(&task, single_progress, None).await {
+    match concurrent_download::download_file(&task, None, None).await {
         crate::downloader::modular_download::SingleDownloadResult::Success { .. } => {}
         crate::downloader::modular_download::SingleDownloadResult::Failed { error, .. } => {
             return Err(anyhow!("下载 Quilt API 失败: {}", error));
         }
-    }
-    if let Some(tx) = progress_tx.as_ref() {
-        let _ = tx.try_send(100.0);
     }
 
     println!("Quilt API 安装完成，版本: {}", quilt_api_version);
@@ -139,7 +106,6 @@ async fn download_libraries(
     libraries: &[Library],
     default_url: &str,
     mc_folder_path: &str,
-    progress_tx: Option<mpsc::Sender<f64>>,
 ) -> Result<()> {
     let mut tasks = Vec::new();
     for lib in libraries {
@@ -164,7 +130,7 @@ async fn download_libraries(
 
     println!("准备下载 {} 个库文件...", tasks.len());
 
-    let result = concurrent_download::download_all(tasks, progress_tx).await;
+    let result = concurrent_download::download_all(tasks, None).await;
     if !result.failures.is_empty() {
         eprintln!("\n以下文件下载失败:");
         for f in &result.failures {
