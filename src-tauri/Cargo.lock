@@ -100,6 +100,7 @@ dependencies = [
  "futures",
  "hex",
  "image",
+ "libc",
  "log",
  "nix 0.27.1",
  "objc2",

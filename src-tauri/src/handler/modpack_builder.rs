@@ -280,9 +280,11 @@ fn default_minecraft_path() -> String {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
         format!("{}/Library/Application Support/RTLauncher/version", home)
     }
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    #[cfg(target_os = "linux")]
     {
-        "./minecraft".to_string()
+        crate::app_paths::linux_minecraft_dir()
+            .to_string_lossy()
+            .to_string()
     }
 }
 fn instance_file_path(root: &Path, name: &str) -> PathBuf {
