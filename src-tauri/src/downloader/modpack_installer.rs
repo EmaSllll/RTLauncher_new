@@ -648,7 +648,7 @@ pub async fn install_parsed_modpack(
                 ModpackLoaderType::Quilt => {
                     let quilt_ver = parsed_loader_ver.unwrap_or_else(|| "latest".to_string());
                     println!("[Modpack] [并行] 安装 Quilt Loader {}...", quilt_ver);
-                    let version_id = crate::downloader::quilt_installer::install_quilt_loader(&parsed_mc, &quilt_ver, &mc_dir_str, None).await
+                    let version_id = crate::downloader::quilt_installer::install_quilt_loader(&parsed_mc, &quilt_ver, &mc_dir_str).await
                         .map_err(|e| anyhow!("Quilt 安装失败: {}", e))?;
                     println!("[Modpack] Quilt 安装完成, 实际版本目录: {}", version_id);
                     send_progress(&tx_clone, 2, total_files, String::new(), "ModLoader 安装完成".to_string());
