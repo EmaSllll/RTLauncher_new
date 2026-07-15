@@ -449,8 +449,10 @@ fn startup_minecraft_paths() -> Vec<String> {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
         format!("{}/Library/Application Support/RTLauncher/version", home)
     };
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let default_path = "./minecraft".to_string();
+    #[cfg(target_os = "linux")]
+    let default_path = crate::app_paths::linux_minecraft_dir()
+        .to_string_lossy()
+        .to_string();
 
     #[cfg(target_os = "macos")]
     let config_file = {
@@ -458,7 +460,9 @@ fn startup_minecraft_paths() -> Vec<String> {
         std::path::PathBuf::from(format!("{}/Library/Application Support/RTLauncher/config", home))
             .join("launcher.json")
     };
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
+    let config_file = crate::app_paths::linux_config_dir().join("launcher.json");
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     let config_file = std::path::PathBuf::from("./RTL/config").join("launcher.json");
 
     let mut paths: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();

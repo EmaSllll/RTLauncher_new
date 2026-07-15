@@ -118,7 +118,6 @@ pub async fn cancel_download(taskId: u64) -> Result<(), String> {
     }
     Ok(())
 }
-
 #[cfg(test)]
 mod tests {
     use super::minecraft_dir_from_config;

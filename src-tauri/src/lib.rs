@@ -1,4 +1,5 @@
 mod auth;
+mod app_paths;
 mod handler;
 mod downloader;
 mod mutiplayer;

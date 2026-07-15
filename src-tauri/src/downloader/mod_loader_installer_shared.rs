@@ -38,6 +38,10 @@ struct LauncherPathsConfig {
     pub default_minecraft_path: String,
 }
 fn launcher_config_path() -> PathBuf {
+    #[cfg(target_os = "linux")]
+    return crate::app_paths::linux_config_dir().join("launcher.json");
+
+    #[cfg(not(target_os = "linux"))]
     PathBuf::from("./RTL/config").join("launcher.json")
 }
 fn read_launcher_java_config() -> Option<(Vec<String>, HashMap<String, JavaInstallationInfo>, String)> {
@@ -128,6 +132,9 @@ pub fn pick_java_executable(mc_version: &str) -> String {
         println!("[JavaPicker] 使用 selected_java_path: {}", selected_java);
         return selected_java;
     }
+    #[cfg(target_os = "linux")]
+    let java_download_dir = crate::app_paths::linux_java_dir();
+    #[cfg(not(target_os = "linux"))]
     let java_download_dir = PathBuf::from("./RTL/java");
     if java_download_dir.exists() {
         if let Ok(read_dir) = fs::read_dir(&java_download_dir) {
