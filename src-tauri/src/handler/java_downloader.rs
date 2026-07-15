@@ -12,7 +12,8 @@ use std::time::Duration;
 use tauri::Emitter;
 
 const JAVA_MANIFEST_URL: &str = "https://launchermeta.mojang.com/v1/products/java-runtime/2ec0cc96c44e5a76b9c8b7c39df7210883d12871/all.json";
-const MAX_CONCURRENT_DOWNLOADS: usize = 64;
+// 减少并发下载数，避免被服务器限流
+const MAX_CONCURRENT_DOWNLOADS: usize = 8;
 const DOWNLOAD_BUFFER_SIZE: usize = 65536;
 
 #[derive(Debug, Deserialize)]
@@ -197,7 +198,6 @@ pub async fn download_java_runtime(
 
     let mut download_tasks = Vec::new();
     let java_dir = PathBuf::from(&base_path).join(&runtime_name);
-
     let java_exe_name = if cfg!(windows) { "bin/java.exe" } else { "bin/java" };
     let mut java_relative_path: Option<String> = None;
 
@@ -263,14 +263,16 @@ async fn download_java_files(
     let total = tasks.len();
     let progress = Arc::new(DownloadProgress::new(total));
     let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_DOWNLOADS));
+    // 创建更稳健的HTTP客户端
     let client = Arc::new(
         reqwest::Client::builder()
             .pool_max_idle_per_host(MAX_CONCURRENT_DOWNLOADS)
             .pool_idle_timeout(Duration::from_secs(90))
-            .connect_timeout(Duration::from_secs(30))
-            .timeout(Duration::from_secs(120))
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(30))
             .tcp_keepalive(Duration::from_secs(60))
             .tcp_nodelay(true)
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36")
             .build()
             .map_err(|e| format!("创建HTTP客户端失败: {}", e))?
     );
@@ -370,12 +372,8 @@ async fn download_java_file(
             .map_err(|e| format!("创建目录失败: {}", e))?;
     }
 
-    let response = client.get(&task.url)
-        .send()
-        .await
-        .map_err(|e| format!("下载失败: {}", e))?
-        .error_for_status()
-        .map_err(|e| format!("HTTP错误: {}", e))?;
+    // 使用带重试的下载函数
+    let response = download_with_retry(&client, &task.url).await?;
 
     let file = File::create(&task.target_path).await
         .map_err(|e| format!("创建文件失败: {}", e))?;
@@ -415,6 +413,37 @@ async fn download_java_file(
 
     progress.done.fetch_add(1, Ordering::SeqCst);
     Ok(())
+}
+
+/// 带重试机制的下载函数
+async fn download_with_retry(
+    client: &reqwest::Client,
+    url: &str,
+) -> Result<reqwest::Response, String> {
+    const MAX_RETRIES: usize = 3;
+    const RETRY_DELAY: Duration = Duration::from_secs(2);
+
+    for attempt in 0..MAX_RETRIES {
+        match client.get(url).send().await {
+            Ok(response) => {
+                if response.status().is_success() {
+                    return Ok(response);
+                } else {
+                    eprintln!("下载失败 (尝试 {}): HTTP {}", attempt + 1, response.status());
+                }
+            }
+            Err(e) => {
+                eprintln!("下载失败 (尝试 {}): {}", attempt + 1, e);
+            }
+        }
+
+        // 如果不是最后一次尝试，等待后重试
+        if attempt < MAX_RETRIES - 1 {
+            tokio::time::sleep(RETRY_DELAY).await;
+        }
+    }
+
+    Err(format!("下载失败，已重试 {} 次", MAX_RETRIES))
 }
 
 async fn check_sha1(file: &mut File, expected: &str) -> Result<bool, String> {
