@@ -47,8 +47,9 @@ pub fn cache_root_dir() -> Result<PathBuf, String> {
         PathBuf::from(home)
             .join("Library/Application Support/RTLauncher")
     };
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let base_dir = PathBuf::from("./minecraft");
+    #[cfg(target_os = "linux")]
+    let cache_root = crate::app_paths::linux_cache_dir();
+    #[cfg(not(target_os = "linux"))]
     let cache_root = base_dir.join("cache");
     std::fs::create_dir_all(&cache_root).map_err(|e| e.to_string())?;
     Ok(cache_root)

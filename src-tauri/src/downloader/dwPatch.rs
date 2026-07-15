@@ -37,8 +37,7 @@ pub fn get_minecraft_dir() -> Result<PathBuf, String> {
     }
     #[cfg(target_os = "linux")]
     {
-        let home = std::env::var("HOME").map_err(|_| "无法获取 HOME 环境变量".to_string())?;
-        Ok(PathBuf::from(home).join(".minecraft"))
+        Ok(crate::app_paths::linux_minecraft_dir())
     }
     #[cfg(target_os = "windows")]
     {

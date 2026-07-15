@@ -35,7 +35,11 @@ fn get_bridge_dir() -> Result<PathBuf, String> {
             .join("RTLauncher")
             .join("bridge"))
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
+    {
+        Ok(crate::app_paths::linux_data_dir().join("bridge"))
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         let exe_dir = env::current_exe()
             .map_err(|e| format!("无法获取当前可执行文件路径: {}", e))?

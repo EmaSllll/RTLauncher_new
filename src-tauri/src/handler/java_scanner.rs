@@ -541,7 +541,7 @@ fn get_linux_search_paths(paths: &mut Vec<PathBuf>) {
             paths.push(asdf_java);
         }
     }
-    paths.push(PathBuf::from("./java"));
+    paths.push(crate::app_paths::linux_java_dir());
 }
 #[tauri::command]
 pub async fn search_java_installations() -> Result<Vec<JavaInstallation>, String> {

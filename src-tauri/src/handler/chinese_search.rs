@@ -11,14 +11,21 @@ fn get_moddata_connection() -> &'static Mutex<Option<Connection>> {
     MDDATA_CONN.get_or_init(|| Mutex::new(None))
 }
 
-/// 获取 moddata.db 的目标路径（可执行文件同目录）
+/// 获取 moddata.db 的可写目标路径
 fn get_moddata_target_path() -> PathBuf {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            return dir.join("moddata.db");
-        }
+    #[cfg(target_os = "linux")]
+    {
+        crate::app_paths::linux_data_dir().join("moddata.db")
     }
-    PathBuf::from(".")
+    #[cfg(not(target_os = "linux"))]
+    {
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                return dir.join("moddata.db");
+            }
+        }
+        PathBuf::from(".")
+    }
 }
 
 /// 获取 moddata.db 的文件路径
