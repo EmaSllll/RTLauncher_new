@@ -80,27 +80,31 @@ export async function setupAllDownloadListeners(
   const cancelledRef = { current: false };
   const progressHandler = makeProgressHandler(setTasks, cancelledRef);
   const finishedHandler = makeFinishedHandler(setTasks, cancelledRef);
+  // 原版下载完成后先释放排队锁再启动下一个
+  const vanillaFinishedHandler = makeFinishedHandler(
+    setTasks,
+    cancelledRef,
+    dequeueNext
+  );
 
-  const eventPairs: Array<[string, string]> = [
-    ["download-progress", "download-finished"],
-    ["java-download-progress", "java-download-finished"],
-    ["optifine-download-progress", "optifine-download-finished"],
-    ["fabric-download-progress", "fabric-download-finished"],
-    ["forge-download-progress", "forge-download-finished"],
-    ["mod-download-progress", "mod-download-finished"],
-    ["neoforge-download-progress", "neoforge-download-finished"],
-    ["liteloader-download-progress", "liteloader-download-finished"],
+  const eventPairs: Array<[string, string, "vanilla" | "other"]> = [
+    ["download-progress", "download-finished", "vanilla"],
+    ["java-download-progress", "java-download-finished", "other"],
+    ["optifine-download-progress", "optifine-download-finished", "other"],
+    ["fabric-download-progress", "fabric-download-finished", "other"],
+    ["forge-download-progress", "forge-download-finished", "other"],
+    ["mod-download-progress", "mod-download-finished", "other"],
+    ["neoforge-download-progress", "neoforge-download-finished", "other"],
+    ["liteloader-download-progress", "liteloader-download-finished", "other"],
+    ["quilt-download-progress", "quilt-download-finished", "other"],
   ];
 
   const unlistens: UnlistenFn[] = [];
-  for (const [progressEvent, finishedEvent] of eventPairs) {
+  for (const [progressEvent, finishedEvent, kind] of eventPairs) {
     const unlistenP = await listen<ProgressPayload>(progressEvent, progressHandler);
     unlistens.push(unlistenP);
 
-    // download-finished 是唯一会触发 dequeueNext 的事件（原版下载）
-    const handler = finishedEvent === "download-finished"
-      ? makeFinishedHandler(setTasks, cancelledRef, dequeueNext)
-      : finishedHandler;
+    const handler = kind === "vanilla" ? vanillaFinishedHandler : finishedHandler;
     const unlistenF = await listen<FinishedPayload>(finishedEvent, handler);
     unlistens.push(unlistenF);
   }
