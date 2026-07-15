@@ -11,9 +11,12 @@ pub struct MemoryInfo {
     pub total_mb: u64,
     /// 已使用内存（MB）
     pub used_mb: u64,
+    /// 当前可用内存（MB，即 total - used）
+    pub available_mb: u64,
+    /// 推荐自动分配给游戏的内存（MB，取可用内存的 80%）
+    pub recommended_mb: u64,
 }
 
-/// 获取系统内存信息
 #[tauri::command]
 pub fn open_external(url: String) -> Result<(), String> {
     webbrowser::open(&url).map_err(|e| format!("Failed to open URL: {}", e))
@@ -32,7 +35,20 @@ pub fn get_system_memory() -> MemoryInfo {
     sys.refresh_memory();
     let total_mb = sys.total_memory() / 1024 / 1024;
     let used_mb = sys.used_memory() / 1024 / 1024;
-    MemoryInfo { total_mb, used_mb }
+    let available_mb = total_mb.saturating_sub(used_mb);
+    // 推荐分配：可用内存的 80%，同时设置合理上下限
+    //  - 至少 512 MB，最多总内存的 90%
+    let raw_recommended = (available_mb as f64 * 0.8) as u64;
+    let upper_bound = (total_mb as f64 * 0.9) as u64;
+    let recommended_mb = raw_recommended
+        .min(upper_bound)
+        .max(512);
+    MemoryInfo {
+        total_mb,
+        used_mb,
+        available_mb,
+        recommended_mb,
+    }
 }
 
 /// 写入文件
@@ -259,7 +275,7 @@ fn platform_drop_file_caches(methods: &mut Vec<String>) {
 
 /// （权限允许时）尝试排空系统 standby/cache：真正意义上的"释放系统整体内存"
 /// 权限不足就忽略，而不是让整个调用失败
-fn platform_try_empty_system_caches(_methods: &mut Vec<String>) {
+fn platform_try_empty_system_caches(methods: &mut Vec<String>) {
     #[cfg(target_os = "windows")]
     {
         // ============================================================
@@ -324,7 +340,7 @@ fn platform_try_empty_system_caches(_methods: &mut Vec<String>) {
                     success_count += 1;
                     CloseHandle(handle);
                 }
-                _methods.push(format!(
+                methods.push(format!(
                     "windows.empty_working_set({} processes)",
                     success_count
                 ));
@@ -333,7 +349,7 @@ fn platform_try_empty_system_caches(_methods: &mut Vec<String>) {
             // SetSystemFileCacheSize(0, SIZE_MAX, FILE_CACHE_MAX_HARD_DISABLE)
             // 强制收缩系统文件缓存工作集
             if SetSystemFileCacheSize(0, usize::MAX, 2) != 0 {
-                _methods.push("windows.system_cache_hard_trim".to_string());
+                methods.push("windows.system_cache_hard_trim".to_string());
             }
 
             // 管理员模式大招：NtSetSystemInformation(80)
@@ -341,7 +357,7 @@ fn platform_try_empty_system_caches(_methods: &mut Vec<String>) {
             // 普通用户调了会失败（静默忽略）
             let status = NtSetSystemInformation(80, std::ptr::null_mut(), 0);
             if status == 0 {
-                _methods.push("windows.purge_standby_list(admin)".to_string());
+                methods.push("windows.purge_standby_list(admin)".to_string());
             }
         }
     }
@@ -357,7 +373,7 @@ fn platform_try_empty_system_caches(_methods: &mut Vec<String>) {
             .open("/proc/sys/vm/drop_caches")
         {
             if f.write_all(b"3\n").is_ok() {
-                _methods.push("linux.drop_caches(3)".to_string());
+                methods.push("linux.drop_caches(3)".to_string());
             }
         }
     }
@@ -449,10 +465,8 @@ fn startup_minecraft_paths() -> Vec<String> {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
         format!("{}/Library/Application Support/RTLauncher/version", home)
     };
-    #[cfg(target_os = "linux")]
-    let default_path = crate::app_paths::linux_minecraft_dir()
-        .to_string_lossy()
-        .to_string();
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let default_path = "./minecraft".to_string();
 
     #[cfg(target_os = "macos")]
     let config_file = {
@@ -460,9 +474,7 @@ fn startup_minecraft_paths() -> Vec<String> {
         std::path::PathBuf::from(format!("{}/Library/Application Support/RTLauncher/config", home))
             .join("launcher.json")
     };
-    #[cfg(target_os = "linux")]
-    let config_file = crate::app_paths::linux_config_dir().join("launcher.json");
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(target_os = "macos"))]
     let config_file = std::path::PathBuf::from("./RTL/config").join("launcher.json");
 
     let mut paths: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
