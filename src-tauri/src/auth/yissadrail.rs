@@ -24,6 +24,8 @@ use std::fs::File;
 use std::io::{Read, Write};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
+const FOLDER_PATH: &str = "./.minecraft/versions";
+
 pub fn downloadInjecter() {
     // 初始化
     let URL_BMCL = "https://bmclapi2.bangbang93.com/mirrors/authlib-injector/artifact/latest.json";
@@ -76,11 +78,7 @@ pub fn downloadInjecter() {
     let fileName = urlParts.last().unwrap_or(&"authlib-injector.jar");
     
     // 构造文件路径
-    #[cfg(target_os = "linux")]
-    let folderPath = crate::app_paths::linux_minecraft_dir().join("versions");
-    #[cfg(not(target_os = "linux"))]
-    let folderPath = std::path::PathBuf::from("./.minecraft/versions");
-    let filePath = folderPath.join(fileName);
+    let filePath = format!("{}/{}", FOLDER_PATH, fileName);
     
     // 检查文件是否已存在
     if fs::metadata(&filePath).is_ok() {
@@ -129,7 +127,7 @@ pub fn downloadInjecter() {
     }
 
     // 创建目录
-    if let Err(err) = fs::create_dir_all(&folderPath) {
+    if let Err(err) = fs::create_dir_all(FOLDER_PATH) {
         error!("创建目录失败: {}", err);
         return;
     }
