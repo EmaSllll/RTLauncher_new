@@ -18,8 +18,9 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
+  GripVertical,
 } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { fadeSlideUp } from "@/lib/motion";
 
 function TaskRow({ task, onRemove, onCancel }: { task: DownloadTask; onRemove: () => void; onCancel: () => void }) {
@@ -134,19 +135,69 @@ export function DownloadTaskList() {
   const queuedCount = tasks.filter((t) => t.status === "queued").length;
   const finishedCount = tasks.length - activeCount - queuedCount;
 
+  // 拖拽状态
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
+  const draggingRef = useRef(false);
+  const dragStartRef = useRef<{ offsetX: number; offsetY: number }>({ offsetX: 0, offsetY: 0 });
+
+  const onMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    // 只响应鼠标左键
+    if (e.button !== 0) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const rect = panel.getBoundingClientRect();
+    draggingRef.current = true;
+    dragStartRef.current = {
+      offsetX: e.clientX - rect.left,
+      offsetY: e.clientY - rect.top,
+    };
+    // 防止选中文字等副作用
+    e.preventDefault();
+  }, []);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!draggingRef.current) return;
+      const { offsetX, offsetY } = dragStartRef.current;
+      const nextX = Math.max(0, Math.min(window.innerWidth - 10, e.clientX - offsetX));
+      const nextY = Math.max(0, Math.min(window.innerHeight - 10, e.clientY - offsetY));
+      setPosition({ x: nextX, y: nextY });
+    };
+    const onUp = () => {
+      draggingRef.current = false;
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, []);
+
+  const panelStyle: React.CSSProperties = position
+    ? { left: position.x, top: position.y, right: "auto", bottom: "auto" }
+    : {};
+
   return (
     <AnimatePresence>
       {tasks.length > 0 && (
         <motion.div
+          ref={panelRef}
           variants={fadeSlideUp}
           initial="initial"
           animate="animate"
           exit="exit"
-          className="fixed bottom-4 right-4 z-50 w-80 rounded-xl border border-border bg-card shadow-lg overflow-hidden"
+          style={panelStyle}
+          className="fixed bottom-4 right-4 z-50 w-80 rounded-xl border border-border bg-card shadow-lg overflow-hidden select-none"
         >
           {/* 头部 */}
-          <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b border-border">
-            <span className="text-xs font-medium">
+          <div
+            onMouseDown={onMouseDown}
+            className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b border-border cursor-grab active:cursor-grabbing"
+          >
+            <span className="text-xs font-medium flex items-center gap-1">
+              <GripVertical className="size-3 text-muted-foreground" />
               下载任务
               {activeCount > 0 && (
                 <span className="text-muted-foreground ml-1">
@@ -174,6 +225,7 @@ export function DownloadTaskList() {
                       className="size-6"
                       onClick={clearFinished}
                       title="清除已完成"
+                      onMouseDown={(e) => e.stopPropagation()}
                     >
                       <Trash2 className="size-3" />
                     </Button>
@@ -185,6 +237,7 @@ export function DownloadTaskList() {
                 size="icon-sm"
                 className="size-6"
                 onClick={() => setCollapsed((prev) => !prev)}
+                onMouseDown={(e) => e.stopPropagation()}
               >
                 {collapsed ? (
                   <ChevronUp className="size-3" />

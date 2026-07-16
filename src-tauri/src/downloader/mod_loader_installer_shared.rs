@@ -38,10 +38,6 @@ struct LauncherPathsConfig {
     pub default_minecraft_path: String,
 }
 fn launcher_config_path() -> PathBuf {
-    #[cfg(target_os = "linux")]
-    return crate::app_paths::linux_config_dir().join("launcher.json");
-
-    #[cfg(not(target_os = "linux"))]
     PathBuf::from("./RTL/config").join("launcher.json")
 }
 fn read_launcher_java_config() -> Option<(Vec<String>, HashMap<String, JavaInstallationInfo>, String)> {
@@ -132,9 +128,6 @@ pub fn pick_java_executable(mc_version: &str) -> String {
         println!("[JavaPicker] 使用 selected_java_path: {}", selected_java);
         return selected_java;
     }
-    #[cfg(target_os = "linux")]
-    let java_download_dir = crate::app_paths::linux_java_dir();
-    #[cfg(not(target_os = "linux"))]
     let java_download_dir = PathBuf::from("./RTL/java");
     if java_download_dir.exists() {
         if let Ok(read_dir) = fs::read_dir(&java_download_dir) {
@@ -821,6 +814,31 @@ pub async fn install(
         .ok_or_else(|| anyhow!("version.json 缺少 id 字段"))?
         .to_string();
     let forge_version = id.replace("-forge-", "-");
+    // 从 libraries 中解析真正的 forge/neoforge 版本号（用于 maven 路径匹配）
+    // id 可能是 "1.21.4-neoforge-26.2.0.9-beta"，但我们真正需要的版本号是 "26.2.0.9-beta"
+    let mut real_loader_version: Option<String> = None;
+    if let Some(libs) = version_json.get("libraries").and_then(|l| l.as_array()) {
+        for lib in libs {
+            if let Some(name) = lib.get("name").and_then(|n| n.as_str()) {
+                let parts: Vec<&str> = name.split(':').collect();
+                if parts.len() >= 3 {
+                    if parts[0].eq_ignore_ascii_case("net.neoforged")
+                        && parts[1].eq_ignore_ascii_case("neoforge")
+                    {
+                        real_loader_version = Some(parts[2].to_string());
+                        break;
+                    }
+                    if parts[0].eq_ignore_ascii_case("net.minecraftforge")
+                        && parts[1].eq_ignore_ascii_case("forge")
+                    {
+                        real_loader_version = Some(parts[2].to_string());
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    let forge_version = real_loader_version.unwrap_or(forge_version);
     let id = if !id.starts_with(&format!("{}-", cfg.mc_version)) && id != cfg.mc_version {
         let new_id = format!("{}-{}", cfg.mc_version, id);
         println!("修复: 将 id {} 添加 mc 版本前缀 → {}", id, new_id);
@@ -979,6 +997,7 @@ pub async fn install(
                 names.push((i, entry.name().to_string()));
             }
         }
+        // 1. 先尝试精准查找：maven/.../{artifact}/{version}/<artifact>-<version>.jar
         if forge_jar_idx.is_none() {
             for (i, name) in &names {
                 if name.starts_with("maven/")
@@ -992,6 +1011,7 @@ pub async fn install(
                 }
             }
         }
+        // 2. 再尝试查找 universal 变体
         if universal_jar_idx.is_none() {
             for (i, name) in &names {
                 if name.starts_with("maven/")
@@ -1000,6 +1020,45 @@ pub async fn install(
                     universal_jar_idx = Some(*i);
                     println!("  [宽松匹配] universal jar: {}", name);
                     break;
+                }
+            }
+        }
+        // 3. 更宽松：任何 maven/.../neoforge-<version>* 模式（兼容 NeoForge 所有版本命名）
+        if forge_jar_idx.is_none() {
+            for (i, name) in &names {
+                if name.starts_with("maven/")
+                    && name.contains(&format!("/{}/", forge_version))
+                    && name.ends_with(".jar")
+                    && (name.contains(&format!("{}-{}", maven_artifact, forge_version))
+                        || name.contains(&maven_artifact))
+                {
+                    forge_jar_idx = Some(*i);
+                    println!("  [超宽松匹配] forge jar: {}", name);
+                    break;
+                }
+            }
+        }
+
+        // 4. 提取 main/universal 到 libraries/ 目录
+        //    同时将文件复制一份到另一种命名（xxx.jar ↔ xxx-universal.jar），
+        //    确保后续 processor/collect_libs 无论用哪种路径都能找到。
+        fn copy_jar_alias(lib_path: &std::path::Path) {
+            let file_name = lib_path.file_name().and_then(|f| f.to_str()).unwrap_or("");
+            let alias_name = if file_name.ends_with("-universal.jar") {
+                file_name.replace("-universal.jar", ".jar")
+            } else if file_name.ends_with(".jar") {
+                file_name.replace(".jar", "-universal.jar")
+            } else {
+                String::new()
+            };
+            if !alias_name.is_empty() {
+                if let Some(parent) = lib_path.parent() {
+                    let alias_path = parent.join(&alias_name);
+                    if !alias_path.exists() {
+                        if let Ok(_) = fs::copy(lib_path, &alias_path) {
+                            println!("[Jar]  别名 → {}", alias_path.display());
+                        }
+                    }
                 }
             }
         }
@@ -1013,6 +1072,7 @@ pub async fn install(
             extract_entry_to_file(&mut archive, u_idx, &lib_path)
                 .with_context(|| format!("提取 universal JAR 失败"))?;
             println!("[Jar] universal → {}", lib_path.display());
+            copy_jar_alias(&lib_path);
         }
         if let Some(f_idx) = forge_jar_idx {
             let entry_name = &names[f_idx].1;
@@ -1024,8 +1084,52 @@ pub async fn install(
             extract_entry_to_file(&mut archive, f_idx, &lib_path)
                 .with_context(|| format!("提取 main JAR 失败"))?;
             println!("[Jar] main → {}", lib_path.display());
+            copy_jar_alias(&lib_path);
         } else {
-            println!("[Jar] WARN: 未找到 main JAR");
+            println!("[Jar] WARN: 未找到 main JAR（将尝试通过 maven/ 目录的全部条目兜底）");
+        }
+
+        // 5. 兜底：把 installer 内 maven/ 目录下的所有 JAR 都提取到 libraries/
+        //    这能保证无论 NeoForge/Forge 用什么命名方式，所有依赖和主 JAR 都能到位
+        let mut extracted_any = false;
+        for (i, name) in &names {
+            if !name.starts_with("maven/") || !name.ends_with(".jar") {
+                continue;
+            }
+            // 跳过前面已经提取过的（避免重复 IO）
+            let already = match (forge_jar_idx, universal_jar_idx) {
+                (Some(fi), Some(ui)) if *i == fi || *i == ui => true,
+                (Some(fi), None) if *i == fi => true,
+                (None, Some(ui)) if *i == ui => true,
+                _ => false,
+            };
+            if already {
+                continue;
+            }
+            let sub_path = match name.find('/') {
+                Some(idx) => &name[idx + 1..],
+                None => name.as_str(),
+            };
+            let lib_path = root.join("libraries").join(sub_path);
+            if lib_path.exists() {
+                continue;
+            }
+            if let Err(e) = extract_entry_to_file(&mut archive, *i, &lib_path) {
+                eprintln!("[Jar] 提取失败（忽略）: {} → {}", name, e);
+                continue;
+            }
+            extracted_any = true;
+            println!("[Jar] 补充提取: {}", lib_path.display());
+
+            // 对 loader 自身的 JAR（neoforge/forge）同时生成别名
+            let file_name = lib_path.file_name().and_then(|f| f.to_str()).unwrap_or("");
+            let is_loader_file = file_name.contains("neoforge") || file_name.contains("forge");
+            if is_loader_file {
+                copy_jar_alias(&lib_path);
+            }
+        }
+        if extracted_any {
+            println!("[Jar] maven/ 目录下的其他 JAR 已补充提取完毕");
         }
     }
     drop(archive);
@@ -1246,19 +1350,51 @@ pub async fn install(
             if path.trim().is_empty() {
                 continue;
             }
-            if !name.is_empty() && url_empty {
-                let is_self_jar = name.starts_with("net.minecraftforge:forge")
-                    || name.starts_with("net.neoforged:neoforge");
-                if is_self_jar {
-                    continue;
+            let mut path = path;
+            let (dir_part, file_name) = match path.rfind('/') {
+                Some(i) => (path[..i].to_string(), path[i + 1..].to_string()),
+                None => (String::new(), path.clone()),
+            };
+            let target_dir = root.join("libraries").join(&dir_part);
+            let _full_file = target_dir.join(&file_name);
+            // NeoForge 自身的 JAR 需要特殊处理：
+            // maven.neoforged.net 上发布的是 neoforge-{version}-universal.jar
+            // 而不是标准的 neoforge-{version}.jar。如果当前条目是
+            // net.neoforged:neoforge:VERSION 且文件名不含 -universal，
+            // 就把 path 改为带 -universal.jar 后缀。
+            let is_neoforge_self = name.starts_with("net.neoforged:neoforge:");
+            if is_neoforge_self {
+                let neoforge_parts: Vec<&str> = name.split(':').collect();
+                if neoforge_parts.len() >= 3 {
+                    let nf_version = neoforge_parts[2];
+                    let new_file_name = format!("neoforge-{}-universal.jar", nf_version);
+                    let new_path = if dir_part.is_empty() {
+                        new_file_name.clone()
+                    } else {
+                        format!("{}/{}", dir_part, new_file_name)
+                    };
+                    path = new_path;
                 }
             }
+            // 重新解析（因为 path 可能被修改了）
             let (dir_part, file_name) = match path.rfind('/') {
                 Some(i) => (path[..i].to_string(), path[i + 1..].to_string()),
                 None => (String::new(), path.clone()),
             };
             let target_dir = root.join("libraries").join(&dir_part);
             let full_file = target_dir.join(&file_name);
+            // 跳过带特殊分类器后缀、Maven 上不存在的 JAR
+            // 注意：NeoForge 的 -universal.jar 实际上在 maven.neoforged.net 上存在，
+            // 所以只对非 neoforge 条目的 -universal.jar / -client.jar / -server.jar 跳过
+            let is_loader_self = name.starts_with("net.minecraftforge:forge:")
+                || name.starts_with("net.neoforged:neoforge:");
+            if !is_loader_self
+                && (file_name.ends_with("-universal.jar")
+                    || file_name.ends_with("-client.jar")
+                    || file_name.ends_with("-server.jar"))
+            {
+                continue;
+            }
             if full_file.exists() {
                 if let Some(sha) = &lib.sha1 {
                     if let Ok(calc) = sha1_of_file(&full_file) {
@@ -1286,8 +1422,18 @@ pub async fn install(
                         urls.push(format!("https://files.minecraftforge.net/maven/{}", rel));
                         urls.push(format!("https://bmclapi2.bangbang93.com/maven/{}", rel));
                     } else if name.contains("neoforged") {
-                        urls.push(format!("https://maven.neoforged.net/releases/{}", rel));
-                        urls.push(format!("https://bmclapi2.bangbang93.com/maven/{}", rel));
+                        // NeoForge 的主 JAR 带 -universal 分类器发布
+                        // rel = "net/neoforged/neoforge/VERSION/neoforge-VERSION.jar"
+                        // 需要改成 ".../neoforge-VERSION-universal.jar"
+                        let neoforge_rel = if name.starts_with("net.neoforged:neoforge:")
+                            && !rel.contains("-universal.jar")
+                        {
+                            rel.replace(".jar", "-universal.jar")
+                        } else {
+                            rel
+                        };
+                        urls.push(format!("https://maven.neoforged.net/releases/{}", neoforge_rel));
+                        urls.push(format!("https://bmclapi2.bangbang93.com/maven/{}", neoforge_rel));
                     }
                 }
             }

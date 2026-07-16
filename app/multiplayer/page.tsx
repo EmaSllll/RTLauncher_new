@@ -3,7 +3,6 @@
 import { useEffect, useState, useRef } from "react";
 import { Globe, Power, Loader2, AlertCircle, RefreshCw, Copy, Check, Server, Users, ScrollText } from "lucide-react";
 import { useMultiplayerContext } from "@/components/multiplayer/multiplayer-provider";
-import { OpenP2PDownloadLink } from "@/components/multiplayer/openp2p-download-link";
 import { OpenP2PInstaller } from "@/components/multiplayer/openp2p-installer";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -463,7 +462,6 @@ export default function MultiplayerPage() {
                 请将 openp2p 可执行文件拖入此窗口完成安装。
               </p>
             </div>
-            <OpenP2PDownloadLink />
             <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground bg-muted/40 px-3 py-2 rounded-lg">
               <div className="size-1.5 rounded-full bg-primary" />
               <span>将 openp2p.exe 文件拖入窗口即可完成安装</span>

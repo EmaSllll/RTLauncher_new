@@ -17,6 +17,7 @@ import {
   Gamepad2,
   HardDrive,
   Sparkles,
+  Square,
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import type { LauncherPathsConfig } from "@/types";
@@ -36,7 +37,7 @@ interface MemoryOptimizationReport {
  * 显示启动按钮和当前状态概览
  */
 export function LaunchPanel() {
-  const { config, status, errorMessage, launchGame } = useLaunchContext();
+  const { config, status, errorMessage, launchGame, cancelLaunch } = useLaunchContext();
   const { selectedProfile } = useAccountContext();
   const [javaInstallations, setJavaInstallations] = useState<LauncherPathsConfig["java_installations"]>({});
 
@@ -138,18 +139,18 @@ export function LaunchPanel() {
         <Button
           size="lg"
           className="w-full gap-2 text-sm font-semibold"
-          onClick={() => launchGame()}
-          disabled={!canLaunch}
+          onClick={isLaunching || isRunning ? () => cancelLaunch() : () => launchGame()}
+          disabled={!canLaunch && !isLaunching && !isRunning}
         >
           {isLaunching ? (
             <>
               <Loader2 className="size-4 animate-spin" />
-              {status === "preparing" ? "准备中..." : "启动中..."}
+              {status === "preparing" ? "停止准备" : "停止启动"}
             </>
           ) : isRunning ? (
             <>
-              <Play className="size-4" />
-              游戏运行中
+              <Square className="size-4" />
+              停止游戏
             </>
           ) : (
             <>

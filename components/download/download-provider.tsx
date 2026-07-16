@@ -94,6 +94,12 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
   /** 非原版下载的 taskId 计数器（从 1_000_000 起，避免与后端 taskId 冲突）*/
   const taskIdCounterRef = useRef(1_000_000);
 
+  /** 标记下载已结束，释放排队锁并尝试启动下一个任务 */
+  const markDownloadDone = useCallback(() => {
+    isDownloadingRef.current = false;
+    dequeueNext();
+  }, []);
+
   /** ========== 排队机制（仅用于原版 Minecraft 下载）========== */
   const dequeueNext = useCallback(async () => {
     if (isDownloadingRef.current) return;
@@ -132,7 +138,8 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 
     async function setup() {
       // 所有下载器的事件监听都在这里集中注册
-      const unlistens = await setupAllDownloadListeners(setTasks, dequeueNext);
+      // 原版下载（download-finished）完成时会调用 markDownloadDone 释放排队锁
+      const unlistens = await setupAllDownloadListeners(setTasks, markDownloadDone);
       if (cancelled) {
         unlistens.forEach((fn) => fn());
         return;
@@ -148,7 +155,7 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
       unlistensRef.current.forEach((fn) => fn());
       unlistensRef.current = [];
     };
-  }, [dequeueNext]);
+  }, [markDownloadDone]);
 
   /** ========== 启动函数 ========== */
 

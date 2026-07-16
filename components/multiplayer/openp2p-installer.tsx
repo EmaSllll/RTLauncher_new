@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { OpenP2PDownloadLink } from "@/components/multiplayer/openp2p-download-link";
 import { useMultiplayerContext } from "@/components/multiplayer/multiplayer-provider";
 import { AlertCircle, CheckCircle2, Loader2, UploadCloud, X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -147,8 +146,6 @@ export function OpenP2PInstaller() {
                 多人联机功能需要 openp2p 作为联机工具。请将 openp2p 可执行文件拖入此窗口完成安装。
               </p>
             </div>
-
-            <OpenP2PDownloadLink />
 
             {/* 拖放区域 */}
             <div

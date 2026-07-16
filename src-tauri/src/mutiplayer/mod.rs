@@ -3,11 +3,10 @@ use std::path::{PathBuf, Path};
 use std::process::{Command, Child, Stdio};
 use std::sync::Mutex;
 use std::env;
-#[cfg(target_os = "windows")]
-use std::io;
+
 use std::fs;
 use std::thread;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Error};
 const OPENP2P_BIN: &str = if cfg!(target_os = "windows") {
     "openp2p.exe"
 } else {
@@ -35,11 +34,7 @@ fn get_bridge_dir() -> Result<PathBuf, String> {
             .join("RTLauncher")
             .join("bridge"))
     }
-    #[cfg(target_os = "linux")]
-    {
-        Ok(crate::app_paths::linux_data_dir().join("bridge"))
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(target_os = "macos"))]
     {
         let exe_dir = env::current_exe()
             .map_err(|e| format!("无法获取当前可执行文件路径: {}", e))?
@@ -270,7 +265,7 @@ fn start_openp2p_with_args(args: &[&str]) -> Result<String, String> {
                         )
                     };
                     if (result as i32) <= 32 {
-                        let err = io::Error::last_os_error();
+                        let err = Error::last_os_error();
                         let err_msg = format!(
                             "[RTLauncher] ❌ 以管理员身份启动也失败: {}\n\
                              [RTLauncher]   请尝试手动以管理员身份运行此程序（右键 → 以管理员身份运行）\n",
@@ -474,7 +469,7 @@ fn kill_all_openp2p_processes() {
                     }
                 }
             }
-            thread::sleep(std::time::Duration::from_millis(150 + attempt * 50));
+            thread::sleep(std::time::Duration::from_millis((150 + attempt * 50).into()));
             if let Ok(output) = Command::new("sh")
                 .args(["-c", "pgrep -l openp2p || true"])
                 .output()
@@ -488,7 +483,7 @@ fn kill_all_openp2p_processes() {
     }
     #[cfg(target_os = "macos")]
     {
-        const MAX_ATTEMPTS: u64 = 6;
+        const MAX_ATTEMPTS: u32 = 6;
         for attempt in 0..MAX_ATTEMPTS {
             let _ = Command::new("killall").args(["-9", "openp2p"]).output();
             let _ = Command::new("pkill").args(["-9", "-f", "openp2p"]).output();
@@ -506,7 +501,7 @@ fn kill_all_openp2p_processes() {
                     }
                 }
             }
-            thread::sleep(std::time::Duration::from_millis(150 + attempt * 50));
+            thread::sleep(std::time::Duration::from_millis((150 + attempt * 50).into()));
             if let Ok(output) = Command::new("sh")
                 .args(["-c", "pgrep openp2p || true"])
                 .output()

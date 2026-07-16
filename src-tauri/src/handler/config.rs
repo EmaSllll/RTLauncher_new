@@ -23,12 +23,7 @@ fn config_dir() -> String {
         format!("{}/Library/Application Support/RTLauncher/config", home)
     };
 
-    #[cfg(target_os = "linux")]
-    let dir = crate::app_paths::linux_config_dir()
-        .to_string_lossy()
-        .to_string();
-
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(target_os = "macos"))]
     let dir = "./RTL/config".to_string();
 
     let _ = fs::create_dir_all(&dir);
@@ -62,11 +57,13 @@ fn default_minecraft_path() -> String {
         }
         "./.minecraft".to_string()
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
-        crate::app_paths::linux_minecraft_dir()
-            .to_string_lossy()
-            .to_string()
+        // Linux: ~/.minecraft
+        if let Ok(home) = std::env::var("HOME") {
+            return format!("{}/.minecraft", home);
+        }
+        "./.minecraft".to_string()
     }
 }
 
@@ -164,10 +161,8 @@ pub fn get_java_download_dir() -> Result<String, String> {
     #[cfg(target_os = "windows")]
     let dir = "./RTL/java".to_string();
 
-    #[cfg(target_os = "linux")]
-    let dir = crate::app_paths::linux_java_dir()
-        .to_string_lossy()
-        .to_string();
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let dir = "./java".to_string();
 
     let _ = fs::create_dir_all(&dir);
     Ok(dir)
