@@ -6,7 +6,7 @@ use std::env;
 
 use std::fs;
 use std::thread;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Error};
 const OPENP2P_BIN: &str = if cfg!(target_os = "windows") {
     "openp2p.exe"
 } else {
@@ -265,7 +265,7 @@ fn start_openp2p_with_args(args: &[&str]) -> Result<String, String> {
                         )
                     };
                     if (result as i32) <= 32 {
-                        let err = io::Error::last_os_error();
+                        let err = Error::last_os_error();
                         let err_msg = format!(
                             "[RTLauncher] ❌ 以管理员身份启动也失败: {}\n\
                              [RTLauncher]   请尝试手动以管理员身份运行此程序（右键 → 以管理员身份运行）\n",
