@@ -275,7 +275,7 @@ fn platform_drop_file_caches(methods: &mut Vec<String>) {
 
 /// （权限允许时）尝试排空系统 standby/cache：真正意义上的"释放系统整体内存"
 /// 权限不足就忽略，而不是让整个调用失败
-fn platform_try_empty_system_caches(_methods: &mut Vec<String>) {
+fn platform_try_empty_system_caches(methods: &mut Vec<String>) {
     #[cfg(target_os = "windows")]
     {
         // ============================================================
@@ -426,7 +426,7 @@ fn platform_trim_current_process(_methods: &mut Vec<String>) {}
 #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 fn platform_drop_file_caches(_methods: &mut Vec<String>) {}
 #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
-fn platform_try_empty_system_caches(_methods: &mut Vec<String>) {}
+fn platform_try_empty_system_caches(methods: &mut Vec<String>) {}
 
 // ---------------------------------------------------------------------------
 //  startup：启动时自动生成 launcher_profiles.json
