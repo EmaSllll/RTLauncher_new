@@ -3,7 +3,7 @@ use std::path::{PathBuf, Path};
 use std::process::{Command, Child, Stdio};
 use std::sync::Mutex;
 use std::env;
-use std::io;
+
 use std::fs;
 use std::thread;
 use std::io::{BufRead, BufReader};
@@ -469,7 +469,7 @@ fn kill_all_openp2p_processes() {
                     }
                 }
             }
-            thread::sleep(std::time::Duration::from_millis(150 + attempt * 50));
+            thread::sleep(std::time::Duration::from_millis((150 + attempt * 50).into()));
             if let Ok(output) = Command::new("sh")
                 .args(["-c", "pgrep -l openp2p || true"])
                 .output()
@@ -501,7 +501,7 @@ fn kill_all_openp2p_processes() {
                     }
                 }
             }
-            thread::sleep(std::time::Duration::from_millis(150 + attempt * 50));
+            thread::sleep(std::time::Duration::from_millis((150 + attempt * 50).into()));
             if let Ok(output) = Command::new("sh")
                 .args(["-c", "pgrep openp2p || true"])
                 .output()
