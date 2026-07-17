@@ -576,12 +576,14 @@ async fn install_legacy_forge(
     let libraries_dir = root.join("libraries");
     let mut seen_file_names: std::collections::HashSet<String> = std::collections::HashSet::new();
     let default_mirrors: Vec<&str> = vec![
-        "https://maven.neoforged.net/releases/",
         "https://bmclapi2.bangbang93.com/maven/",
         "https://files.minecraftforge.net/maven/",
         "https://libraries.minecraft.net/",
-        "https://repo1.maven.org/maven2/",
+        "https://maven.aliyun.com/repository/public/",
+        "https://repo.spongepowered.org/maven/",
+        "https://maven.neoforged.net/releases/",
         "https://maven.fabricmc.net/",
+        "https://repo1.maven.org/maven2/",
     ];
     for lib in &all_libs {
         let name = match lib.get("name").and_then(|n| n.as_str()) {
@@ -1560,6 +1562,31 @@ pub async fn install(
             proc_list.len()
         );
     }
+    // 确保 options.txt 存在并设置语言为中文
+    let versions_dir = root.join("versions").join(&id);
+    let options_path = versions_dir.join("options.txt");
+    if options_path.exists() {
+        let content = fs::read_to_string(&options_path)?;
+        if content.contains("lang:") {
+            let new_content = content
+                .lines()
+                .map(|line| {
+                    if line.trim().starts_with("lang:") {
+                        "lang:zh_cn"
+                    } else {
+                        line
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            fs::write(&options_path, new_content)?;
+        } else {
+            fs::write(&options_path, format!("{}\nlang:zh_cn", content))?;
+        }
+    } else {
+        fs::write(&options_path, "lang:zh_cn")?;
+    }
+    
     println!("\n✓ 安装完成: {}", id);
     Ok(id)
 }

@@ -2,9 +2,65 @@ use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
+use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use zip::ZipArchive;
 use crate::downloader::concurrent_download::{self, DownloadTask};
+
+fn detect_file_category(file_path: &Path) -> &'static str {
+    let extension = file_path.extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    if extension == "jar" {
+        return "mods";
+    }
+
+    if extension == "zip" {
+        if let Ok(file) = std::fs::File::open(file_path) {
+            let reader = BufReader::new(file);
+            if let Ok(mut archive) = ZipArchive::new(reader) {
+                let mut has_data = false;
+                let mut has_pack_mcmeta = false;
+
+                for i in 0..archive.len() {
+                    if let Ok(entry) = archive.by_index(i) {
+                        let name = entry.name();
+                        let clean_name = name.trim_end_matches('/');
+                        let depth = clean_name.matches('/').count();
+                        if depth == 0 {
+                            if clean_name == "data" && name.ends_with('/') {
+                                has_data = true;
+                            }
+                            if clean_name == "pack.mcmeta" && !name.ends_with('/') {
+                                has_pack_mcmeta = true;
+                            }
+                        }
+                    }
+                }
+
+                return match (has_data, has_pack_mcmeta) {
+                    (true, true) => "datapacks",
+                    (false, true) => "resourcepacks",
+                    _ => "shaderpacks",
+                };
+            }
+        }
+    }
+
+    "mods"
+}
+
+fn ensure_dir(path: &Path) -> Result<()> {
+    if !path.exists() {
+        if let Err(e) = fs::create_dir_all(path) {
+            eprintln!("[Modpack] 创建目录失败 {}: {}", path.display(), e);
+            return Err(anyhow!("创建目录失败: {}", e));
+        }
+    }
+    Ok(())
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ModrinthIndexEnv {
     #[serde(default = "default_required_side")]
@@ -112,6 +168,8 @@ pub struct ModpackExternalFile {
     pub urls: Vec<String>,
     pub sha1: Option<String>,
     pub size: Option<u64>,
+    pub project_id: Option<u64>,
+    pub file_id: Option<u64>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModpackLoaderType {
@@ -222,6 +280,8 @@ fn parse_modrinth_zip(path: &Path) -> Result<ParsedModpack> {
             urls: f.downloads.clone(),
             sha1,
             size: f.fileSize,
+            project_id: None,
+            file_id: None,
         });
     }
     let mut extracted_files = Vec::new();
@@ -358,23 +418,17 @@ fn parse_curseforge_zip(path: &Path) -> Result<ParsedModpack> {
         }
         let first4 = cf.fileID / 1000;
         let last3 = cf.fileID % 1000;
+        let pid = cf.projectID as u64;
+        let fid = cf.fileID as u64;
         let cdn_url = format!("https://edge.forgecdn.net/files/{}/{:03}/", first4, last3);
         let files_cf_url = format!("https://files-cf.curseforge.com/file/curseforge-files/{}/{:03}/", first4, last3);
         let www_redirect_url = format!(
             "https://www.curseforge.com/minecraft/mc-mods/{}/download/{}/file",
-            cf.projectID, cf.fileID
+            pid, fid
         );
         let api_redirect_url = format!(
             "https://api.curseforge.com/v1/mods/{}/files/{}/download",
-            cf.projectID, cf.fileID
-        );
-        let api_v2_url = format!(
-            "https://api.curseforge.com/v2/mods/{}/files/{}/download",
-            cf.projectID, cf.fileID
-        );
-        let files_www_url = format!(
-            "https://files.curseforge.com/minecraft/mc-mods/{}/download/{}/file",
-            cf.projectID, cf.fileID
+            pid, fid
         );
         external_files.push(ModpackExternalFile {
             relative_path: String::new(),
@@ -382,12 +436,12 @@ fn parse_curseforge_zip(path: &Path) -> Result<ParsedModpack> {
                 www_redirect_url,
                 files_cf_url,
                 cdn_url,
-                files_www_url,
                 api_redirect_url,
-                api_v2_url,
             ],
             sha1: None,
             size: None,
+            project_id: Some(pid),
+            file_id: Some(fid),
         });
     }
     let overrides_prefix = if !manifest.overrides.is_empty() {
@@ -675,50 +729,173 @@ pub async fn install_parsed_modpack(
     let external_task = {
         let tx = progress_tx.clone();
         tokio::spawn(async move {
+            let mods_dir = instance_root_clone.join("mods");
+            let datapacks_dir = instance_root_clone.join("datapacks");
+            let resourcepacks_dir = instance_root_clone.join("resourcepacks");
+            let shaderpacks_dir = instance_root_clone.join("shaderpacks");
+            let _ = ensure_dir(&mods_dir);
+
+            // --- 阶段 1: 预解析 CurseForge 文件信息 ---
+            let total_cf = external_files.iter().filter(|f| f.project_id.is_some()).count();
+            println!("[Modpack] 预解析 {} 个 CurseForge 文件...", total_cf);
+
+            let mut cf_futures = Vec::new();
+            for f in &external_files {
+                if let (Some(pid), Some(fid)) = (f.project_id, f.file_id) {
+                    cf_futures.push(async move {
+                        (
+                            pid,
+                            fid,
+                            crate::downloader::modular_download::resolve_cf_download_info(pid, fid).await,
+                        )
+                    });
+                }
+            }
+
+            let cf_results = futures::future::join_all(cf_futures).await;
+            let mut cf_map: std::collections::HashMap<(u64, u64), String> = std::collections::HashMap::new();
+            for (pid, fid, result) in cf_results {
+                if let Some((name, _sha, cdn)) = result {
+                    cf_map.insert((pid, fid), name);
+                    drop(cdn);
+                }
+            }
+            println!("[Modpack] CurseForge 预解析完成: 成功 {}/{}", cf_map.len(), total_cf);
+
+            // --- 阶段 2: 构造下载任务，直接下载到目标目录 ---
             let mut download_tasks: Vec<DownloadTask> = Vec::new();
-            for (idx, f) in external_files.iter().enumerate() {
+            for f in &external_files {
                 if f.urls.is_empty() { continue; }
                 let rel = f.relative_path.trim();
                 if rel.contains("..") || rel.starts_with('/') || rel.starts_with('\\') { continue; }
-                let (target_dir, file_name) = if rel.is_empty() {
-                    (instance_root_clone.join("mods"), String::new())
+
+                let (file_name, target_dir) = if !rel.is_empty() {
+                    // 有明确相对路径（来自 Modrinth/其他）
+                    let full = instance_root_clone.join(rel);
+                    let dir = full.parent()
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|| mods_dir.clone());
+                    let name = full.file_name()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                    (name, dir)
+                } else if let (Some(pid), Some(fid)) = (f.project_id, f.file_id) {
+                    // CurseForge 文件 - 用预解析的文件名
+                    let name = cf_map.get(&(pid, fid)).cloned().unwrap_or_else(|| format!("mod_{}.jar", fid));
+                    // 根据扩展名判断目录
+                    let lower = name.to_lowercase();
+                    let dir = if lower.ends_with(".zip") {
+                        // 先假定是 shaderpack，下载后再检测
+                        shaderpacks_dir.clone()
+                    } else {
+                        mods_dir.clone()
+                    };
+                    (name, dir)
                 } else {
-                    let full_target = instance_root_clone.join(&f.relative_path);
-                    let td = full_target.parent().map(|p| p.to_path_buf()).unwrap_or_else(|| instance_root_clone.clone());
-                    let fn_ = full_target.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "unknown.bin".to_string());
-                    (td, fn_)
+                    continue;
                 };
-                download_tasks.push(DownloadTask { file_name: file_name.clone(), target_dir: target_dir.clone(), urls: f.urls.clone(), sha1: f.sha1.clone() });
-                println!("[Modpack] [{}/{}] 文件: {} | SHA1: {} | 目标: {}", 
-                    idx + 1, external_files.len(), 
-                    if file_name.is_empty() { "<自动识别>" } else { &file_name },
-                    f.sha1.as_ref().map(|s| s.as_str()).unwrap_or("<无>"),
-                    target_dir.display());
-                for (u_idx, u) in f.urls.iter().enumerate() {
-                    println!("[Modpack]   URL[{}]: {}", u_idx, u);
-                }
+
+                if file_name.is_empty() { continue; }
+                let _ = ensure_dir(&target_dir);
+
+                download_tasks.push(DownloadTask {
+                    file_name,
+                    target_dir,
+                    urls: f.urls.clone(),
+                    sha1: f.sha1.clone(),
+                });
             }
+
             let task_count = download_tasks.len();
-            if task_count == 0 { return; }
-            println!("[Modpack] [并行] 开始并发下载 {} 个外部资源文件", task_count);
+            if task_count == 0 {
+                println!("[Modpack] 没有可下载的外部资源");
+                return;
+            }
+            println!("[Modpack] 开始并发下载 {} 个文件", task_count);
+            for t in &download_tasks {
+                println!("[Modpack]   → {}/{}", t.target_dir.display(), t.file_name);
+            }
+
             let (inner_tx, mut inner_rx) = tokio::sync::mpsc::channel::<(usize, usize, String)>(32);
             let tf = total_files;
             let forward = tokio::spawn(async move {
                 if let Some(ref ext_tx) = tx {
-                    while let Some((done, _total_inner, fname)) = inner_rx.recv().await {
-                        println!("[Modpack] 进度: 完成 {}/{} 文件, 最新: {}", done, tf, if fname.is_empty() { "<无>" } else { &fname });
+                    while let Some((done, _total, fname)) = inner_rx.recv().await {
+                        println!("[Modpack] 进度: {}/{} | {}", done, tf, fname);
                         let _ = ext_tx.try_send((2 + done, tf, fname.clone(), "下载资源文件".to_string()));
                     }
                 }
             });
             let result = concurrent_download::download_all_with_file_info(download_tasks, Some(inner_tx)).await;
             forward.abort();
-            println!("[Modpack] 外部资源下载完成: 成功 {}, 失败 {}", result.success_count, result.failures.len());
+            println!("[Modpack] 下载完成: 成功 {}, 失败 {}", result.success_count, result.failures.len());
             for fail in &result.failures {
-                println!("[Modpack] ✗ 失败: {} | 错误: {}", fail.file_name, fail.error);
-                for (u_idx, u) in fail.urls_tried.iter().enumerate() {
-                    println!("[Modpack]     尝试URL[{}]: {}", u_idx, u);
+                println!("[Modpack] ✗ 失败: {} | {}", fail.file_name, fail.error);
+            }
+
+            // --- 阶段 3: 扫描 zip 文件，判断类型并移动 ---
+            println!("[Modpack] 检测 zip 文件类型...");
+            let scan_dirs = vec![mods_dir.clone(), shaderpacks_dir.clone()];
+            let mut to_move: Vec<(PathBuf, PathBuf)> = Vec::new();
+            for dir in &scan_dirs {
+                if let Ok(entries) = std::fs::read_dir(dir) {
+                    for entry in entries.flatten() {
+                        let src = entry.path();
+                        if src.is_dir() { continue; }
+                        let ext = src.extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("")
+                            .to_lowercase();
+                        if ext != "zip" { continue; }
+                        let fname = src.file_name()
+                            .map(|s| s.to_string_lossy().to_string())
+                            .unwrap_or_default();
+                        if fname.is_empty() { continue; }
+                        let category = detect_file_category(&src);
+                        let target_dir = match category {
+                            "datapacks" => Some(&datapacks_dir),
+                            "resourcepacks" => Some(&resourcepacks_dir),
+                            "shaderpacks" => Some(&shaderpacks_dir),
+                            _ => None,
+                        };
+                        if let Some(td) = target_dir {
+                            if td != dir {
+                                to_move.push((src.clone(), td.join(&fname)));
+                            }
+                        }
+                    }
                 }
+            }
+
+            let mut moved = 0usize;
+            for (src, dest) in &to_move {
+                if let Err(e) = ensure_dir(dest.parent().unwrap()) {
+                    eprintln!("[Modpack] 创建目录失败: {}", e);
+                    continue;
+                }
+                // 先尝试删除目标，避免 Windows 上 rename 不能覆盖
+                let _ = fs::remove_file(dest);
+                match fs::rename(src, dest) {
+                    Ok(_) => {
+                        moved += 1;
+                        println!("[Modpack] 移动: {} -> {}", 
+                            src.file_name().unwrap().to_string_lossy(),
+                            dest.display());
+                    }
+                    Err(_) => {
+                        // rename 失败，尝试 copy + remove
+                        if let Err(e2) = fs::copy(src, dest).and_then(|_| fs::remove_file(src)) {
+                            eprintln!("[Modpack] 移动失败 {}: {}", src.display(), e2);
+                        } else {
+                            moved += 1;
+                        }
+                    }
+                }
+            }
+            if moved > 0 {
+                println!("[Modpack] 分类移动完成: 处理 {} 个 zip 文件", moved);
+            } else if !to_move.is_empty() {
+                println!("[Modpack] 分类移动: 没有需要移动的文件");
             }
         })
     };
@@ -796,6 +973,31 @@ pub async fn install_parsed_modpack(
             "完成".to_string(),
         ));
     }
+    // 确保 options.txt 存在并设置语言为中文
+    let versions_dir = minecraft_path.join("versions").join(&instance_name);
+    let options_path = versions_dir.join("options.txt");
+    if options_path.exists() {
+        let content = fs::read_to_string(&options_path)?;
+        if content.contains("lang:") {
+            let new_content = content
+                .lines()
+                .map(|line| {
+                    if line.trim().starts_with("lang:") {
+                        "lang:zh_cn"
+                    } else {
+                        line
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            fs::write(&options_path, new_content)?;
+        } else {
+            fs::write(&options_path, format!("{}\nlang:zh_cn", content))?;
+        }
+    } else {
+        fs::write(&options_path, "lang:zh_cn")?;
+    }
+    
     println!("[Modpack] 整合包安装完成: {} (版本名: {})", parsed.name, instance_name);
     Ok((instance_name, task_count))
 }

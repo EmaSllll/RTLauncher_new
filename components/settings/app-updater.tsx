@@ -343,7 +343,7 @@ export function useStartupUpdateCheck() {
 
 // ---- 用于主页的完整组件：启动后台检查 + 显示提示条 ----
 
-export function AppUpdateSection() {
+export function AppUpdateSection({ compact = false }: { compact?: boolean } = {}) {
   useStartupUpdateCheck();
   return <AppUpdateBadge />;
 }
