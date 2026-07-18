@@ -113,7 +113,7 @@ struct DownloadInfo {
 
 #[derive(Debug)]
 struct DownloadTask {
-    url: String,
+    urls: Vec<String>,
     target_path: PathBuf,
     sha1: String,
     size: u64,
@@ -215,15 +215,47 @@ pub async fn download_java_runtime(
     let version_name = &runtime.version.name;
     let manifest_url = &runtime.manifest.url;
 
-    let files_response = client.get(manifest_url).send().await
-        .map_err(|e| format!("获取Java文件列表失败: {}", e))?;
+    // 双源请求 Java 文件列表（某些环境官方源可能无法访问，BMCL 作为备用）
+    let client = reqwest::Client::new();
 
-    if !files_response.status().is_success() {
-        return Err(format!("获取Java文件列表失败: HTTP {}", files_response.status()));
-    }
+    // 尝试生成 BMCL 的文件清单备用 URL（如果 manifest_url 路径能匹配的话）
+    let bmcl_manifest_url = manifest_url
+        .replace("https://piston-data.mojang.com/", "https://bmclapi2.bangbang93.com/")
+        .replace("https://launchermeta.mojang.com/", "https://bmclapi2.bangbang93.com/");
 
-    let files_manifest: JavaFilesManifest = files_response.json().await
-        .map_err(|e| format!("解析Java文件列表失败: {}", e))?;
+    let files_manifest = {
+        use futures::stream::FuturesUnordered;
+        use futures::StreamExt;
+        let mut futures = FuturesUnordered::new();
+        for u in [manifest_url.as_str(), bmcl_manifest_url.as_str()] {
+            let c = client.clone();
+            let url = u.to_string();
+            futures.push(async move {
+                let resp = c
+                    .get(&url)
+                    .send()
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let resp = resp.error_for_status().map_err(|e| e.to_string())?;
+                let json: JavaFilesManifest = resp.json().await.map_err(|e| e.to_string())?;
+                Ok::<JavaFilesManifest, String>(json)
+            });
+        }
+        let mut last_err: Option<String> = None;
+        let mut found: Option<JavaFilesManifest> = None;
+        while let Some(result) = futures.next().await {
+            match result {
+                Ok(data) => {
+                    found = Some(data);
+                    break;
+                }
+                Err(e) => {
+                    last_err = Some(e);
+                }
+            }
+        }
+        found.ok_or_else(|| format!("获取Java文件列表失败: {}", last_err.unwrap_or_else(|| "所有镜像源均失败".to_string())))?
+    };
 
     let mut download_tasks = Vec::new();
     let java_dir = PathBuf::from(&base_path).join(&runtime_name);
@@ -243,8 +275,20 @@ pub async fn download_java_runtime(
             let download_info = &downloads.raw;
             let target_path = java_dir.join(file_path);
 
+            // 生成 BMCL 备用 URL（将官方源域名替换为 BMCL）
+            let official_url = download_info.url.clone();
+            let bmcl_url = official_url
+                .replace("https://piston-data.mojang.com/", "https://bmclapi2.bangbang93.com/")
+                .replace("https://download.mojang.com/", "https://bmclapi2.bangbang93.com/")
+                .replace("https://libraries.minecraft.net/", "https://bmclapi2.bangbang93.com/maven/");
+
+            let mut urls = vec![official_url.clone()];
+            if bmcl_url != official_url {
+                urls.push(bmcl_url);
+            }
+
             download_tasks.push(DownloadTask {
-                url: download_info.url.clone(),
+                urls,
                 target_path,
                 sha1: download_info.sha1.clone(),
                 size: download_info.size,
@@ -392,8 +436,8 @@ async fn download_java_file(
             .map_err(|e| format!("创建目录失败: {}", e))?;
     }
 
-    // 核心下载：带 body 读取阶段重试、支持断点续传
-    download_file_with_resumable_retry(&client, &task.url, &task.target_path, task.size).await?;
+    // 核心下载：带 body 读取阶段重试、支持断点续传、支持多源自动切换
+    download_file_with_resumable_retry(&client, &task.urls, &task.target_path, task.size).await?;
 
     // SHA1 校验
     let mut file = File::open(&task.target_path).await
@@ -429,15 +473,23 @@ async fn download_java_file(
 ///    在重试前检查磁盘已有字节数，从断点处继续下载，
 ///    避免因中途连接断开而从零重新开始。
 /// 3. 使用指数退避策略，减少对服务器的瞬时压力。
+/// 4. 支持多 URL 自动切换（每次重试轮换到下一个镜像源）
 async fn download_file_with_resumable_retry(
     client: &reqwest::Client,
-    url: &str,
+    urls: &[String],
     target_path: &PathBuf,
     expected_size: u64,
 ) -> Result<(), String> {
     let mut last_error: Option<String> = None;
 
+    if urls.is_empty() {
+        return Err("没有可用的下载源".to_string());
+    }
+
     for attempt in 0..MAX_FILE_RETRIES {
+        // 每次重试轮换到下一个镜像源（官方 → BMCL → 官方 → ...）
+        let url = &urls[attempt % urls.len()];
+
         // 计算当前磁盘上已有字节数（作为断点续传起点）
         let current_bytes = std::fs::metadata(target_path)
             .map(|m| m.len())

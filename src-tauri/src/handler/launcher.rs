@@ -27,6 +27,62 @@ fn game_process_store() -> &'static Mutex<Option<GameProcess>> {
     STORE.get_or_init(|| Mutex::new(None))
 }
 
+/// 通过运行 java -XshowSettings:properties -version 动态获取 os.name 和 os.version
+/// 某些 Linux 发行版（如 NixOS、Arch 的定制环境）下，Java 报告的 os.name
+/// 与 LWJGL 期望的值不匹配，需要强制设置以避免启动失败。
+/// 返回 (os.name, os.version)，None 表示检测失败，回退到默认值。
+fn detect_os_properties_from_java(java_path: &str) -> (Option<String>, Option<String>) {
+    if java_path.is_empty() {
+        return (None, None);
+    }
+    let output = match Command::new(java_path)
+        .arg("-XshowSettings:properties")
+        .arg("-version")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+    {
+        Ok(o) => o,
+        Err(_) => return (None, None),
+    };
+
+    // Java 的 -XshowSettings 输出到 stderr 而不是 stdout
+    let stderr_text = String::from_utf8_lossy(&output.stderr).to_string();
+    let stdout_text = String::from_utf8_lossy(&output.stdout).to_string();
+
+    let mut os_name: Option<String> = None;
+    let mut os_version: Option<String> = None;
+
+    for text in [&stderr_text, &stdout_text] {
+        for line in text.lines() {
+            let trimmed = line.trim();
+            if os_name.is_none() {
+                if let Some(rest) = trimmed.strip_prefix("os.name") {
+                    let value = rest.trim_start_matches('=').trim();
+                    if !value.is_empty() {
+                        os_name = Some(value.to_string());
+                    }
+                }
+            }
+            if os_version.is_none() {
+                if let Some(rest) = trimmed.strip_prefix("os.version") {
+                    let value = rest.trim_start_matches('=').trim();
+                    if !value.is_empty() {
+                        os_version = Some(value.to_string());
+                    }
+                }
+            }
+            if os_name.is_some() && os_version.is_some() {
+                break;
+            }
+        }
+        if os_name.is_some() && os_version.is_some() {
+            break;
+        }
+    }
+    (os_name, os_version)
+}
+
 /// 检测游戏是否完全启动（JVM 启动、加载完资源、主窗口就绪）
 /// 通过 Minecraft 日志中的标志性字符串判断
 fn is_game_fully_started(line: &str) -> bool {
@@ -541,7 +597,7 @@ pub fn build_jvm_arguments(
 fn build_jvm_arguments_inner(
     _app_handle: tauri::AppHandle,
     minecraft_path: &str,
-    _java_path: &str,
+    java_path: &str,
     wrapper_path: &str,
     max_memory: &str,
     version_name: &str,
@@ -1712,21 +1768,30 @@ fn build_jvm_arguments_inner(
         }
     }
 
-    let os_name_str = if is_windows {
-        // Windows 的 os.name 通常是 "Windows 10"、"Windows 11" 等
-        // 这里用通用的 "Windows" 作为兜底
-        "Windows"
-    } else if is_macos {
-        // macOS 新版返回 "Mac OS"，旧版 LWJGL 需要 "Mac OS X"
-        "Mac OS X"
+    // 优先通过 java -XshowSettings:properties -version 动态获取 os.name 和 os.version
+    // 某些 Linux 发行版（如 NixOS、Arch）下，Java 报告的 os.name 与 LWJGL 期望不一致
+    // 如果检测失败，回退到编译期判断的默认值
+    let (os_name_from_java, os_version_from_java) = detect_os_properties_from_java(java_path);
+
+    let os_name_str: String = if let Some(ref name) = os_name_from_java {
+        name.clone()
     } else {
-        // Linux 通常返回 "Linux"
-        "Linux"
+        if is_windows {
+            "Windows".to_string()
+        } else if is_macos {
+            "Mac OS X".to_string()
+        } else {
+            "Linux".to_string()
+        }
     };
+
+    let os_version_str: String = os_version_from_java
+        .unwrap_or_else(|| os_info.version().to_string());
+
     let fixed_params = vec![
-        // 强制设置 os.name 和 os.version 为标准值，避免 LWJGL 识别失败
+        // 强制设置 os.name 和 os.version 为 Java 实际检测到的值，避免 LWJGL 识别失败
         format!("-Dos.name={}", os_name_str),
-        format!("-Dos.version={}", os_info.version()),
+        format!("-Dos.version={}", os_version_str),
         format!("-DlibraryDirectory={}", format_path(minecraft_path_buf.join("libraries"))),
     ];
 
