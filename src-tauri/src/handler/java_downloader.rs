@@ -12,6 +12,39 @@ use std::time::Duration;
 use tauri::Emitter;
 
 const JAVA_MANIFEST_URL: &str = "https://launchermeta.mojang.com/v1/products/java-runtime/2ec0cc96c44e5a76b9c8b7c39df7210883d12871/all.json";
+const BMCL_JAVA_MANIFEST_URL: &str = "https://bmclapi2.bangbang93.com/v1/products/java-runtime/2ec0cc96c44e5a76b9c8b7c39df7210883d12871/all.json";
+
+/// 从多个镜像源并行请求 JSON 数据（通用工具）
+async fn fetch_java_manifest(urls: &[&str]) -> Result<JavaManifest, String> {
+    use futures::stream::FuturesUnordered;
+    use futures::StreamExt;
+    let client = reqwest::Client::new();
+    let mut futures = FuturesUnordered::new();
+    for url in urls {
+        let u = url.to_string();
+        let c = client.clone();
+        futures.push(async move {
+            let resp = c
+                .get(&u)
+                .send()
+                .await
+                .map_err(|e| e.to_string())?;
+            let resp = resp.error_for_status().map_err(|e| e.to_string())?;
+            let json: JavaManifest = resp.json().await.map_err(|e| e.to_string())?;
+            Ok::<JavaManifest, String>(json)
+        });
+    }
+    let mut last_err: Option<String> = None;
+    while let Some(result) = futures.next().await {
+        match result {
+            Ok(data) => return Ok(data),
+            Err(e) => {
+                last_err = Some(e);
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| "所有镜像源均请求失败".to_string()))
+}
 // 减少并发下载数，避免被服务器限流
 const MAX_CONCURRENT_DOWNLOADS: usize = 8;
 const DOWNLOAD_BUFFER_SIZE: usize = 65536;
@@ -129,16 +162,9 @@ fn get_platform_identifier() -> &'static str {
 
 #[tauri::command]
 pub async fn get_java_versions() -> Result<Vec<JavaVersionInfo>, String> {
-    let client = reqwest::Client::new();
-    let response = client.get(JAVA_MANIFEST_URL).send().await
+    let manifest = fetch_java_manifest(&[JAVA_MANIFEST_URL, BMCL_JAVA_MANIFEST_URL])
+        .await
         .map_err(|e| format!("获取Java版本列表失败: {}", e))?;
-
-    if !response.status().is_success() {
-        return Err(format!("获取Java版本列表失败: HTTP {}", response.status()));
-    }
-
-    let manifest: JavaManifest = response.json().await
-        .map_err(|e| format!("解析Java版本列表失败: {}", e))?;
 
     let platform = get_platform_identifier();
     if platform == "unknown" {
@@ -172,12 +198,9 @@ pub async fn download_java_runtime(
     task_id: u64,
     window: tauri::Window,
 ) -> Result<DownloadResult, String> {
-    let client = reqwest::Client::new();
-    let response = client.get(JAVA_MANIFEST_URL).send().await
+    let manifest = fetch_java_manifest(&[JAVA_MANIFEST_URL, BMCL_JAVA_MANIFEST_URL])
+        .await
         .map_err(|e| format!("获取Java版本列表失败: {}", e))?;
-
-    let manifest: JavaManifest = response.json().await
-        .map_err(|e| format!("解析Java版本列表失败: {}", e))?;
 
     let platform = get_platform_identifier();
     let platform_data = manifest.platforms.get(platform)

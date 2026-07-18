@@ -1,3 +1,4 @@
+mod app_paths;
 mod auth;
 mod handler;
 mod downloader;

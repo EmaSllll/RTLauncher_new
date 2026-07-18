@@ -18,7 +18,11 @@ type SkinPreviewProps = {
  * - 无皮肤/未登录：显示"点击创建账户"提示
  */
 export function SkinPreview({ profile }: SkinPreviewProps) {
-  const hasSkin = !!profile?.skinUrl;
+  // 只有当 skinUrl 是有效的 base64 皮肤 data URI 时才渲染 3D 皮肤
+  // 这样避免把 UUID 或其他无效字符串当作图片 URL 加载
+  const hasSkin = !!(
+    profile?.skinUrl && profile.skinUrl.startsWith("data:image")
+  );
   const displayName = profile?.name ?? "尚未登录";
 
   return (

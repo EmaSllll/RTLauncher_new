@@ -529,11 +529,13 @@ pub fn build_jvm_arguments(
     window_width: &str,
     window_height: &str
 ) -> Result<String, String> {
-    build_jvm_arguments_inner(
+    let args = build_jvm_arguments_inner(
         app, minecraft_path, java_path, wrapper_path, max_memory, version_name,
         player_name, auth_token, uuid, authlib_injector_path, yggdrasil_api,
         prefetched_data, loadType, loadName, window_width, window_height,
-    ).map_err(|e| e.to_string())
+    ).map_err(|e| e.to_string())?;
+    // 用换行连接参数，方便前端逐行展示，避免空格切分问题
+    Ok(args.join("\n"))
 }
 
 fn build_jvm_arguments_inner(
@@ -553,7 +555,7 @@ fn build_jvm_arguments_inner(
     loadName: &str,
     window_width: &str,
     window_height: &str
-) -> anyhow::Result<String> {
+) -> anyhow::Result<Vec<String>> {
     let minecraft_path_buf = PathBuf::from(minecraft_path);
 
     // 如果 uuid 为空或不合法，根据玩家名生成离线 UUID
@@ -1710,14 +1712,20 @@ fn build_jvm_arguments_inner(
         }
     }
 
+    let os_name_str = if is_windows {
+        // Windows 的 os.name 通常是 "Windows 10"、"Windows 11" 等
+        // 这里用通用的 "Windows" 作为兜底
+        "Windows"
+    } else if is_macos {
+        // macOS 新版返回 "Mac OS"，旧版 LWJGL 需要 "Mac OS X"
+        "Mac OS X"
+    } else {
+        // Linux 通常返回 "Linux"
+        "Linux"
+    };
     let fixed_params = vec![
-        // 新版 macOS 的 os.name 返回 "Mac OS" 而非 "Mac OS X"，旧版 LWJGL 不识别
-        // 强制设为 "Mac OS X" 以确保 LWJGL 正确识别平台
-        if OS == "macos" {
-            "-Dos.name=Mac OS X".to_string()
-        } else {
-            format!("-Dos.name={}", os_info.os_type())
-        },
+        // 强制设置 os.name 和 os.version 为标准值，避免 LWJGL 识别失败
+        format!("-Dos.name={}", os_name_str),
         format!("-Dos.version={}", os_info.version()),
         format!("-DlibraryDirectory={}", format_path(minecraft_path_buf.join("libraries"))),
     ];
@@ -2077,9 +2085,7 @@ fn build_jvm_arguments_inner(
     }
     println!("=== 参数列表结束 ===");
 
-    let arg = args.join(" ");
-    println!("{}", arg);
-    Ok(arg)
+    Ok(args)
 }
 
 /// 启动游戏（构建参数并执行 Java 进程）
@@ -2102,17 +2108,19 @@ pub fn launch_game(
     window_width: &str,
     window_height: &str
 ) -> Result<String, String> {
-    // 先构建参数
-    let arg_string = build_jvm_arguments_inner(
+    // 先构建参数（直接使用 Vec<String>，避免空格切分问题）
+    let args = build_jvm_arguments_inner(
         app.clone(),
         minecraft_path, java_path, wrapper_path, max_memory, version_name,
         player_name, auth_token, uuid, authlib_injector_path, yggdrasil_api,
         prefetched_data, loadType, loadName, window_width, window_height,
     ).map_err(|e| e.to_string())?;
 
+    let arg_string = args.join("\n");
+
     // 再启动游戏
     run_command(
-        arg_string.split_whitespace().map(|s| s.to_string()).collect(),
+        args,
         PathBuf::from(java_path),
         PathBuf::from(minecraft_path),
         app,

@@ -34,12 +34,7 @@ impl CacheResourceKind {
 pub fn cache_root_dir() -> Result<PathBuf, String> {
     #[cfg(target_os = "windows")]
     let base_dir = {
-        let exe_dir = std::env::current_exe()
-            .map_err(|e| e.to_string())?
-            .parent()
-            .map(|d| d.to_path_buf())
-            .unwrap_or_else(|| PathBuf::from("."));
-        exe_dir.join("minecraft")
+        PathBuf::from("./RTL")
     };
     #[cfg(target_os = "macos")]
     let base_dir = {
@@ -48,7 +43,10 @@ pub fn cache_root_dir() -> Result<PathBuf, String> {
             .join("Library/Application Support/RTLauncher")
     };
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let base_dir = PathBuf::from("./minecraft");
+    let base_dir = {
+        use crate::app_paths::linux_cache_dir;
+        linux_cache_dir()
+    };
     let cache_root = base_dir.join("cache");
     std::fs::create_dir_all(&cache_root).map_err(|e| e.to_string())?;
     Ok(cache_root)

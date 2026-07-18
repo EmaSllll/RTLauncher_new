@@ -38,7 +38,29 @@ struct LauncherPathsConfig {
     pub default_minecraft_path: String,
 }
 fn launcher_config_path() -> PathBuf {
-    PathBuf::from("./RTL/config").join("launcher.json")
+    #[cfg(target_os = "macos")]
+    let dir = {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        PathBuf::from(format!("{}/Library/Application Support/RTLauncher/config", home))
+    };
+    #[cfg(not(target_os = "macos"))]
+    let dir = PathBuf::from("./RTL/config");
+
+    let _ = fs::create_dir_all(&dir);
+    dir.join("launcher.json")
+}
+
+fn java_download_dir() -> PathBuf {
+    #[cfg(target_os = "macos")]
+    let dir = {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        PathBuf::from(format!("{}/Library/Application Support/RTLauncher/java", home))
+    };
+    #[cfg(not(target_os = "macos"))]
+    let dir = PathBuf::from("./RTL/java");
+
+    let _ = fs::create_dir_all(&dir);
+    dir
 }
 fn read_launcher_java_config() -> Option<(Vec<String>, HashMap<String, JavaInstallationInfo>, String)> {
     let path = launcher_config_path();
@@ -128,7 +150,7 @@ pub fn pick_java_executable(mc_version: &str) -> String {
         println!("[JavaPicker] 使用 selected_java_path: {}", selected_java);
         return selected_java;
     }
-    let java_download_dir = PathBuf::from("./RTL/java");
+    let java_download_dir = java_download_dir();
     if java_download_dir.exists() {
         if let Ok(read_dir) = fs::read_dir(&java_download_dir) {
             for entry in read_dir.flatten() {

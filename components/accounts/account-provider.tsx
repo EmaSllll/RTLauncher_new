@@ -91,12 +91,35 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
   const msLoginVersionRef = React.useRef<number>(0);
 
   // 客户端挂载后从 localStorage 恢复数据，避免 SSR hydration 不匹配
+  // 同时：对于 skinUrl 不是 base64 data URI 的账户（即之前只保存了 UUID 或空），
+  //       异步从后端获取皮肤 base64，供 3D 皮肤显示
   useEffect(() => {
     const all = loadProfiles();
     const id = loadSelectedId();
     const selected = all.find((p) => p.id === id) ?? all[0] ?? null;
     setProfiles(all);
     setSelectedProfile(selected);
+
+    // 对每个需要的账户异步获取皮肤
+    all.forEach((profile) => {
+      // 如果 skinUrl 不是有效的 base64 皮肤 data URI，则重新获取
+      const hasValidSkin =
+        profile.skinUrl && profile.skinUrl.startsWith("data:image");
+      // 离线账户没有 uuid（只有 name），不需要获取皮肤
+      if (!hasValidSkin && profile.uuid && profile.authType !== "offline") {
+        getSkinBase64(profile.uuid)
+          .then((skinSrc) => {
+            setProfiles((prev) =>
+              prev.map((p) =>
+                p.id === profile.id ? { ...p, skinUrl: skinSrc } : p
+              )
+            );
+          })
+          .catch(() => {
+            // 静默失败：皮肤获取失败不影响账户使用
+          });
+      }
+    });
   }, []);
 
   // 持久化
@@ -154,6 +177,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
   );
 
   const addLittleSkinAccount = useCallback((account: LittleSkinAccount) => {
+    // 初始化时 skinUrl 设为 undefined（不把 UUID 当作图片 URL）
     const newAccount: Account = {
       id: `ls-${account.uuid}`,
       name: account.name,
@@ -161,7 +185,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       authType: "littleskin",
       status: "LittleSkin 登录",
       accessToken: account.access_token,
-      skinUrl: account.skin_url ?? undefined,
+      skinUrl: undefined,
     };
     setProfiles((prev) => {
       const filtered = prev.filter((p) => p.uuid !== account.uuid || p.authType !== "littleskin");
@@ -169,8 +193,8 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     });
     setSelectedProfile(newAccount);
     // 异步获取皮肤 base64（皮肤已经下载到本地）
-    if (account.skin_url) {
-      getSkinBase64(account.skin_url)
+    if (account.uuid) {
+      getSkinBase64(account.uuid)
         .then((skinSrc) => {
           setProfiles((prev) =>
             prev.map((p) =>
@@ -197,7 +221,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
         authType: "littleskin",
         status: "LittleSkin 登录",
         accessToken: info.access_token,
-        skinUrl: info.skin_url ?? undefined,
+        skinUrl: undefined,  // 不把 UUID 当作图片 URL
       };
       setProfiles((prev) => {
         const filtered = prev.filter(
@@ -207,8 +231,8 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       });
       setSelectedProfile(newAccount);
       // 异步获取皮肤 base64
-      if (info.skin_url) {
-        getSkinBase64(info.skin_url)
+      if (info.uuid) {
+        getSkinBase64(info.uuid)
           .then((skinSrc) => {
             setProfiles((prev) =>
               prev.map((p) =>

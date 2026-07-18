@@ -33,9 +33,15 @@ pub fn read_file_base64(path: String) -> Result<String, String> {
 pub fn get_system_memory() -> MemoryInfo {
     let mut sys = System::new();
     sys.refresh_memory();
+
     let total_mb = sys.total_memory() / 1024 / 1024;
     let used_mb = sys.used_memory() / 1024 / 1024;
+
+    // macOS 上 sysinfo 的 available_memory() 有时报告偏小，
+    // 因为 macOS 的 memory/compressed 模型不会把 inactive + compressed
+    // 全部视为"可用"。这里取 total - used 作为保守估计。
     let available_mb = total_mb.saturating_sub(used_mb);
+
     // 推荐分配：可用内存的 80%，同时设置合理上下限
     //  - 至少 512 MB，最多总内存的 90%
     let raw_recommended = (available_mb as f64 * 0.8) as u64;
@@ -105,6 +111,12 @@ pub fn optimize_memory_usage() -> Result<MemoryOptimizationReport, String> {
     // 1. 读取清理前的内存状态
     sys.refresh_memory();
     let total_kb = sys.total_memory();
+
+    // macOS 上 sysinfo 的 available_memory() 报告值偏小（不包含 compressed/inactive），
+    // 这里使用 total - used 作为保守估计，与 get_system_memory 保持一致。
+    #[cfg(target_os = "macos")]
+    let available_before_kb = total_kb.saturating_sub(sys.used_memory());
+    #[cfg(not(target_os = "macos"))]
     let available_before_kb = sys.available_memory();
 
     // 2. 平台专属清理
@@ -127,6 +139,9 @@ pub fn optimize_memory_usage() -> Result<MemoryOptimizationReport, String> {
 
     // 4. 再次读取内存状态
     sys.refresh_memory();
+    #[cfg(target_os = "macos")]
+    let available_after_kb = total_kb.saturating_sub(sys.used_memory());
+    #[cfg(not(target_os = "macos"))]
     let available_after_kb = sys.available_memory();
 
     let total_mb = total_kb / 1024 / 1024;
@@ -200,19 +215,101 @@ fn platform_trim_current_process(methods: &mut Vec<String>) {
 
     #[cfg(target_os = "macos")]
     {
-        // macOS 上用 malloc_zone_pressure_relief(NULL, 0) 让 malloc
-        // 在内存压力下主动放弃未用的区域；不需要额外权限。
+        // macOS 上主动告诉系统可以丢弃我们的冷内存页：
+        //   1) malloc_zone_pressure_relief(NULL, 0)：让 malloc 主动收缩各 zone
+        //   2) posix_madvise(DONTNEED)：扫描 /proc/self/maps 上的文件映射并告诉内核可回收
+        let mut any_ok = false;
+
         extern "C" {
             fn malloc_zone_pressure_relief(
                 zone: *mut libc::c_void,
                 goal: usize,
             ) -> usize;
+            fn malloc_zone_for_each(
+                callback: extern "C" fn(
+                    zone: *mut libc::c_void,
+                    info: *mut libc::c_void,
+                    u: *mut libc::c_void,
+                ),
+            );
         }
+
         unsafe {
             let n = malloc_zone_pressure_relief(std::ptr::null_mut(), 0);
-            if n > 0 {
-                methods.push(format!("macos.pressure_relief({})", n));
+            if n > 0 { any_ok = true; }
+        }
+
+        // 通过 task / vm region 枚举当前进程的内存映射，对文件映射调用
+        // posix_madvise(DONTNEED) 让内核释放文件缓存页
+        unsafe {
+            use libc::{c_int, mach_port_t, task_t};
+            use std::ptr;
+
+            extern "C" {
+                fn mach_task_self() -> mach_port_t;
+                fn vm_region(
+                    target_task: task_t,
+                    address: *mut u64,
+                    size: *mut u64,
+                    flavor: c_int,
+                    info: *mut u8,
+                    count: *mut c_int,
+                    object_name: *mut mach_port_t,
+                ) -> c_int;
+                fn mach_port_deallocate(task: task_t, name: mach_port_t) -> c_int;
             }
+
+            const VM_REGION_BASIC_INFO: c_int = 10;
+            const SM_COW: c_int = 77;       // shared memory flag value
+            const MACH_PORT_NULL: mach_port_t = 0;
+
+            #[repr(C)]
+            #[derive(Default)]
+            struct VmRegionBasicInfo {
+                protection: i32,
+                max_protection: i32,
+                inheritance: u32,
+                shared: u32,
+                reserved: u32,
+                offset: u64,
+                behavior: u32,
+                user_wired_count: u16,
+            }
+
+            let task = mach_task_self();
+            let mut addr: u64 = 0;
+            let mut size: u64 = 0;
+            let mut info: VmRegionBasicInfo = std::mem::zeroed();
+            let mut count: c_int = (std::mem::size_of::<VmRegionBasicInfo>() / 4) as c_int;
+            let mut object: mach_port_t = MACH_PORT_NULL;
+
+            loop {
+                let kr = vm_region(
+                    task, &mut addr, &mut size, VM_REGION_BASIC_INFO,
+                    &mut info as *mut _ as *mut u8, &mut count, &mut object,
+                );
+                if kr != 0 { break; }
+                if object != MACH_PORT_NULL {
+                    mach_port_deallocate(task, object);
+                    object = MACH_PORT_NULL;
+                }
+
+                // 对文件-backed 映射（non-zero offset 或 shared 的区域）调用 madvise
+                if info.offset != 0 || info.shared == SM_COW as u32 {
+                    let p = addr as *mut libc::c_void;
+                    let s = size as libc::size_t;
+                    // POSIX_MADV_DONTNEED = 4（macOS 定义）
+                    libc::posix_madvise(p, s, 4);
+                }
+
+                addr = addr.checked_add(size).unwrap_or(0);
+                if addr == 0 { break; }
+            }
+            any_ok = true;
+        }
+
+        if any_ok {
+            methods.push("macos.trim_regions".to_string());
         }
     }
 }
@@ -260,15 +357,48 @@ fn platform_drop_file_caches(methods: &mut Vec<String>) {
 
     #[cfg(target_os = "macos")]
     {
-        // macOS 的 `purge` 需要 sudo，权限不够就直接跳过
-        // 但我们也可以用 fsync(...) 对活跃文件做一些温和 flush
-        unsafe { libc::fsync(libc::STDIN_FILENO) };
-        // 尝试调用 `/usr/bin/purge`（需要 sudo，没权限就忽略）
-        let status = std::process::Command::new("/usr/bin/purge").status();
-        if let Ok(s) = status {
-            if s.success() {
-                methods.push("macos.purge".to_string());
+        // macOS 的 `purge` 需要 sudo，普通应用无法直接执行。
+        // 我们用以下手段来释放文件缓存（均不需要权限）：
+        //   1) sync()：让所有脏页写回磁盘
+        //   2) 枚举已挂载的文件系统，对其 fd 调用 fcntl(F_NOCACHE)
+        //      （温和地让内核不要保留这些文件缓存）
+        //   3) 尝试通过 Apple 提供的"内存 pressure"机制释放非活跃内存
+        unsafe {
+            libc::sync();
+            methods.push("macos.sync".to_string());
+        }
+
+        // 枚举 /tmp 和系统临时文件，对它们 open 后用 fcntl 设 F_NOCACHE
+        // F_NOCACHE = 48 (macOS)：告诉内核不要把该 fd 的读写缓存保留
+        const F_NOCACHE: i32 = 48;
+        let targets = [
+            "/var/db",
+            "/tmp",
+            "/private/tmp",
+            "/System/Library/Caches",
+        ];
+        let mut triggered = 0usize;
+        for t in targets.iter() {
+            if let Ok(entries) = std::fs::read_dir(t) {
+                for entry in entries.flatten() {
+                    if triggered >= 64 { break; }
+                    let path = entry.path();
+                    if path.is_file() {
+                        let raw = std::ffi::CString::new(path.to_string_lossy().as_bytes());
+                        if let Ok(c_path) = raw {
+                            let fd = unsafe { libc::open(c_path.as_ptr(), libc::O_RDONLY) };
+                            if fd >= 0 {
+                                unsafe { libc::fcntl(fd, F_NOCACHE, 1); }
+                                unsafe { libc::close(fd); }
+                                triggered += 1;
+                            }
+                        }
+                    }
+                }
             }
+        }
+        if triggered > 0 {
+            methods.push(format!("macos.f_nocache({} files)", triggered));
         }
     }
 }
@@ -380,7 +510,110 @@ fn platform_try_empty_system_caches(methods: &mut Vec<String>) {
 
     #[cfg(target_os = "macos")]
     {
-        // macOS：上面已试过 `purge`，这里不再重复。
+        // macOS 上的"purge"思路：普通权限下我们无法直接调用系统 purge，
+        // 但我们可以通过以下方式让系统回收 inactive/compressed 的内存：
+        //
+        //   1) 用 sysctl 读取当前内存压力：machdep.memorystatus_level
+        //   2) 使用 xnu 提供的 libc 的 setpriority(PRIO_DARWIN_ROLE, ...)
+        //      或使用 mach 让内核压缩清理其他进程的冷内存
+        //
+        // 最有效的普通权限手段：分配一块较大的内存然后释放，
+        // 迫使 macOS 的 memorystatus/compressor 工作，从而释放 inactive 页。
+        // 这里我们做"内存压力"式的分配：先用 mmap 分配大块，
+        // touch 页面让内核实际提交物理内存，然后用 madvise(DONTNEED)
+        // 告诉内核可以丢弃它们，最后 munmap。
+
+        unsafe {
+            use libc::{c_int, c_void, size_t};
+
+            // 获取当前系统总内存（sysctl hw.memsize）
+            let mut total: u64 = 0;
+            let mut total_len: size_t = std::mem::size_of::<u64>();
+            let name: [c_int; 2] = [6 /* CTL_HW */, 24 /* HW_MEMSIZE */];
+            extern "C" {
+                fn sysctl(
+                    name: *const c_int,
+                    namelen: c_int,
+                    oldp: *mut c_void,
+                    oldlenp: *mut size_t,
+                    newp: *const c_void,
+                    newlen: size_t,
+                ) -> c_int;
+            }
+            let ret = sysctl(
+                name.as_ptr(), 2,
+                &mut total as *mut u64 as *mut c_void,
+                &mut total_len,
+                std::ptr::null(), 0,
+            );
+            if ret == 0 && total > 0 {
+                // 分配总内存 10% 的内存（但不超过 1GB），迫使内存压缩器工作
+                let mut target = (total / 10) as size_t;
+                let cap: size_t = 1024 * 1024 * 1024; // 1GB 上限
+                if target > cap { target = cap; }
+
+                // 对齐到页面大小
+                let page_size = libc::sysconf(libc::_SC_PAGESIZE) as size_t;
+                if page_size > 0 {
+                    target = (target / page_size) * page_size;
+                }
+
+                if target > 0 {
+                    let mut ok_rounds = 0usize;
+                    // 分多次分配：一次 256MB，让内核有机会逐步回收
+                    let step: size_t = 256 * 1024 * 1024;
+                    let mut remain = target;
+                    while remain > 0 {
+                        let this = if remain > step { step } else { remain };
+                        let ptr = libc::mmap(
+                            std::ptr::null_mut(),
+                            this,
+                            libc::PROT_READ | libc::PROT_WRITE,
+                            libc::MAP_ANON | libc::MAP_PRIVATE,
+                            -1, 0,
+                        );
+                        if ptr == libc::MAP_FAILED {
+                            break;
+                        }
+                        // touch 每页迫使内核分配物理页
+                        let mut offset = 0isize;
+                        while offset < this as isize {
+                            let p = ptr.offset(offset) as *mut u8;
+                            *p = 1;
+                            offset += 4096;
+                        }
+                        // MADV_FREE = 5（macOS XNU 的值）：
+                        // 告诉内核这些页面不需要保留，可以随时回收
+                        libc::madvise(ptr, this, 5);
+                        libc::munmap(ptr, this);
+                        ok_rounds += 1;
+                        remain -= this;
+
+                        // 给内核一点时间来反映压缩/回收
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                    }
+
+                    if ok_rounds > 0 {
+                        methods.push(format!(
+                            "macos.pressure_alloc({} rounds, ~{}MB)",
+                            ok_rounds,
+                            (ok_rounds * 256)
+                        ));
+                    }
+                }
+            }
+        }
+
+        // 再试一次 purge 命令（带 sudo 提示的失败不影响）
+        let status = std::process::Command::new("/usr/bin/purge")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        if let Ok(s) = status {
+            if s.success() {
+                methods.push("macos.purge".to_string());
+            }
+        }
     }
 }
 
@@ -403,21 +636,50 @@ fn platform_memory_jitter_size_bytes() -> u64 {
 
 /// 分配 size 字节内存、touch 每个 4KB 页一次、然后释放。
 fn memory_jitter(size: u64) {
-    // 用 Vec<u8> 的零初始化 + 写入，避免 reserve 后未提交的虚拟内存
     let size = size as usize;
-    let mut v: Vec<u8> = vec![0u8; size];
 
-    // touch 每 4KB 页：让操作系统实际提交物理页
-    let page = 4096usize;
-    let mut i = 0usize;
-    while i < size {
-        v[i] = 1;
-        i += page;
+    #[cfg(target_os = "macos")]
+    {
+        // macOS：直接用 mmap 分配匿名内存，touch 每页，
+        // 然后用 MADV_FREE (5) 让内核丢弃，最后 munmap。
+        // 这直接触发内存压缩器，比 Vec<u8> 更可靠。
+        unsafe {
+            let ptr = libc::mmap(
+                std::ptr::null_mut(),
+                size,
+                libc::PROT_READ | libc::PROT_WRITE,
+                libc::MAP_ANON | libc::MAP_PRIVATE,
+                -1, 0,
+            );
+            if ptr != libc::MAP_FAILED {
+                let page = 4096isize;
+                let mut off = 0isize;
+                let max = size as isize;
+                while off < max {
+                    let p = ptr.offset(off) as *mut u8;
+                    *p = 1;
+                    off += page;
+                }
+                // MADV_FREE = 5：告诉内核可以丢弃这些页
+                libc::madvise(ptr, size, 5);
+                libc::munmap(ptr, size);
+            }
+        }
     }
-    v[size - 1] = 1;
 
-    // 立即释放
-    drop(v);
+    #[cfg(not(target_os = "macos"))]
+    {
+        // 其他平台：用 Vec<u8> 的零初始化 + 写入
+        let mut v: Vec<u8> = vec![0u8; size];
+        let page = 4096usize;
+        let mut i = 0usize;
+        while i < size {
+            v[i] = 1;
+            i += page;
+        }
+        v[size - 1] = 1;
+        drop(v);
+    }
 }
 
 // 在非三大平台上，给 linker 一个空实现，避免编译失败

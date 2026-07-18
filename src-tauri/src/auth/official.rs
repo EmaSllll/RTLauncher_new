@@ -521,8 +521,11 @@ pub fn download_skin_blocking(uuid: &str, sessionserver_base: &str) -> Result<()
     let uuid_with_hyphens = format_uuid_with_hyphens(uuid);
     let uuid_without_hyphens = format_uuid_without_hyphens(uuid);
 
-    // 尝试多个 UUID 格式的 URL
+    // 尝试多个 UUID 格式的 URL，加 unsigned=false 确保 textures 被返回
+    // Yggdrasil 协议要求加上此参数；不加 LittleSkin 可能不返回 properties
     let urls = vec![
+        format!("{}/session/minecraft/profile/{}?unsigned=false", base, uuid_with_hyphens),
+        format!("{}/session/minecraft/profile/{}?unsigned=false", base, uuid_without_hyphens),
         format!("{}/session/minecraft/profile/{}", base, uuid_with_hyphens),
         format!("{}/session/minecraft/profile/{}", base, uuid_without_hyphens),
     ];
@@ -590,8 +593,7 @@ pub fn download_littleskin_skin(uuid: &str) -> Result<(), String> {
     match download_skin_blocking(uuid, littleskin_base) {
         Ok(()) => Ok(()),
         Err(_) => {
-            // Fallback：尝试从 LittleSkin 的 textures API 直接获取
-            // https://littleskin.cn/textures/{uuid}.png
+            // Fallback：尝试从 LittleSkin 的多种皮肤 URL 直接获取 PNG
             let profile_dir = format!("{}/skins", super::config_dir());
             let client = reqwest::blocking::Client::builder()
                 .user_agent("RTLauncher/1.0")
@@ -599,18 +601,27 @@ pub fn download_littleskin_skin(uuid: &str) -> Result<(), String> {
                 .unwrap_or_else(|_| reqwest::blocking::Client::new());
 
             let cleaned_uuid = format_uuid_with_hyphens(uuid);
+            let bare_uuid = format_uuid_without_hyphens(uuid);
             let fallback_urls = vec![
+                // LittleSkin 官方皮肤 URL（含多种格式）
                 format!("https://littleskin.cn/textures/{}.png", cleaned_uuid),
-                format!("https://littleskin.cn/textures/{}.png", format_uuid_without_hyphens(uuid)),
+                format!("https://littleskin.cn/textures/{}.png", bare_uuid),
+                format!("https://littleskin.cn/skin/{}.png", cleaned_uuid),
+                format!("https://littleskin.cn/skin/{}.png", bare_uuid),
+                // 通过 mcskin.littleservice.cn 镜像获取（LittleSkin 官方推荐）
+                format!("https://mcskin.littleservice.cn/skin/{}.png", cleaned_uuid),
+                format!("https://mcskin.littleservice.cn/skin/{}.png", bare_uuid),
             ];
 
             for url in &fallback_urls {
                 if let Ok(resp) = client.get(url).send() {
                     if resp.status().is_success() {
                         if let Ok(bytes) = resp.bytes() {
-                            let skin_path = format!("{}/{}.png", profile_dir, cleaned_uuid);
-                            if fs::write(&skin_path, bytes).is_ok() {
-                                return Ok(());
+                            if !bytes.is_empty() {
+                                let skin_path = format!("{}/{}.png", profile_dir, cleaned_uuid);
+                                if fs::write(&skin_path, bytes).is_ok() {
+                                    return Ok(());
+                                }
                             }
                         }
                     }
