@@ -77,6 +77,31 @@ pub async fn install_fabric_loader(mc_version: &str, loader_version: &str, mc_fo
         "https://maven.fabricmc.net"
     };
     download_libraries(&profile.libraries, maven_base_url, mc_folder_path).await?;
+    
+    // 确保 options.txt 存在并设置语言为中文
+    let options_path = versions_dir.join("options.txt");
+    if options_path.exists() {
+        let content = fs::read_to_string(&options_path)?;
+        if content.contains("lang:") {
+            let new_content = content
+                .lines()
+                .map(|line| {
+                    if line.trim().starts_with("lang:") {
+                        "lang:zh_cn"
+                    } else {
+                        line
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            fs::write(&options_path, new_content)?;
+        } else {
+            fs::write(&options_path, format!("{}\nlang:zh_cn", content))?;
+        }
+    } else {
+        fs::write(&options_path, "lang:zh_cn")?;
+    }
+    
     println!("Fabric Loader 安装完成，版本 ID: {}", version_id);
     Ok(version_id)
 }

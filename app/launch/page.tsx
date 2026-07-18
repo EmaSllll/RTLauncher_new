@@ -27,7 +27,7 @@ export default function LaunchPage() {
         </div>
       </div>
 
-      {/* 主内容区 */}
+      {/* 主内容区 - 填充页面剩余高度，左右容器等高 */}
       <div className="flex flex-col lg:flex-row gap-4 flex-1 min-h-0">
         {/* 左侧 - 启动配置 */}
         <motion.div
@@ -35,7 +35,7 @@ export default function LaunchPage() {
           initial="initial"
           animate="animate"
           transition={{ delay: 0 }}
-          className="w-full lg:w-1/2 xl:w-3/5 overflow-y-auto min-h-0"
+          className="w-full lg:w-1/2 xl:w-3/5 flex flex-col min-h-0"
         >
           <LaunchConfigCard />
         </motion.div>
@@ -49,9 +49,7 @@ export default function LaunchPage() {
           className="w-full lg:w-1/2 xl:w-2/5 flex flex-col gap-4 min-h-0"
         >
           <LaunchPanel />
-          <div className="flex-1 min-h-0">
-            <LaunchConsole />
-          </div>
+          <LaunchConsole />
         </motion.div>
       </div>
     </div>

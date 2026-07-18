@@ -99,7 +99,7 @@ pub fn install_optifine_alone(
         classpath,
         "net.stevexmh.OptifineInstaller".to_string(),
         minecraft_dir.to_string(),
-        o,
+        o.clone(),
     ];
     println!("执行命令: java {}", args.join(" "));
     println!("工作目录: {}", minecraft_dir);
@@ -144,6 +144,31 @@ pub fn install_optifine_alone(
         println!("OptiFine 安装完成（退出码为0）");
     }
 
+    // 确保 options.txt 存在并设置语言为中文
+    let versions_dir = PathBuf::from(minecraft_dir).join("versions").join(&o);
+    let options_path = versions_dir.join("options.txt");
+    if options_path.exists() {
+        let content = fs::read_to_string(&options_path)?;
+        if content.contains("lang:") {
+            let new_content = content
+                .lines()
+                .map(|line| {
+                    if line.trim().starts_with("lang:") {
+                        "lang:zh_cn"
+                    } else {
+                        line
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            fs::write(&options_path, new_content)?;
+        } else {
+            fs::write(&options_path, format!("{}\nlang:zh_cn", content))?;
+        }
+    } else {
+        fs::write(&options_path, "lang:zh_cn")?;
+    }
+    
     // 清理临时文件
     let _ = fs::remove_file(&target_path);
 

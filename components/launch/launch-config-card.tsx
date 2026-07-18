@@ -288,7 +288,7 @@ ${result}
   };
 
   return (
-    <Card size="sm">
+    <Card size="sm" className="flex flex-col min-h-0 flex-1">
       <CardHeader>
         <CardTitle className="flex items-center justify-between text-sm">
           <div className="flex items-center gap-2">
@@ -306,7 +306,7 @@ ${result}
           </Button>
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="flex-1 min-h-0 overflow-y-auto space-y-4">
         {/* 游戏目录 — 路径列表 */}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">

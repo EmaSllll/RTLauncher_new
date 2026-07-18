@@ -7,6 +7,32 @@ use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use zip::ZipArchive;
+
+async fn ensure_options_lang(version_dir: &Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let options_path = version_dir.join("options.txt");
+    if options_path.exists() {
+        let content = fs::read_to_string(&options_path)?;
+        if content.contains("lang:") {
+            let new_content = content
+                .lines()
+                .map(|line| {
+                    if line.trim().starts_with("lang:") {
+                        "lang:zh_cn"
+                    } else {
+                        line
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            fs::write(&options_path, new_content)?;
+        } else {
+            fs::write(&options_path, format!("{}\nlang:zh_cn", content))?;
+        }
+    } else {
+        fs::write(&options_path, "lang:zh_cn")?;
+    }
+    Ok(())
+}
 #[derive(Debug, Deserialize, Clone)]
 pub struct ProfileLibrary {
     pub name: String,
@@ -614,9 +640,11 @@ pub async fn run_processors_async(
 ) -> Result<usize> {
     let data_map = build_data_map(profile, libraries_dir, installer_path, mc_dir)?;
     let mirrors: &[&str] = &[
-        "https://files.minecraftforge.net/maven/",
         "https://bmclapi2.bangbang93.com/maven/",
+        "https://files.minecraftforge.net/maven/",
         "https://libraries.minecraft.net/",
+        "https://maven.aliyun.com/repository/public/",
+        "https://repo.spongepowered.org/maven/",
         "https://repo1.maven.org/maven2/",
     ];
     let mut all_needed_coords: Vec<String> = Vec::new();

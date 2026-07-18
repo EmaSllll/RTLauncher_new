@@ -44,6 +44,7 @@ type Step = "mc" | "loader" | "version";
 interface VersionSelectorDialogProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  compact?: boolean;
 }
 
 /** 从目录名解析版本信息 */
@@ -118,7 +119,7 @@ const LOADER_DISPLAY: Record<string, { label: string; color: string; order: numb
   liteloader: { label: "LiteLoader", color: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400",   order: 6 },
 };
 
-export function VersionSelectorDialog({ open: controlledOpen, onOpenChange }: VersionSelectorDialogProps = {}) {
+export function VersionSelectorDialog({ open: controlledOpen, onOpenChange, compact }: VersionSelectorDialogProps = {}) {
   const { config, updateConfig } = useLaunchContext();
   const [internalOpen, setInternalOpen] = useState(false);
   const [versions, setVersions] = useState<ParsedVersion[]>([]);
@@ -309,7 +310,10 @@ export function VersionSelectorDialog({ open: controlledOpen, onOpenChange }: Ve
         <DialogTrigger asChild>
           <Button
             variant="outline"
-            className="w-full justify-between text-xs h-8"
+            className={cn(
+              "w-full justify-between text-xs",
+              compact ? "h-7 px-2" : "h-8"
+            )}
           >
             <span className="truncate">
               {config.versionName || "选择游戏版本"}

@@ -77,7 +77,7 @@ export function LaunchConsole() {
 
   return (
     <>
-      <Card size="sm" className="flex flex-col min-h-0">
+      <Card size="sm" className="flex flex-col min-h-0 flex-1">
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-sm">
             <Terminal className="size-4 text-primary" />
@@ -117,7 +117,7 @@ export function LaunchConsole() {
         <CardContent className="flex-1 min-h-0">
           <div
             ref={scrollRef}
-            className="h-48 overflow-y-auto rounded-xl bg-muted/50 p-3 font-mono text-xs leading-relaxed"
+            className="h-full overflow-y-auto rounded-xl bg-muted/50 p-3 font-mono text-xs leading-relaxed"
           >
             {logs.length === 0 ? (
               <p className="text-muted-foreground/50 select-none">

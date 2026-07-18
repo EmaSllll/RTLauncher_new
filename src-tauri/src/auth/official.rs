@@ -1,7 +1,7 @@
 use reqwest::Client;
-use sqlite::State;
+use sqlite::{State, Connection};
 use serde::{Deserialize, Serialize};
-use sqlite::Connection;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::time::sleep;
 use std::fs;
@@ -11,6 +11,9 @@ use tokio::time::Instant;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 use super::AccountInfo;
+
+/// 微软登录取消标志：当用户关闭登录对话框时设置为 true
+static MS_LOGIN_CANCELLED: AtomicBool = AtomicBool::new(false);
 
 const CLIENT_ID: &str = "1662e9cb-e526-4bea-8237-11526075b7f3";
 
@@ -427,6 +430,235 @@ async fn download_player_skin(client: &Client, uuid: &str) -> Result<(), Box<dyn
 
     Ok(())
 }
+
+/// 将 UUID 转换为标准格式（带连字符）
+fn format_uuid_with_hyphens(uuid: &str) -> String {
+    let clean: String = uuid.chars().filter(|c| c.is_alphanumeric()).collect();
+    if clean.len() == 32 {
+        format!(
+            "{}-{}-{}-{}-{}",
+            &clean[0..8],
+            &clean[8..12],
+            &clean[12..16],
+            &clean[16..20],
+            &clean[20..32]
+        )
+    } else {
+        clean
+    }
+}
+
+/// 将 UUID 转换为无连字符格式
+fn format_uuid_without_hyphens(uuid: &str) -> String {
+    uuid.chars().filter(|c| c.is_alphanumeric()).collect()
+}
+
+/// 从给定的 profile JSON 中下载皮肤
+fn download_skin_from_profile_json(
+    client: &reqwest::blocking::Client,
+    profile_json: &serde_json::Value,
+    save_path: &str,
+) -> Result<(), String> {
+    let properties = match profile_json["properties"].as_array() {
+        Some(p) => p,
+        None => return Err("玩家信息中没有 properties".to_string()),
+    };
+
+    let textures_property = match properties.iter()
+        .find(|p| p["name"].as_str() == Some("textures")) {
+        Some(t) => t,
+        None => return Err("没有找到 textures 属性（玩家可能未设置皮肤）".to_string()),
+    };
+
+    let textures_base64 = match textures_property["value"].as_str() {
+        Some(v) => v,
+        None => return Err("textures 值不是字符串".to_string()),
+    };
+
+    let decoded = BASE64.decode(textures_base64)
+        .map_err(|e| format!("base64 解码失败: {}", e))?;
+
+    let textures_json: serde_json::Value = serde_json::from_slice(&decoded)
+        .map_err(|e| format!("解析 textures JSON 失败: {}", e))?;
+
+    let skin_url = match textures_json["textures"]["SKIN"]["url"].as_str() {
+        Some(url) => url.to_string(),
+        None => return Err("没有找到皮肤 URL（玩家可能使用默认皮肤）".to_string()),
+    };
+
+    let skin_response = client.get(&skin_url).send()
+        .map_err(|e| format!("下载皮肤失败: {}", e))?;
+
+    if !skin_response.status().is_success() {
+        return Err(format!("下载皮肤失败 (HTTP {})", skin_response.status()));
+    }
+
+    let skin_bytes = skin_response.bytes()
+        .map_err(|e| format!("读取皮肤数据失败: {}", e))?;
+
+    fs::write(save_path, skin_bytes).map_err(|e| format!("保存皮肤文件失败: {}", e))?;
+
+    Ok(())
+}
+
+/// 通用皮肤下载函数（可用于 Microsoft、LittleSkin、第三方 Yggdrasil）
+/// 从指定的 sessionserver URL 获取 textures 并下载皮肤 PNG 到 ./RTL/config/skins/{uuid}.png
+///
+/// 兼容处理：
+///   - 尝试带连字符的 UUID（xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx）
+///   - 尝试无连字符的 UUID（32 字符）
+///   - 如果 profile 返回的 id 字段与输入不同，优先使用返回的 id 保存
+pub fn download_skin_blocking(uuid: &str, sessionserver_base: &str) -> Result<(), String> {
+    let profile_dir = format!("{}/skins", super::config_dir());
+    fs::create_dir_all(&profile_dir).map_err(|e| format!("创建皮肤目录失败: {}", e))?;
+
+    let client = reqwest::blocking::Client::builder()
+        .user_agent("RTLauncher/1.0")
+        .build()
+        .unwrap_or_else(|_| reqwest::blocking::Client::new());
+
+    let base = sessionserver_base.trim_end_matches('/');
+    let uuid_with_hyphens = format_uuid_with_hyphens(uuid);
+    let uuid_without_hyphens = format_uuid_without_hyphens(uuid);
+
+    // 尝试多个 UUID 格式的 URL
+    let urls = vec![
+        format!("{}/session/minecraft/profile/{}", base, uuid_with_hyphens),
+        format!("{}/session/minecraft/profile/{}", base, uuid_without_hyphens),
+    ];
+
+    let mut last_error: Option<String> = None;
+    let mut profile_json_result: Option<serde_json::Value> = None;
+
+    for url in &urls {
+        match client.get(url).send() {
+            Ok(response) => {
+                if !response.status().is_success() {
+                    last_error = Some(format!("获取玩家信息失败 (HTTP {})", response.status()));
+                    continue;
+                }
+                match response.json::<serde_json::Value>() {
+                    Ok(json) => {
+                        profile_json_result = Some(json);
+                        break;
+                    }
+                    Err(e) => {
+                        last_error = Some(format!("解析玩家信息 JSON 失败: {}", e));
+                    }
+                }
+            }
+            Err(e) => {
+                last_error = Some(format!("请求玩家信息失败: {}", e));
+            }
+        }
+    }
+
+    let profile_json = match profile_json_result {
+        Some(j) => j,
+        None => return Err(last_error.unwrap_or_else(|| "无法获取玩家信息".to_string())),
+    };
+
+    // 从返回的 profile 中获取 id，优先使用返回的 id 保存
+    let saved_uuid = profile_json["id"].as_str()
+        .map(|id| format_uuid_with_hyphens(id))
+        .unwrap_or_else(|| uuid_with_hyphens.clone());
+
+    let skin_path = format!("{}/{}.png", profile_dir, saved_uuid);
+
+    // 从 textures 下载皮肤
+    match download_skin_from_profile_json(&client, &profile_json, &skin_path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // 如果失败，同时尝试使用输入的 uuid 保存（某些情况可能保存路径不一致）
+            let alt_path = format!("{}/{}.png", profile_dir, uuid_with_hyphens);
+            if alt_path != skin_path {
+                if let Ok(()) = download_skin_from_profile_json(&client, &profile_json, &alt_path) {
+                    return Ok(());
+                }
+            }
+            Err(e)
+        }
+    }
+}
+
+/// 专门的 LittleSkin 皮肤下载（因为它可能有特殊的 API 行为）
+pub fn download_littleskin_skin(uuid: &str) -> Result<(), String> {
+    // 同时尝试 LittleSkin 的 sessionserver 和官方 Mojang API
+    // 优先使用 LittleSkin 的 API
+    let littleskin_base = "https://littleskin.cn/api/yggdrasil";
+
+    match download_skin_blocking(uuid, littleskin_base) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            // Fallback：尝试从 LittleSkin 的 textures API 直接获取
+            // https://littleskin.cn/textures/{uuid}.png
+            let profile_dir = format!("{}/skins", super::config_dir());
+            let client = reqwest::blocking::Client::builder()
+                .user_agent("RTLauncher/1.0")
+                .build()
+                .unwrap_or_else(|_| reqwest::blocking::Client::new());
+
+            let cleaned_uuid = format_uuid_with_hyphens(uuid);
+            let fallback_urls = vec![
+                format!("https://littleskin.cn/textures/{}.png", cleaned_uuid),
+                format!("https://littleskin.cn/textures/{}.png", format_uuid_without_hyphens(uuid)),
+            ];
+
+            for url in &fallback_urls {
+                if let Ok(resp) = client.get(url).send() {
+                    if resp.status().is_success() {
+                        if let Ok(bytes) = resp.bytes() {
+                            let skin_path = format!("{}/{}.png", profile_dir, cleaned_uuid);
+                            if fs::write(&skin_path, bytes).is_ok() {
+                                return Ok(());
+                            }
+                        }
+                    }
+                }
+            }
+
+            Err("无法从 LittleSkin 获取皮肤".to_string())
+        }
+    }
+}
+
+/// Tauri 命令：读取本地皮肤 PNG 文件，返回 base64（供前端 3D 展示）
+///
+/// 兼容多种 UUID 格式：优先按传入的 UUID 查找，然后尝试带/不带连字符的格式
+#[tauri::command]
+pub fn get_skin_base64(uuid: String) -> Result<String, String> {
+    let profile_dir = format!("{}/skins", super::config_dir());
+
+    // 生成多个可能的文件名尝试
+    let uuid_with_hyphens = format_uuid_with_hyphens(&uuid);
+    let uuid_without_hyphens = format_uuid_without_hyphens(&uuid);
+
+    let mut candidate_paths = vec![
+        format!("{}/{}.png", profile_dir, uuid),
+    ];
+    // 添加带/不带连字符的候选
+    if uuid != uuid_with_hyphens {
+        candidate_paths.push(format!("{}/{}.png", profile_dir, uuid_with_hyphens));
+    }
+    if uuid != uuid_without_hyphens {
+        candidate_paths.push(format!("{}/{}.png", profile_dir, uuid_without_hyphens));
+    }
+
+    let mut last_error: Option<String> = None;
+    for path in &candidate_paths {
+        match std::fs::read(path) {
+            Ok(bytes) => {
+                let b64 = BASE64.encode(&bytes);
+                return Ok(format!("data:image/png;base64,{}", b64));
+            }
+            Err(e) => {
+                last_error = Some(format!("读取皮肤文件失败: {}", e));
+            }
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| "皮肤文件不存在".to_string()))
+}
 async fn add_new_account(
     client: &Client,
     connection: &Connection,
@@ -532,6 +764,8 @@ fn friendly_net_err(e: impl std::fmt::Display) -> String {
 /// 第一步：请求设备代码，前端展示 user_code 和 verification_uri
 #[tauri::command]
 pub async fn ms_request_device_code() -> Result<DeviceCodeInfo, String> {
+    // 重置取消标志（新的一次登录流程开始）
+    MS_LOGIN_CANCELLED.store(false, Ordering::SeqCst);
     let client = build_http_client()?;
     let resp = get_device_code(&client, CLIENT_ID)
         .await
@@ -555,11 +789,21 @@ pub async fn ms_poll_and_login(device_code: String, interval: u64) -> Result<Acc
     let timeout = Duration::from_secs(300); // 5 分钟超时
 
     loop {
+        // 检查用户是否已取消登录
+        if MS_LOGIN_CANCELLED.load(Ordering::SeqCst) {
+            return Err("已取消登录".to_string());
+        }
+
         if start_time.elapsed() >= timeout {
             return Err("登录超时，请重试".to_string());
         }
 
         sleep(Duration::from_secs(interval)).await;
+
+        // sleep 之后再次检查取消状态
+        if MS_LOGIN_CANCELLED.load(Ordering::SeqCst) {
+            return Err("已取消登录".to_string());
+        }
 
         // 单次轮询尝试
         let params = [
@@ -629,7 +873,7 @@ pub async fn ms_poll_and_login(device_code: String, interval: u64) -> Result<Acc
             uuid: profile.id.clone(),
             auth_type: "microsoft".to_string(),
             access_token: mc_login.access_token.clone(),
-            skin_url: None,
+            skin_url: Some(profile.id.clone()),
         };
 
         // 保存到数据库（非致命，通过 spawn_blocking 隔离 sqlite 线程安全问题）
@@ -663,4 +907,242 @@ pub async fn ms_poll_and_login(device_code: String, interval: u64) -> Result<Acc
 
         return Ok(account_info);
     }
+}
+
+/// 用户关闭登录对话框时调用：中止后台的轮询循环
+#[tauri::command]
+pub fn ms_cancel_login() -> Result<(), String> {
+    MS_LOGIN_CANCELLED.store(true, Ordering::SeqCst);
+    Ok(())
+}
+
+// ============== 皮肤/披风管理（基于 Minecraft Services API） ==============
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct MCSkinInfo {
+    pub id: String,
+    pub state: String, // ACTIVE / INACTIVE
+    pub url: String,
+    pub variant: String, // classic / slim
+    pub alias: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct MCCapeInfo {
+    pub id: String,
+    pub state: String, // ACTIVE / INACTIVE
+    pub url: String,
+    pub alias: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct MCSkinCapeProfile {
+    pub skins: Vec<MCSkinInfo>,
+    pub capes: Vec<MCCapeInfo>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct MCFullProfileResponse {
+    id: String,
+    name: String,
+    skins: Option<Vec<MCFullSkin>>,
+    capes: Option<Vec<MCFullCape>>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct MCFullSkin {
+    id: String,
+    state: String,
+    url: String,
+    variant: Option<String>,
+    alias: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct MCFullCape {
+    id: String,
+    state: String,
+    url: String,
+    alias: Option<String>,
+}
+
+/// 获取 Minecraft 完整资料（皮肤列表 + 披风列表）
+#[tauri::command]
+pub async fn ms_get_skins_and_capes(access_token: String) -> Result<MCSkinCapeProfile, String> {
+    let client = build_http_client()?;
+    let resp = client
+        .get("https://api.minecraftservices.com/minecraft/profile")
+        .bearer_auth(&access_token)
+        .send()
+        .await
+        .map_err(|e| friendly_net_err(e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!("获取皮肤资料失败 (HTTP {})", resp.status()));
+    }
+
+    let profile: MCFullProfileResponse = resp.json().await
+        .map_err(|e| format!("解析皮肤资料失败: {}", e))?;
+
+    let skins: Vec<MCSkinInfo> = profile.skins.unwrap_or_default()
+        .into_iter()
+        .map(|s| MCSkinInfo {
+            id: s.id,
+            state: s.state,
+            url: s.url,
+            variant: s.variant.unwrap_or_else(|| "classic".to_string()),
+            alias: s.alias,
+        })
+        .collect();
+
+    let capes: Vec<MCCapeInfo> = profile.capes.unwrap_or_default()
+        .into_iter()
+        .map(|c| MCCapeInfo {
+            id: c.id,
+            state: c.state,
+            url: c.url,
+            alias: c.alias,
+        })
+        .collect();
+
+    Ok(MCSkinCapeProfile { skins, capes })
+}
+
+/// 上传新皮肤（PNG base64）并设置为当前皮肤
+/// variant: "classic" 或 "slim"
+#[tauri::command]
+pub async fn ms_upload_skin(access_token: String, png_base64: String, variant: String) -> Result<String, String> {
+    use base64::Engine as _;
+
+    let client = build_http_client()?;
+
+    // 解码 base64 -> 原始 PNG 字节
+    let raw_png = BASE64.decode(png_base64.trim())
+        .map_err(|e| format!("皮肤 base64 解码失败: {}", e))?;
+
+    // ── 手动构造 multipart/form-data（不依赖 reqwest multipart feature）
+    let boundary = "----RTLauncherSkinBoundaryXYZ123456";
+    let mut body: Vec<u8> = Vec::new();
+
+    // 第一部分：file (PNG 图片)
+    body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+    body.extend_from_slice(b"Content-Disposition: form-data; name=\"file\"; filename=\"skin.png\"\r\n");
+    body.extend_from_slice(b"Content-Type: image/png\r\n\r\n");
+    body.extend_from_slice(&raw_png);
+    body.extend_from_slice(b"\r\n");
+
+    // 第二部分：variant
+    body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
+    body.extend_from_slice(b"Content-Disposition: form-data; name=\"variant\"\r\n\r\n");
+    body.extend_from_slice(variant.as_bytes());
+    body.extend_from_slice(b"\r\n");
+
+    // 结束标记
+    body.extend_from_slice(format!("--{}--\r\n", boundary).as_bytes());
+
+    let resp = client
+        .post("https://api.minecraftservices.com/minecraft/profile/skins")
+        .bearer_auth(&access_token)
+        .header(reqwest::header::CONTENT_TYPE, format!("multipart/form-data; boundary={}", boundary))
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| friendly_net_err(e))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("上传皮肤失败 (HTTP {}): {}", status, text));
+    }
+
+    // 上传成功后，从响应中解析并返回新皮肤 ID
+    let profile: MCFullProfileResponse = resp.json().await
+        .map_err(|e| format!("解析上传响应失败: {}", e))?;
+
+    // 找到新上传的皮肤（通常第一个 ACTIVE 就是新上传的）
+    let new_skin_id = profile.skins
+        .unwrap_or_default()
+        .into_iter()
+        .find(|s| s.state == "ACTIVE")
+        .map(|s| s.id)
+        .unwrap_or_else(|| "unknown".to_string());
+
+    // 上传皮肤成功后，下载到本地（供 3D 展示）
+    let uuid = profile.id.clone();
+    let _ = download_skin_blocking(&uuid, "https://sessionserver.mojang.com");
+
+    Ok(new_skin_id)
+}
+
+/// 激活指定皮肤（从已有皮肤列表中切换）
+#[tauri::command]
+pub async fn ms_activate_skin(access_token: String, skin_id: String, variant: String) -> Result<(), String> {
+    let client = build_http_client()?;
+    let body = serde_json::json!({ "variant": variant });
+    let resp = client
+        .put(&format!("https://api.minecraftservices.com/minecraft/profile/skins/{}", skin_id))
+        .bearer_auth(&access_token)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| friendly_net_err(e))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("切换皮肤失败 (HTTP {}): {}", status, text));
+    }
+    Ok(())
+}
+
+/// 删除指定皮肤
+#[tauri::command]
+pub async fn ms_delete_skin(access_token: String, skin_id: String) -> Result<(), String> {
+    let client = build_http_client()?;
+    let resp = client
+        .delete(&format!("https://api.minecraftservices.com/minecraft/profile/skins/{}", skin_id))
+        .bearer_auth(&access_token)
+        .send()
+        .await
+        .map_err(|e| friendly_net_err(e))?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("删除皮肤失败 (HTTP {}): {}", status, text));
+    }
+    Ok(())
+}
+
+/// 设置激活披风（capeId 为空则取消激活）
+#[tauri::command]
+pub async fn ms_set_active_cape(access_token: String, cape_id: String) -> Result<(), String> {
+    let client = build_http_client()?;
+
+    let resp = if cape_id.is_empty() {
+        // 取消激活披风
+        client
+            .delete("https://api.minecraftservices.com/minecraft/profile/capes/active")
+            .bearer_auth(&access_token)
+            .send()
+            .await
+            .map_err(|e| friendly_net_err(e))?
+    } else {
+        // 设置激活披风
+        let body = serde_json::json!({ "capeId": cape_id });
+        client
+            .put("https://api.minecraftservices.com/minecraft/profile/capes/active")
+            .bearer_auth(&access_token)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| friendly_net_err(e))?
+    };
+
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("设置披风失败 (HTTP {}): {}", status, text));
+    }
+    Ok(())
 }
