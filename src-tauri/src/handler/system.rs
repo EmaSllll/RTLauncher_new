@@ -240,14 +240,16 @@ fn platform_trim_current_process(methods: &mut Vec<String>) {
         }
 
         // 通过 task / vm region 枚举当前进程的内存映射，对文件映射调用
-        // posix_madvise(DONTNEED) 让内核释放文件缓存页
+        // posix_madvise(DONTNEED) 让内核释放文件缓存页。
+        // 注意：旧的 `vm_region` 在较新的 macOS SDK 中已不再导出，必须使用
+        // `vm_region_64` 配合 64 位 flavor，否则链接会报 "_vm_region" 未定义。
         unsafe {
             use libc::{c_int, mach_port_t, task_t};
             use std::ptr;
 
             extern "C" {
                 fn mach_task_self() -> mach_port_t;
-                fn vm_region(
+                fn vm_region_64(
                     target_task: task_t,
                     address: *mut u64,
                     size: *mut u64,
@@ -259,33 +261,33 @@ fn platform_trim_current_process(methods: &mut Vec<String>) {
                 fn mach_port_deallocate(task: task_t, name: mach_port_t) -> c_int;
             }
 
-            const VM_REGION_BASIC_INFO: c_int = 10;
+            const VM_REGION_BASIC_INFO_64: c_int = 9;
             const SM_COW: c_int = 77;       // shared memory flag value
             const MACH_PORT_NULL: mach_port_t = 0;
 
             #[repr(C)]
             #[derive(Default)]
-            struct VmRegionBasicInfo {
+            struct VmRegionBasicInfo64 {
                 protection: i32,
                 max_protection: i32,
-                inheritance: u32,
-                shared: u32,
-                reserved: u32,
+                inheritance: c_int,
+                shared: c_int,
+                reserved: c_int,
                 offset: u64,
-                behavior: u32,
+                behavior: c_int,
                 user_wired_count: u16,
             }
 
             let task = mach_task_self();
             let mut addr: u64 = 0;
             let mut size: u64 = 0;
-            let mut info: VmRegionBasicInfo = std::mem::zeroed();
-            let mut count: c_int = (std::mem::size_of::<VmRegionBasicInfo>() / 4) as c_int;
+            let mut info: VmRegionBasicInfo64 = std::mem::zeroed();
+            let mut count: c_int = (std::mem::size_of::<VmRegionBasicInfo64>() / 4) as c_int;
             let mut object: mach_port_t = MACH_PORT_NULL;
 
             loop {
-                let kr = vm_region(
-                    task, &mut addr, &mut size, VM_REGION_BASIC_INFO,
+                let kr = vm_region_64(
+                    task, &mut addr, &mut size, VM_REGION_BASIC_INFO_64,
                     &mut info as *mut _ as *mut u8, &mut count, &mut object,
                 );
                 if kr != 0 { break; }
@@ -295,7 +297,7 @@ fn platform_trim_current_process(methods: &mut Vec<String>) {
                 }
 
                 // 对文件-backed 映射（non-zero offset 或 shared 的区域）调用 madvise
-                if info.offset != 0 || info.shared == SM_COW as u32 {
+                if info.offset != 0 || info.shared == SM_COW {
                     let p = addr as *mut libc::c_void;
                     let s = size as libc::size_t;
                     // POSIX_MADV_DONTNEED = 4（macOS 定义）
