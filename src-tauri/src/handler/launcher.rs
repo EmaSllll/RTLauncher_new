@@ -58,7 +58,7 @@ fn detect_os_properties_from_java(java_path: &str) -> (Option<String>, Option<St
             let trimmed = line.trim();
             if os_name.is_none() {
                 if let Some(rest) = trimmed.strip_prefix("os.name") {
-                    let value = rest.trim_start_matches('=').trim();
+                    let value = rest.trim().trim_start_matches('=').trim();
                     if !value.is_empty() {
                         os_name = Some(value.to_string());
                     }
@@ -66,7 +66,7 @@ fn detect_os_properties_from_java(java_path: &str) -> (Option<String>, Option<St
             }
             if os_version.is_none() {
                 if let Some(rest) = trimmed.strip_prefix("os.version") {
-                    let value = rest.trim_start_matches('=').trim();
+                    let value = rest.trim().trim_start_matches('=').trim();
                     if !value.is_empty() {
                         os_version = Some(value.to_string());
                     }
@@ -781,20 +781,31 @@ fn build_jvm_arguments_inner(
                                             match obj.get("rules").and_then(|r| r.as_array()) {
                                                 Some(rules) => {
                                                     let mut allowed = false;
+                                                    let cur_arch = std::env::consts::ARCH;
                                                     for rule in rules {
                                                         if let Some(action) = rule.get("action").and_then(|a| a.as_str()) {
-                                                            let os_match = match rule.get("os").and_then(|o| o.as_object()) {
+                                                            let os_obj = rule.get("os").and_then(|o| o.as_object());
+                                                            let os_match = match os_obj {
                                                                 Some(os) => match os.get("name").and_then(|n| n.as_str()) {
                                                                     Some("windows") => cfg!(windows),
-                                                                    Some("osx") => cfg!(target_os = "macos"),
+                                                                    Some("osx") | Some("macos") => cfg!(target_os = "macos"),
                                                                     Some("linux") => cfg!(target_os = "linux"),
                                                                     _ => true,
                                                                 },
                                                                 None => true,
                                                             };
-                                                            if action == "allow" && os_match {
+                                                            let arch_match = match os_obj {
+                                                                Some(os) => match os.get("arch").and_then(|a| a.as_str()) {
+                                                                    Some("x86") => cur_arch.contains("x86") || (cfg!(target_arch = "x86_64") && cur_arch.contains("64")),
+                                                                    Some(s) => cur_arch.contains(s) || s.contains(cur_arch),
+                                                                    None => true,
+                                                                },
+                                                                None => true,
+                                                            };
+                                                            let matched = os_match && arch_match;
+                                                            if action == "allow" && matched {
                                                                 allowed = true;
-                                                            } else if action == "disallow" && os_match {
+                                                            } else if action == "disallow" && matched {
                                                                 allowed = false;
                                                             }
                                                         }
@@ -1179,8 +1190,9 @@ fn build_jvm_arguments_inner(
     let is_windows = os_info.os_type() == Type::Windows;
     let is_macos = os_info.os_type() == Type::Macos;
     let _is_linux = os_info.os_type() == Type::Linux;
+    let os_arch = std::env::consts::ARCH.to_string();
 
-    fn check_rules(rules: &[Rule], os_info: &os_info::Info) -> bool {
+    fn check_rules(rules: &[Rule], os_info: &os_info::Info, os_arch: &str) -> bool {
         let mut allowed = true;
         for rule in rules {
             let mut rule_matched = false;
@@ -1193,6 +1205,12 @@ fn build_jvm_arguments_inner(
                     _ => true,
                 };
 
+                let arch_match = match os_rule.arch.as_deref() {
+                    Some("x86") => os_arch.contains("x86") || os_arch.contains("64") && cfg!(target_arch = "x86_64"),
+                    Some(s) => os_arch.contains(s) || s.contains(os_arch),
+                    None => true,
+                };
+
                 let version_match = if let Some(version_pattern) = &os_rule.version {
                     let re = Regex::new(version_pattern).unwrap();
                     re.is_match(&os_info.version().to_string())
@@ -1200,7 +1218,7 @@ fn build_jvm_arguments_inner(
                     true
                 };
 
-                rule_matched = os_match && version_match;
+                rule_matched = os_match && arch_match && version_match;
             }
 
             match rule.action.as_str() {
@@ -1299,18 +1317,67 @@ fn build_jvm_arguments_inner(
         .iter()
         .filter_map(|lib| {
             // 检查规则或serverreq标志
-            let allowed = check_rules(&lib.rules, &os_info) || lib.serverreq;
+            let allowed = check_rules(&lib.rules, &os_info, &os_arch) || lib.serverreq;
             if !allowed {
                 return None;
             }
             let artifact_path = if !lib.downloads.classifiers.is_empty() {
-                let classifier = lib.natives.get(match os_info.os_type() {
-                    Type::Windows => "windows",
-                    Type::Macos => "osx",
-                    Type::Linux => "linux",
+                let native_keys: &[&str] = match os_info.os_type() {
+                    Type::Windows => &["windows"],
+                    Type::Macos => &["macos", "osx"],
+                    Type::Linux => &["linux"],
                     _ => return None,
-                }).and_then(|s| s.strip_prefix("natives-"));
-                lib.downloads.classifiers.get(classifier?)
+                };
+                let mut resolved_classifier: Option<String> = None;
+                for key in native_keys {
+                    if let Some(native_val) = lib.natives.get(*key) {
+                        let mut processed = native_val.clone();
+                        if processed.contains("${arch}") {
+                            processed = processed.replace("${arch}", &os_arch);
+                        }
+                        if let Some(stripped) = processed.strip_prefix("natives-") {
+                            if lib.downloads.classifiers.contains_key(stripped) {
+                                resolved_classifier = Some(stripped.to_string());
+                                break;
+                            }
+                        }
+                    }
+                }
+                if resolved_classifier.is_none() {
+                    let fallback_classifiers: Vec<&str> = match os_info.os_type() {
+                        Type::Windows => {
+                            if os_arch.contains("64") {
+                                vec!["windows-x86_64", "windows-amd64", "windows"]
+                            } else {
+                                vec!["windows-x86", "windows"]
+                            }
+                        }
+                        Type::Macos => {
+                            if os_arch.contains("aarch64") || os_arch.contains("arm") {
+                                vec!["macos-aarch64", "osx-aarch64", "macos", "osx", "natives-macos-aarch64", "natives-osx-aarch64"]
+                            } else {
+                                vec!["macos-x86_64", "osx-x86_64", "macos", "osx", "natives-macos-x86_64", "natives-osx-x86_64"]
+                            }
+                        }
+                        Type::Linux => {
+                            if os_arch.contains("aarch64") || os_arch.contains("arm") {
+                                vec!["linux-aarch64", "linux-arm64", "linux"]
+                            } else {
+                                vec!["linux-x86_64", "linux-amd64", "linux"]
+                            }
+                        }
+                        _ => vec!["linux"],
+                    };
+                    for fc in fallback_classifiers {
+                        let stripped = fc.strip_prefix("natives-").unwrap_or(fc);
+                        if lib.downloads.classifiers.contains_key(stripped) {
+                            resolved_classifier = Some(stripped.to_string());
+                            break;
+                        }
+                    }
+                }
+                let classifier = resolved_classifier?;
+                lib.downloads.classifiers.get(classifier.as_str())
                     .map(|a| minecraft_path_buf.join("libraries").join(&a.path))
             } else if lib.downloads.artifact.is_some() {
                 lib.downloads.artifact.as_ref()
@@ -1758,13 +1825,8 @@ fn build_jvm_arguments_inner(
                 }
             }
             let log_path = format_path(log_file_path);
-            // Windows 上 Java 的 URI.toURL() 需要 file:/// 协议前缀
-            // 否则会把盘符 D: 误认为 URL scheme
-            if cfg!(windows) {
-                args.push(format!("-Dlog4j.configurationFile=file:///{}", log_path));
-            } else {
-                args.push(format!("-Dlog4j.configurationFile=file:{}", log_path));
-            }
+            // 统一使用 file:/// 协议前缀，兼容所有平台（Windows/macOS/Linux）
+            args.push(format!("-Dlog4j.configurationFile=file:///{}", log_path));
         }
     }
 
@@ -1788,10 +1850,46 @@ fn build_jvm_arguments_inner(
     let os_version_str: String = os_version_from_java
         .unwrap_or_else(|| os_info.version().to_string());
 
+    // 将 os.name 归一化为 LWJGL 期望的值
+    let normalized_os_name = if is_windows {
+        if os_name_str.to_lowercase().contains("win") {
+            "Windows".to_string()
+        } else {
+            os_name_str
+        }
+    } else if is_macos {
+        let lower = os_name_str.to_lowercase();
+        if lower.contains("mac") || lower.contains("darwin") || lower.contains("os x") {
+            "Mac OS X".to_string()
+        } else {
+            "Mac OS X".to_string()
+        }
+    } else {
+        let lower = os_name_str.to_lowercase();
+        if lower.contains("linux") {
+            "Linux".to_string()
+        } else {
+            os_name_str
+        }
+    };
+
+    // os.arch 的归一化（LWJGL 期望 x86、x86_64、aarch64）
+    let os_arch_str = os_arch.to_string();
+    let normalized_os_arch = if os_arch_str.contains("aarch64") || os_arch_str.contains("arm") {
+        "aarch64".to_string()
+    } else if os_arch_str.contains("86_64") || os_arch_str.contains("amd64") || os_arch_str.contains("x64") {
+        "x86_64".to_string()
+    } else if os_arch_str.contains("86") {
+        "x86".to_string()
+    } else {
+        os_arch_str.clone()
+    };
+
     let fixed_params = vec![
-        // 强制设置 os.name 和 os.version 为 Java 实际检测到的值，避免 LWJGL 识别失败
-        format!("-Dos.name={}", os_name_str),
+        // 强制设置 os.name, os.version, os.arch 为 Java 实际检测到的值，避免 LWJGL 识别失败
+        format!("-Dos.name={}", normalized_os_name),
         format!("-Dos.version={}", os_version_str),
+        format!("-Dos.arch={}", normalized_os_arch),
         format!("-DlibraryDirectory={}", format_path(minecraft_path_buf.join("libraries"))),
     ];
 

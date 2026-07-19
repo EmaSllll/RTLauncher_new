@@ -34,7 +34,12 @@ impl CacheResourceKind {
 pub fn cache_root_dir() -> Result<PathBuf, String> {
     #[cfg(target_os = "windows")]
     let base_dir = {
-        PathBuf::from("./RTL")
+        let app_data = std::env::var("APPDATA")
+            .unwrap_or_else(|_| {
+                let home = std::env::var("USERPROFILE").unwrap_or_else(|_| ".".to_string());
+                home
+            });
+        PathBuf::from(app_data).join("RTLauncher")
     };
     #[cfg(target_os = "macos")]
     let base_dir = {

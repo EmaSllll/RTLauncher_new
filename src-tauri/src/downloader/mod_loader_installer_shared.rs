@@ -562,10 +562,15 @@ async fn install_legacy_forge(
                                     let version = parts[2];
                                     vanilla_lib_names.insert(format!("{}-{}.jar", artifact, version));
                                     if let Some(natives_obj) = lib.get("natives").and_then(|n| n.as_object()) {
-                                        let os_keys = ["windows", "osx", "linux"];
+                                        let os_keys = ["windows", "osx", "macos", "linux"];
+                                        let arch_str = std::env::consts::ARCH;
                                         for os_key in os_keys {
                                             if let Some(classifier) = natives_obj.get(os_key).and_then(|v| v.as_str()) {
-                                                vanilla_lib_names.insert(format!("{}-{}-{}.jar", artifact, version, classifier));
+                                                let mut processed = classifier.to_string();
+                                                if processed.contains("${arch}") {
+                                                    processed = processed.replace("${arch}", arch_str);
+                                                }
+                                                vanilla_lib_names.insert(format!("{}-{}-{}.jar", artifact, version, processed));
                                             }
                                         }
                                     }
@@ -679,24 +684,56 @@ async fn install_legacy_forge(
             }
         }
         if has_natives {
-            let os_type = match std::env::consts::OS {
-                "windows" => Some("windows"),
-                "macos" => Some("osx"),
-                "linux" => Some("linux"),
-                _ => None,
+            let os_type = std::env::consts::OS;
+            let arch_str = std::env::consts::ARCH;
+            let primary_keys: &[&str] = match os_type {
+                "windows" => &["windows"],
+                "macos" => &["macos", "osx"],
+                "linux" => &["linux"],
+                _ => &["linux"],
             };
-            if let Some(os_name) = os_type {
-                let classifier_key = lib
-                    .get("natives")
+            let mut resolved_classifier: Option<String> = None;
+            for key in primary_keys {
+                if let Some(classifier) = lib.get("natives")
                     .and_then(|n| n.as_object())
-                    .and_then(|o| o.get(os_name))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_else(|| match os_name {
-                        "windows" => "natives-windows",
-                        "osx" => "natives-osx",
-                        "linux" => "natives-linux",
-                        _ => "natives-linux",
-                    });
+                    .and_then(|o| o.get(*key))
+                    .and_then(|v| v.as_str()) {
+                    let mut processed = classifier.to_string();
+                    if processed.contains("${arch}") {
+                        processed = processed.replace("${arch}", arch_str);
+                    }
+                    resolved_classifier = Some(processed);
+                    break;
+                }
+            }
+            if resolved_classifier.is_none() {
+                let fallback = match os_type {
+                    "windows" => {
+                        if arch_str.contains("64") {
+                            "natives-windows"
+                        } else {
+                            "natives-windows-x86"
+                        }
+                    }
+                    "macos" => {
+                        if arch_str.contains("aarch64") || arch_str.contains("arm") {
+                            "natives-macos-aarch64"
+                        } else {
+                            "natives-osx"
+                        }
+                    }
+                    "linux" => {
+                        if arch_str.contains("aarch64") || arch_str.contains("arm") {
+                            "natives-linux-aarch64"
+                        } else {
+                            "natives-linux"
+                        }
+                    }
+                    _ => "natives-linux",
+                };
+                resolved_classifier = Some(fallback.to_string());
+            }
+            if let Some(classifier_key) = resolved_classifier {
                 let file_subpath = PathBuf::from(&group_path)
                     .join(&artifact)
                     .join(&version)

@@ -563,7 +563,7 @@ async fn download_file_internal(
         };
     }
     
-    if target.exists() {
+    if target.is_file() {
         if let Some(sha) = &resolved_sha1 {
             if verify_sha1(&target, sha) {
                 let size = fs::metadata(&target).map(|m| m.len()).unwrap_or(0);
