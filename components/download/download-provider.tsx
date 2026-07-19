@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 "use client";
 
 import {
@@ -418,4 +419,426 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
       {children}
     </DownloadContext.Provider>
   );
+=======
+"use client";
+
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { type UnlistenFn } from "@tauri-apps/api/event";
+import {
+  setupAllDownloadListeners,
+  makeStartDownloadFn,
+} from "./download-event-utils";
+
+export type DownloadTaskStatus =
+  | "queued"
+  | "downloading"
+  | "success"
+  | "warning"
+  | "error"
+  | "cancelled";
+
+export interface DownloadTask {
+  taskId: number;
+  label: string;
+  mcVersion: string;
+  status: DownloadTaskStatus;
+  progress: number;
+  error?: string;
+  /** 部分失败的文件数量 */
+  failedCount?: number;
+  /** 时间戳，用于排序 */
+  startedAt: number;
+}
+
+interface DownloadContextValue {
+  tasks: DownloadTask[];
+  /** 启动一个原版下载任务（排队制）*/
+  startDownload: (label: string, mcVersion: string) => Promise<number>;
+  /** 启动 Java 下载（不排队）*/
+  startJavaDownload: (runtimeName: string) => Promise<number>;
+  /** 启动 OptiFine 下载（不排队）*/
+  startOptifineDownload: (optifineVersion: string, mcVersion: string) => Promise<number>;
+  /** 启动 Fabric 下载（不排队）*/
+  startFabricDownload: (mcVersion: string, loaderVersion: string, apiVersion?: string) => Promise<number>;
+  /** 启动 Quilt 下载（不排队）*/
+  startQuiltDownload: (mcVersion: string, loaderVersion: string, apiVersion?: string) => Promise<number>;
+  /** 启动 Forge 下载（不排队）*/
+  startForgeDownload: (mcVersion: string, forgeVersion: string) => Promise<number>;
+  /** 启动 NeoForge 下载（不排队）*/
+  startNeoForgeDownload: (mcVersion: string, neoforgeVersion: string) => Promise<number>;
+  /** 启动 LiteLoader 下载（不排队）*/
+  startLiteLoaderDownload: (mcVersion: string, liteloaderVersion: string) => Promise<number>;
+  /** Mod 文件下载 */
+  startModDownload: (modSlug: string, modName: string, mcVersion: string, modLoader: string, downloadUrl: string) => Promise<number>;
+  /** 通用资源文件下载（mod / resourcepack / shaderpack / datapack / world） */
+  startResourceDownload: (resourceKind: string, resourceSlug: string, resourceName: string, mcVersion: string, modLoader: string, downloadUrl: string) => Promise<number>;
+  /** 整合包安装（异步） */
+  startModpackDownload: (modpackName: string, path: string) => Promise<number>;
+  /** 取消一个下载任务 */
+  cancelDownload: (taskId: number) => Promise<void>;
+  /** 清除所有已完成/失败/取消的任务 */
+  clearFinished: () => void;
+  /** 从任务列表中移除单个任务 */
+  removeTask: (taskId: number) => void;
+}
+
+const DownloadContext = createContext<DownloadContextValue | null>(null);
+
+export function useDownloadManager() {
+  const ctx = useContext(DownloadContext);
+  if (!ctx) {
+    throw new Error("useDownloadManager must be used within DownloadProvider");
+  }
+  return ctx;
+}
+
+/** 排队中的任务（还未发往后端，只用于原版下载）*/
+interface QueueItem {
+  localId: number;
+  label: string;
+  mcVersion: string;
+}
+
+export function DownloadProvider({ children }: { children: React.ReactNode }) {
+  const [tasks, setTasks] = useState<DownloadTask[]>([]);
+  const unlistensRef = useRef<UnlistenFn[]>([]);
+  const pendingQueueRef = useRef<QueueItem[]>([]);
+  const isDownloadingRef = useRef(false);
+  const localIdCounterRef = useRef(-1);
+  /** 非原版下载的 taskId 计数器（从 1_000_000 起，避免与后端 taskId 冲突）*/
+  const taskIdCounterRef = useRef(1_000_000);
+
+  /** 标记下载已结束，释放排队锁并尝试启动下一个任务 */
+  const markDownloadDone = useCallback(() => {
+    isDownloadingRef.current = false;
+    dequeueNext();
+  }, []);
+
+  /** ========== 排队机制（仅用于原版 Minecraft 下载）========== */
+  const dequeueNext = useCallback(async () => {
+    if (isDownloadingRef.current) return;
+    const next = pendingQueueRef.current.shift();
+    if (!next) return;
+
+    isDownloadingRef.current = true;
+    try {
+      const taskId = await invoke<number>("download_patcher", {
+        mcVersion: next.mcVersion,
+      });
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.taskId === next.localId
+            ? { ...t, taskId, status: "downloading" as const, startedAt: Date.now() }
+            : t
+        )
+      );
+    } catch (e) {
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.taskId === next.localId
+            ? { ...t, status: "error" as const, error: String(e) }
+            : t
+        )
+      );
+      isDownloadingRef.current = false;
+      dequeueNext();
+    }
+  }, []);
+
+  /** ========== 注册事件 ========== */
+  useEffect(() => {
+    let cancelled = false;
+    const cancelledRef = { current: false };
+
+    async function setup() {
+      // 所有下载器的事件监听都在这里集中注册
+      // 原版下载（download-finished）完成时会调用 markDownloadDone 释放排队锁
+      const unlistens = await setupAllDownloadListeners(setTasks, markDownloadDone);
+      if (cancelled) {
+        unlistens.forEach((fn) => fn());
+        return;
+      }
+      unlistensRef.current = unlistens;
+    }
+
+    setup();
+
+    return () => {
+      cancelled = true;
+      cancelledRef.current = true;
+      unlistensRef.current.forEach((fn) => fn());
+      unlistensRef.current = [];
+    };
+  }, [markDownloadDone]);
+
+  /** ========== 启动函数 ========== */
+
+  /** 原版下载（排队制）*/
+  const startDownload = useCallback(
+    async (label: string, mcVersion: string): Promise<number> => {
+      if (!isDownloadingRef.current) {
+        isDownloadingRef.current = true;
+        try {
+          const taskId = await invoke<number>("download_patcher", { mcVersion });
+          const task: DownloadTask = {
+            taskId,
+            label,
+            mcVersion,
+            status: "downloading",
+            progress: 0,
+            startedAt: Date.now(),
+          };
+          setTasks((prev) => [task, ...prev]);
+          return taskId;
+        } catch (e) {
+          isDownloadingRef.current = false;
+          throw e;
+        }
+      } else {
+        const localId = localIdCounterRef.current--;
+        pendingQueueRef.current.push({ localId, label, mcVersion });
+        const task: DownloadTask = {
+          taskId: localId,
+          label,
+          mcVersion,
+          status: "queued",
+          progress: 0,
+          startedAt: Date.now(),
+        };
+        setTasks((prev) => [task, ...prev]);
+        return localId;
+      }
+    },
+    [dequeueNext]
+  );
+
+  /** 使用工厂生成的通用 start 函数 */
+  const startModLoaderDownload = makeStartDownloadFn(
+    setTasks,
+    taskIdCounterRef,
+    dequeueNext
+  );
+
+  /** Java 下载 - 只创建前端 task，不 invoke，Java 下载由其他命令触发 */
+  const startJavaDownload = useCallback(async (runtimeName: string) => {
+    const taskId = taskIdCounterRef.current++;
+    setTasks((prev) => {
+      const isDownloading = prev.some(
+        (t) => t.label === runtimeName && t.status === "downloading"
+      );
+      if (isDownloading) return prev;
+      const task: DownloadTask = {
+        taskId,
+        label: runtimeName,
+        mcVersion: "Java",
+        status: "downloading",
+        progress: 0,
+        startedAt: Date.now(),
+      };
+      return [task, ...prev];
+    });
+    return taskId;
+  }, []);
+
+  /** OptiFine */
+  const startOptifineDownload = useCallback(
+    async (optifineVersion: string, mcVersion: string) => {
+      return startModLoaderDownload({
+        label: optifineVersion,
+        mcVersion,
+        tauriCommand: "download_and_install_optifine",
+        params: { optifineVersion, mcVersion },
+      });
+    },
+    [startModLoaderDownload]
+  );
+
+  /** Fabric */
+  const startFabricDownload = useCallback(
+    async (mcVersion: string, loaderVersion: string, apiVersion?: string) => {
+      const label = `Fabric ${loaderVersion}${apiVersion ? ` + API ${apiVersion}` : ""}`;
+      return startModLoaderDownload({
+        label,
+        mcVersion,
+        tauriCommand: "download_and_install_fabric",
+        params: { mcVersion, loaderVersion, apiVersion: apiVersion || null },
+      });
+    },
+    [startModLoaderDownload]
+  );
+
+  /** Quilt */
+  const startQuiltDownload = useCallback(
+    async (mcVersion: string, loaderVersion: string, apiVersion?: string) => {
+      const label = `Quilt ${loaderVersion}${apiVersion ? ` + API ${apiVersion}` : ""}`;
+      return startModLoaderDownload({
+        label,
+        mcVersion,
+        tauriCommand: "download_and_install_quilt",
+        params: { mcVersion, loaderVersion, apiVersion: apiVersion || null },
+      });
+    },
+    [startModLoaderDownload]
+  );
+
+  /** Forge */
+  const startForgeDownload = useCallback(
+    async (mcVersion: string, forgeVersion: string) => {
+      const label = `Forge ${forgeVersion} (MC ${mcVersion})`;
+      return startModLoaderDownload({
+        label,
+        mcVersion,
+        tauriCommand: "download_and_install_forge",
+        params: { mcVersion, forgeVersion },
+      });
+    },
+    [startModLoaderDownload]
+  );
+
+  /** NeoForge */
+  const startNeoForgeDownload = useCallback(
+    async (mcVersion: string, neoforgeVersion: string) => {
+      const label = `NeoForge ${neoforgeVersion} (MC ${mcVersion})`;
+      return startModLoaderDownload({
+        label,
+        mcVersion,
+        tauriCommand: "download_and_install_neoforge",
+        params: { mcVersion, neoforgeVersion },
+      });
+    },
+    [startModLoaderDownload]
+  );
+
+  /** LiteLoader */
+  const startLiteLoaderDownload = useCallback(
+    async (mcVersion: string, liteloaderVersion: string) => {
+      const label = `LiteLoader ${liteloaderVersion} (MC ${mcVersion})`;
+      return startModLoaderDownload({
+        label,
+        mcVersion,
+        tauriCommand: "download_and_install_liteloader",
+        params: { mcVersion, liteloaderVersion },
+      });
+    },
+    [startModLoaderDownload]
+  );
+
+  /** Mod 文件下载 */
+  const startModDownload = useCallback(
+    async (modSlug: string, modName: string, mcVersion: string, modLoader: string, downloadUrl: string) => {
+      const label = `${modName} (${mcVersion})`;
+      return startModLoaderDownload({
+        label,
+        mcVersion,
+        tauriCommand: "download_mod_file",
+        params: { modSlug, modName, mcVersion, modLoader, downloadUrl },
+      });
+    },
+    [startModLoaderDownload]
+  );
+
+  /** 通用资源文件下载（mod / resourcepack / shaderpack / datapack / world） */
+  const startResourceDownload = useCallback(
+    async (resourceKind: string, resourceSlug: string, resourceName: string, mcVersion: string, modLoader: string, downloadUrl: string) => {
+      const label = `${resourceName} (${mcVersion})`;
+      return startModLoaderDownload({
+        label,
+        mcVersion,
+        tauriCommand: "download_resource_file",
+        params: { resourceKind, resourceSlug, resourceName, mcVersion, modLoader, downloadUrl },
+      });
+    },
+    [startModLoaderDownload]
+  );
+
+  /** 整合包安装（异步，进度显示在右下角下载任务栏） */
+  const startModpackDownload = useCallback(
+    async (modpackName: string, path: string) => {
+      const label = `整合包: ${modpackName}`;
+      return startModLoaderDownload({
+        label,
+        mcVersion: "整合包",
+        tauriCommand: "install_modpack_from_zip_cmd",
+        params: { path },
+      });
+    },
+    [startModLoaderDownload]
+  );
+
+  /** ========== 取消与清理 ========== */
+  const cancelDownload = useCallback(
+    async (taskId: number) => {
+      if (taskId < 0) {
+        // 排队中的任务，从队列和 tasks 中移除即可
+        pendingQueueRef.current = pendingQueueRef.current.filter(
+          (item) => item.localId !== taskId
+        );
+        setTasks((prev) => prev.filter((t) => t.taskId !== taskId));
+        return;
+      }
+      // 立即更新前端状态
+      setTasks((prev) =>
+        prev.map((t) =>
+          t.taskId === taskId && t.status === "downloading"
+            ? { ...t, status: "cancelled" as const, error: "已取消" }
+            : t
+        )
+      );
+      try {
+        await Promise.allSettled([
+          invoke("cancel_download", { taskId }),
+          invoke("cancel_mod_download", { taskId }),
+        ]);
+      } catch (e) {
+        console.error("取消下载失败:", e);
+      }
+      // 取消正在下载的任务后，重置下载状态并尝试启动下一个任务
+      isDownloadingRef.current = false;
+      dequeueNext();
+    },
+    [dequeueNext]
+  );
+
+  const clearFinished = useCallback(() => {
+    setTasks((prev) =>
+      prev.filter((t) => t.status === "downloading" || t.status === "queued")
+    );
+  }, []);
+
+  const removeTask = useCallback((taskId: number) => {
+    setTasks((prev) => prev.filter((t) => t.taskId !== taskId));
+  }, []);
+
+  return (
+    <DownloadContext.Provider
+      value={{
+        tasks,
+        startDownload,
+        startJavaDownload,
+        startOptifineDownload,
+        startFabricDownload,
+        startQuiltDownload,
+        startForgeDownload,
+        startNeoForgeDownload,
+        startLiteLoaderDownload,
+        startModDownload,
+        startResourceDownload,
+        startModpackDownload,
+        cancelDownload,
+        clearFinished,
+        removeTask,
+      }}
+    >
+      {children}
+    </DownloadContext.Provider>
+  );
+>>>>>>> 7e94b3d5fae96299a238ed4f26231cdffc1ac040
 }
