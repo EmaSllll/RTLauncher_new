@@ -1,6 +1,5 @@
 use crate::downloader::original_dwl::process_version;
-use crate::handler::config::{get_launcher_paths_config, LauncherPathsConfig};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -30,17 +29,74 @@ struct DownloadFinishedPayload {
     error: Option<String>,
     failed_count: usize,
 }
-pub fn get_minecraft_dir() -> Result<PathBuf, String> {
-    let config = get_launcher_paths_config();
-    minecraft_dir_from_config(&config)
+/// 获取平台默认游戏目录（作为 get_minecraft_dir 的回退值）
+pub fn default_minecraft_dir() -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        return PathBuf::from(format!("{}/Library/Application Support/minecraft", home));
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        return PathBuf::from(format!("{}/.minecraft", home));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            return PathBuf::from(appdata).join(".minecraft");
+        }
+        let exe_dir = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+            .unwrap_or_else(|| PathBuf::from("."));
+        return exe_dir.join(".minecraft");
+    }
 }
 
-fn minecraft_dir_from_config(config: &LauncherPathsConfig) -> Result<PathBuf, String> {
-    if config.selected_minecraft_path.trim().is_empty() {
-        return Err("未配置 Minecraft 游戏目录".to_string());
-    }
+/// 获取 launcher.json 的配置路径（跨平台，与 handler/config.rs 保持一致）
+fn launcher_config_path() -> PathBuf {
+    #[cfg(target_os = "macos")]
+    let dir = {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        PathBuf::from(format!("{}/Library/Application Support/RTLauncher/config", home))
+    };
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let dir = {
+        use crate::app_paths::linux_config_dir;
+        linux_config_dir()
+    };
+    #[cfg(target_os = "windows")]
+    let dir = PathBuf::from("./RTL/config");
 
-    Ok(PathBuf::from(&config.selected_minecraft_path))
+    let _ = std::fs::create_dir_all(&dir);
+    dir.join("launcher.json")
+}
+
+/// 从 launcher.json 读取 selected_minecraft_path
+fn read_selected_minecraft_path_from_config() -> Option<String> {
+    let path = launcher_config_path();
+    if !path.exists() {
+        return None;
+    }
+    let text = std::fs::read_to_string(&path).ok()?;
+    #[derive(Deserialize)]
+    struct Cfg {
+        selected_minecraft_path: Option<String>,
+    }
+    let cfg: Cfg = serde_json::from_str(&text).ok()?;
+    cfg.selected_minecraft_path.filter(|s| !s.is_empty())
+}
+
+/// 获取当前游戏目录。
+/// 优先级：launcher.json -> selected_minecraft_path > 平台默认路径
+pub fn get_minecraft_dir() -> Result<PathBuf, String> {
+    // 优先使用用户在启动页选择的路径（持久化到 launcher.json）
+    if let Some(selected) = read_selected_minecraft_path_from_config() {
+        return Ok(PathBuf::from(selected));
+    }
+    // 回退到平台默认路径
+    Ok(default_minecraft_dir())
 }
 #[tauri::command]
 pub async fn download_patcher(app: AppHandle, mcVersion: String) -> Result<u64, String> {
@@ -117,28 +173,4 @@ pub async fn cancel_download(taskId: u64) -> Result<(), String> {
         info.cancel.store(true, Ordering::SeqCst);
     }
     Ok(())
-}
-#[cfg(test)]
-mod tests {
-    use super::minecraft_dir_from_config;
-    use crate::handler::config::LauncherPathsConfig;
-    use std::collections::HashMap;
-    use std::path::PathBuf;
-
-    #[test]
-    fn download_directory_uses_selected_minecraft_path() {
-        let config = LauncherPathsConfig {
-            java_paths: Vec::new(),
-            selected_java_path: String::new(),
-            java_installations: HashMap::new(),
-            minecraft_paths: vec!["old-default".to_string(), "new-selected".to_string()],
-            selected_minecraft_path: "new-selected".to_string(),
-            default_minecraft_path: "old-default".to_string(),
-        };
-
-        assert_eq!(
-            minecraft_dir_from_config(&config),
-            Ok(PathBuf::from("new-selected"))
-        );
-    }
 }

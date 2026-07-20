@@ -384,15 +384,12 @@ async fn get_mod_files(mod_id: &str) -> Result<HashMap<String, Vec<(Vec<String>,
             let download_url = match download_url_opt {
                 Some(url) if !url.is_empty() => url,
                 _ => {
-<<<<<<< HEAD
                     // CurseForge API 对部分项目会返回 downloadUrl = null，
                     // 此时可以通过 fileId 按照 forgecdn 的规则拼出直链：
                     //   https://edge.forgecdn.net/files/{fileId/1000}/{fileId%1000}/{fileName}
                     // 例：fileId = 4944638 -> fileId/1000 = 4944, fileId%1000 = 638
                     //      -> https://edge.forgecdn.net/files/4944/638/xxx.jar
                     // 注意：fileId 可能很大（7-10 位数字），必须用整数运算，不能用字符串切片。
-=======
->>>>>>> 7e94b3d5fae96299a238ed4f26231cdffc1ac040
                     let file_id = match file.get("id").and_then(|i| i.as_i64()) {
                         Some(id) => id,
                         None => continue,
@@ -401,26 +398,12 @@ async fn get_mod_files(mod_id: &str) -> Result<HashMap<String, Vec<(Vec<String>,
                         Some(n) => n.to_string(),
                         None => continue,
                     };
-<<<<<<< HEAD
                     // 正确的 forgecdn 路径规则：fileId 除以 1000 的商和余数
                     let prefix = file_id / 1000;
                     let suffix = file_id % 1000;
                     format!(
                         "https://edge.forgecdn.net/files/{}/{}/{}",
                         prefix, suffix, urlencoding(&file_name)
-=======
-                    let id_str = file_id.to_string();
-                    let (prefix, suffix) = if id_str.len() > 4 {
-                        (&id_str[..4], &id_str[4..])
-                    } else {
-                        (&id_str[..], "")
-                    };
-                    let suffix_clean = suffix.trim_start_matches('0');
-                    let suffix_final = if suffix_clean.is_empty() { "0" } else { suffix_clean };
-                    format!(
-                        "https://edge.forgecdn.net/files/{}/{}/{}",
-                        prefix, suffix_final, urlencoding(&file_name)
->>>>>>> 7e94b3d5fae96299a238ed4f26231cdffc1ac040
                     )
                 }
             };
