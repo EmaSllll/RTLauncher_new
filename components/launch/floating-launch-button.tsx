@@ -181,7 +181,7 @@ export function FloatingLaunchButton() {
         stiffness: 300,
         damping: 30
       }}
-      className="fixed z-50 cursor-move"
+      className="fixed z-50 cursor-move select-none"
       style={{
         left: position.x,
         top: position.y,
