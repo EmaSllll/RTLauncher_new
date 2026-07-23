@@ -4,12 +4,12 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useAccountContext } from "@/components/accounts/account-provider";
 import { LoginDialog } from "@/components/accounts/login-dialog";
 import { SkinCapeManager } from "@/components/accounts/skin-cape-manager";
 import { X, Check, Plus, Trash2, Shirt } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, getAvatarColor, getAvatarInitials } from "@/lib/utils";
 import { overlayFade, scaleIn } from "@/lib/motion";
 import type { Account } from "@/types";
 
@@ -93,11 +93,13 @@ export function AccountSwitcher({
                         }}
                       >
                         <Avatar>
-                          {profile.skinUrl && (
-                            <AvatarImage src={profile.skinUrl} alt={profile.name} />
-                          )}
-                          <AvatarFallback>
-                            {profile.name.charAt(0).toUpperCase()}
+                          <AvatarFallback
+                            className={cn(
+                              getAvatarColor(profile.name),
+                              "text-white font-medium"
+                            )}
+                          >
+                            {getAvatarInitials(profile.name)}
                           </AvatarFallback>
                         </Avatar>
                         <div className="flex-1 min-w-0">

@@ -3,13 +3,14 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { AnimatePresence, motion } from "framer-motion";
 import { invoke } from "@tauri-apps/api/core";
 import { useLaunchContext } from "@/components/launch/launch-provider";
 import { useAccountContext } from "@/components/accounts/account-provider";
 import { LaunchStatusBadge } from "@/components/launch/launch-status-badge";
 import { fadeSlideUp } from "@/lib/motion";
+import { cn, getAvatarColor, getAvatarInitials } from "@/lib/utils";
 import {
   Play,
   Loader2,
@@ -101,11 +102,13 @@ export function LaunchPanel() {
           {selectedProfile && (
             <div className="flex items-center gap-2">
               <Avatar size="sm">
-                {selectedProfile.skinUrl && (
-                  <AvatarImage src={selectedProfile.skinUrl} alt={selectedProfile.name} />
-                )}
-                <AvatarFallback>
-                  {selectedProfile.name.charAt(0).toUpperCase()}
+                <AvatarFallback
+                  className={cn(
+                    getAvatarColor(selectedProfile.name),
+                    "text-white font-medium"
+                  )}
+                >
+                  {getAvatarInitials(selectedProfile.name)}
                 </AvatarFallback>
               </Avatar>
               <div className="text-right">
