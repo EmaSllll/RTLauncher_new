@@ -7,6 +7,49 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
+ * 玩家头像纯色背景调色板
+ * 用于根据玩家名生成稳定的纯色背景（不再使用整张皮肤文件）
+ */
+const AVATAR_COLORS = [
+  "bg-red-500",
+  "bg-orange-500",
+  "bg-amber-500",
+  "bg-lime-600",
+  "bg-green-500",
+  "bg-emerald-500",
+  "bg-teal-500",
+  "bg-cyan-500",
+  "bg-sky-500",
+  "bg-blue-500",
+  "bg-indigo-500",
+  "bg-violet-500",
+  "bg-purple-500",
+  "bg-fuchsia-500",
+  "bg-pink-500",
+  "bg-rose-500",
+];
+
+/**
+ * 根据玩家名生成稳定的纯色背景类名
+ */
+export function getAvatarColor(name: string): string {
+  if (!name) return AVATAR_COLORS[9];
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) {
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+/**
+ * 从玩家名提取大写首字母作为头像文字
+ */
+export function getAvatarInitials(name: string): string {
+  if (!name) return "?";
+  return name.charAt(0).toUpperCase();
+}
+
+/**
  * 解析 Minecraft 版本号为数字数组
  * 例如 "1.20.2" → [1, 20, 2]，"1.14" → [1, 14]
  * 非标准版本号（快照、远古版等）返回 null
