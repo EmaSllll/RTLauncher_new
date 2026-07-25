@@ -61,6 +61,19 @@ export function FloatingLaunchButton() {
     };
   }, []);
 
+  // 拖动期间禁用全局文本选择，避免鼠标扫过页面文字时产生选中
+  useEffect(() => {
+    if (!isDragging) return;
+    const prevUserSelect = document.body.style.userSelect;
+    const prevWebkitUserSelect = document.body.style.webkitUserSelect;
+    document.body.style.userSelect = "none";
+    document.body.style.webkitUserSelect = "none";
+    return () => {
+      document.body.style.userSelect = prevUserSelect;
+      document.body.style.webkitUserSelect = prevWebkitUserSelect;
+    };
+  }, [isDragging]);
+
   const handleLaunch = () => {
     if (isLaunching || isRunning) {
       cancelLaunch();
@@ -84,6 +97,9 @@ export function FloatingLaunchButton() {
     if (isInteractiveChild) {
       return;
     }
+
+    // 阻止默认行为，避免鼠标按下后浏览器启动文本选择（拖动时会扫过页面文字）
+    e.preventDefault();
 
     pressStartPos.current = { x: e.clientX, y: e.clientY };
     pressStartTime.current = Date.now();
