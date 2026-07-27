@@ -38,39 +38,7 @@ struct LauncherPathsConfig {
     pub default_minecraft_path: String,
 }
 fn launcher_config_path() -> PathBuf {
-    #[cfg(target_os = "macos")]
-    let dir = {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        PathBuf::from(format!("{}/Library/Application Support/RTLauncher/config", home))
-    };
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let dir = {
-        use crate::app_paths::linux_config_dir;
-        linux_config_dir()
-    };
-    #[cfg(target_os = "windows")]
-    let dir = PathBuf::from("./RTL/config");
-
-    let _ = fs::create_dir_all(&dir);
-    dir.join("launcher.json")
-}
-
-fn java_download_dir() -> PathBuf {
-    #[cfg(target_os = "macos")]
-    let dir = {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        PathBuf::from(format!("{}/Library/Application Support/RTLauncher/java", home))
-    };
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let dir = {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        PathBuf::from(format!("{}/.config/RTLauncher/java", home))
-    };
-    #[cfg(target_os = "windows")]
-    let dir = PathBuf::from("./RTL/java");
-
-    let _ = fs::create_dir_all(&dir);
-    dir
+    PathBuf::from("./RTL/config").join("launcher.json")
 }
 fn read_launcher_java_config() -> Option<(Vec<String>, HashMap<String, JavaInstallationInfo>, String)> {
     let path = launcher_config_path();
@@ -160,7 +128,7 @@ pub fn pick_java_executable(mc_version: &str) -> String {
         println!("[JavaPicker] 使用 selected_java_path: {}", selected_java);
         return selected_java;
     }
-    let java_download_dir = java_download_dir();
+    let java_download_dir = PathBuf::from("./RTL/java");
     if java_download_dir.exists() {
         if let Ok(read_dir) = fs::read_dir(&java_download_dir) {
             for entry in read_dir.flatten() {
@@ -572,15 +540,10 @@ async fn install_legacy_forge(
                                     let version = parts[2];
                                     vanilla_lib_names.insert(format!("{}-{}.jar", artifact, version));
                                     if let Some(natives_obj) = lib.get("natives").and_then(|n| n.as_object()) {
-                                        let os_keys = ["windows", "osx", "macos", "linux"];
-                                        let arch_str = std::env::consts::ARCH;
+                                        let os_keys = ["windows", "osx", "linux"];
                                         for os_key in os_keys {
                                             if let Some(classifier) = natives_obj.get(os_key).and_then(|v| v.as_str()) {
-                                                let mut processed = classifier.to_string();
-                                                if processed.contains("${arch}") {
-                                                    processed = processed.replace("${arch}", arch_str);
-                                                }
-                                                vanilla_lib_names.insert(format!("{}-{}-{}.jar", artifact, version, processed));
+                                                vanilla_lib_names.insert(format!("{}-{}-{}.jar", artifact, version, classifier));
                                             }
                                         }
                                     }
@@ -694,56 +657,24 @@ async fn install_legacy_forge(
             }
         }
         if has_natives {
-            let os_type = std::env::consts::OS;
-            let arch_str = std::env::consts::ARCH;
-            let primary_keys: &[&str] = match os_type {
-                "windows" => &["windows"],
-                "macos" => &["macos", "osx"],
-                "linux" => &["linux"],
-                _ => &["linux"],
+            let os_type = match std::env::consts::OS {
+                "windows" => Some("windows"),
+                "macos" => Some("osx"),
+                "linux" => Some("linux"),
+                _ => None,
             };
-            let mut resolved_classifier: Option<String> = None;
-            for key in primary_keys {
-                if let Some(classifier) = lib.get("natives")
+            if let Some(os_name) = os_type {
+                let classifier_key = lib
+                    .get("natives")
                     .and_then(|n| n.as_object())
-                    .and_then(|o| o.get(*key))
-                    .and_then(|v| v.as_str()) {
-                    let mut processed = classifier.to_string();
-                    if processed.contains("${arch}") {
-                        processed = processed.replace("${arch}", arch_str);
-                    }
-                    resolved_classifier = Some(processed);
-                    break;
-                }
-            }
-            if resolved_classifier.is_none() {
-                let fallback = match os_type {
-                    "windows" => {
-                        if arch_str.contains("64") {
-                            "natives-windows"
-                        } else {
-                            "natives-windows-x86"
-                        }
-                    }
-                    "macos" => {
-                        if arch_str.contains("aarch64") || arch_str.contains("arm") {
-                            "natives-macos-aarch64"
-                        } else {
-                            "natives-osx"
-                        }
-                    }
-                    "linux" => {
-                        if arch_str.contains("aarch64") || arch_str.contains("arm") {
-                            "natives-linux-aarch64"
-                        } else {
-                            "natives-linux"
-                        }
-                    }
-                    _ => "natives-linux",
-                };
-                resolved_classifier = Some(fallback.to_string());
-            }
-            if let Some(classifier_key) = resolved_classifier {
+                    .and_then(|o| o.get(os_name))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_else(|| match os_name {
+                        "windows" => "natives-windows",
+                        "osx" => "natives-osx",
+                        "linux" => "natives-linux",
+                        _ => "natives-linux",
+                    });
                 let file_subpath = PathBuf::from(&group_path)
                     .join(&artifact)
                     .join(&version)
@@ -1459,6 +1390,14 @@ pub async fn install(
             // 所以只对非 neoforge 条目的 -universal.jar / -client.jar / -server.jar 跳过
             let is_loader_self = name.starts_with("net.minecraftforge:forge:")
                 || name.starts_with("net.neoforged:neoforge:");
+            
+            // 新版本 Forge/NeoForge 不再提供单独的 -client.jar 文件
+            // 只使用主 JAR 或 -universal.jar
+            if is_loader_self && file_name.ends_with("-client.jar") {
+                println!("[Lib] 跳过 Forge/NeoForge client.jar（新版本使用 universal.jar）: {}", file_name);
+                continue;
+            }
+            
             if !is_loader_self
                 && (file_name.ends_with("-universal.jar")
                     || file_name.ends_with("-client.jar")

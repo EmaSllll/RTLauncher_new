@@ -269,25 +269,20 @@ fn modpack_root_dir_from_config(minecraft_path: &str) -> PathBuf {
 fn default_minecraft_path() -> String {
     #[cfg(target_os = "windows")]
     {
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            std::path::PathBuf::from(appdata).join(".minecraft").to_string_lossy().to_string()
-        } else {
-            let exe_dir = std::env::current_exe()
-                .ok()
-                .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-                .unwrap_or_else(|| std::path::PathBuf::from("."));
-            exe_dir.join("minecraft").to_string_lossy().to_string()
-        }
+        let exe_dir = std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        exe_dir.join("minecraft").to_string_lossy().to_string()
     }
     #[cfg(target_os = "macos")]
     {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        format!("{}/Library/Application Support/minecraft", home)
+        format!("{}/Library/Application Support/RTLauncher/version", home)
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
     {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        format!("{}/.minecraft", home)
+        "./minecraft".to_string()
     }
 }
 fn instance_file_path(root: &Path, name: &str) -> PathBuf {

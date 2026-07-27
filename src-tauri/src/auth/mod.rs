@@ -6,9 +6,7 @@ use serde::{Deserialize, Serialize};
 
 /// 获取平台配置目录：
 /// - macOS: ~/Library/Application Support/RTLauncher/config
-/// - Linux: ~/.config/RTLauncher (XDG 规范，绝对路径，不依赖工作目录)
-/// - Windows: ./RTL/config
-/// 与 handler/config.rs 中 config_dir 保持一致
+/// - Linux/Windows: ./RTL/config
 pub fn config_dir() -> String {
     #[cfg(target_os = "macos")]
     let dir = {
@@ -16,13 +14,7 @@ pub fn config_dir() -> String {
         format!("{}/Library/Application Support/RTLauncher/config", home)
     };
 
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let dir = {
-        use crate::app_paths::linux_config_dir;
-        linux_config_dir().to_string_lossy().to_string()
-    };
-
-    #[cfg(target_os = "windows")]
+    #[cfg(not(target_os = "macos"))]
     let dir = "./RTL/config".to_string();
 
     let _ = std::fs::create_dir_all(&dir);

@@ -1,93 +1,5 @@
 use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
-use serde_json;
-
-/// 与 config.rs 中一致的 config 目录定位逻辑（支持 Windows / macOS / 其它）
-fn get_config_dir() -> PathBuf {
-    #[cfg(target_os = "windows")]
-    {
-        return PathBuf::from("./RTL/config");
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        return PathBuf::from(format!("{}/Library/Application Support/RTLauncher/config", home));
-    }
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    {
-        use crate::app_paths::linux_config_dir;
-        return linux_config_dir().to_path_buf();
-    }
-}
-
-/// 回退：取平台默认 Minecraft 路径（跨平台），与 config.rs 保持一致
-fn fallback_minecraft_path() -> PathBuf {
-    #[cfg(target_os = "windows")]
-    {
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            return PathBuf::from(appdata).join(".minecraft");
-        }
-        let exe_dir = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-            .unwrap_or_else(|| PathBuf::from("."));
-        return exe_dir.join(".minecraft");
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        return PathBuf::from(format!("{}/Library/Application Support/minecraft", home));
-    }
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        return PathBuf::from(format!("{}/.minecraft", home));
-    }
-}
-
-/// 读取 launcher.json 中 selected_minecraft_path
-fn read_selected_minecraft_path() -> Result<PathBuf, String> {
-    let cfg_dir = get_config_dir();
-    let cfg_path = cfg_dir.join("launcher.json");
-
-    if cfg_path.exists() {
-        match std::fs::read_to_string(&cfg_path) {
-            Ok(text) => {
-                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) {
-                    // 优先：selected_minecraft_path
-                    if let Some(val) = json.get("selected_minecraft_path").and_then(|v| v.as_str()) {
-                        let trimmed = val.trim();
-                        if !trimmed.is_empty() {
-                            return Ok(PathBuf::from(trimmed));
-                        }
-                    }
-                    // 其次：default_minecraft_path
-                    if let Some(val) = json.get("default_minecraft_path").and_then(|v| v.as_str()) {
-                        let trimmed = val.trim();
-                        if !trimmed.is_empty() {
-                            return Ok(PathBuf::from(trimmed));
-                        }
-                    }
-                    // 最后：minecraft_paths 数组第一个
-                    if let Some(arr) = json.get("minecraft_paths").and_then(|v| v.as_array()) {
-                        if let Some(first) = arr.first().and_then(|v| v.as_str()) {
-                            let trimmed = first.trim();
-                            if !trimmed.is_empty() {
-                                return Ok(PathBuf::from(trimmed));
-                            }
-                        }
-                    }
-                }
-            }
-            Err(err) => {
-                eprintln!("[cache_paths] 读取 launcher.json 失败: {}", err);
-            }
-        }
-    }
-
-    // 若找不到配置，回退到系统默认 .minecraft 位置（保证代码路径始终可用）
-    Ok(fallback_minecraft_path())
-}
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CacheResourceKind {
     Mod,
@@ -119,17 +31,25 @@ impl CacheResourceKind {
         ]
     }
 }
-/// 调试用：返回原始 selected_minecraft_path（不追加 cache），方便前端诊断
-#[tauri::command]
-pub fn get_selected_minecraft_path() -> Result<String, String> {
-    let p = read_selected_minecraft_path()?;
-    Ok(p.to_string_lossy().to_string())
-}
-
-/// 缓存根目录：<selected_minecraft_path>/cache
 pub fn cache_root_dir() -> Result<PathBuf, String> {
-    let mc_path = read_selected_minecraft_path()?;
-    let cache_root = mc_path.join("cache");
+    #[cfg(target_os = "windows")]
+    let base_dir = {
+        let exe_dir = std::env::current_exe()
+            .map_err(|e| e.to_string())?
+            .parent()
+            .map(|d| d.to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("."));
+        exe_dir.join("minecraft")
+    };
+    #[cfg(target_os = "macos")]
+    let base_dir = {
+        let home = std::env::var("HOME").map_err(|e| e.to_string())?;
+        PathBuf::from(home)
+            .join("Library/Application Support/RTLauncher")
+    };
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let base_dir = PathBuf::from("./minecraft");
+    let cache_root = base_dir.join("cache");
     std::fs::create_dir_all(&cache_root).map_err(|e| e.to_string())?;
     Ok(cache_root)
 }

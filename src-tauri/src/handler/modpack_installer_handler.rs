@@ -59,14 +59,11 @@ fn active_tasks() -> &'static Mutex<std::collections::HashMap<u64, ModpackActive
     INSTANCE.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
 }
 fn get_modpack_cache_dir(minecraft_path_override: Option<String>) -> Result<PathBuf, String> {
-    if let Some(p) = minecraft_path_override {
-        if !p.is_empty() {
-            return Ok(PathBuf::from(p).join("cache").join("modpacks"));
-        }
-    }
-    use crate::handler::cache_paths::{cache_root_dir, CacheResourceKind};
-    let root = cache_root_dir()?;
-    Ok(root.join(CacheResourceKind::Modpack.dir_name()))
+    let mc_path = match minecraft_path_override {
+        Some(p) if !p.is_empty() => PathBuf::from(p),
+        _ => get_minecraft_dir().map_err(|e| e.to_string())?,
+    };
+    Ok(mc_path.join("cache").join("modpacks"))
 }
 #[tauri::command]
 pub fn detect_modpack_format_cmd(path: String) -> Result<ModpackDetectResult, String> {

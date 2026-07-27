@@ -1,6 +1,7 @@
 
 use crate::downloader::fabric_installer;
 use crate::downloader::dwPatch::get_minecraft_dir;
+use crate::downloader::shared_utils::{sanitize_instance_name, merge_version_jsons_to_instance};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -126,6 +127,7 @@ pub async fn download_and_install_fabric(
     mc_version: String,
     loader_version: String,
     api_version: Option<String>,
+    instance_name: Option<String>,
 ) -> Result<u64, String> {
     let task_id = FABRIC_TASK_COUNTER.fetch_add(1, Ordering::SeqCst);
     let minecraft_path = get_minecraft_dir()?;
@@ -169,6 +171,7 @@ pub async fn download_and_install_fabric(
     let api_ver = api_version.clone();
     let cancel_clone = cancel.clone();
     let minecraft_path_clone = minecraft_path.clone();
+    let instance_name_cloned = instance_name.clone();
 
     tokio::spawn(async move {
         // ============= 并行下载：原版 Minecraft + Fabric 安装 =============
@@ -203,7 +206,7 @@ pub async fn download_and_install_fabric(
             let minecraft_path_str = mc_path_b.to_string_lossy().to_string();
 
             // 安装 Fabric Loader (60-80%)
-            fabric_installer::install_fabric_loader(
+            let loader_dir = fabric_installer::install_fabric_loader(
                 &version_b,
                 &loader_ver_b,
                 &minecraft_path_str,
@@ -226,7 +229,7 @@ pub async fn download_and_install_fabric(
             }
 
             let _ = tx_for_fabric.send(100.0).await;
-            Ok::<(), String>(())
+            Ok::<String, String>(loader_dir)
         });
 
         // --- 等待两个 task 完成 ---
@@ -262,8 +265,30 @@ pub async fn download_and_install_fabric(
         }
 
         match fabric_result {
-            Ok(_) => {
+            Ok(loader_version_name) => {
                 println!("Fabric 安装成功: {}", loader_ver);
+
+                if let Some(inst_name) = instance_name_cloned {
+                    let clean_name = sanitize_instance_name(&inst_name);
+                    println!("[Fabric] 创建实例目录: {}", clean_name);
+                    let default_name = format!("{}-fabric-{}", version, loader_ver);
+                    let final_name = if clean_name.trim().is_empty() {
+                        sanitize_instance_name(&default_name)
+                    } else {
+                        clean_name
+                    };
+                    match merge_version_jsons_to_instance(
+                        &final_name,
+                        &version,
+                        &loader_version_name,
+                        "fabric",
+                        &minecraft_path_clone,
+                    ) {
+                        Ok(_) => println!("[Fabric] 实例 JSON 合并完成: {}", final_name),
+                        Err(e) => println!("[Fabric] 警告: 合并实例 JSON 失败: {}", e),
+                    }
+                }
+
                 let _ = app_finish.emit("fabric-download-finished", FabricDownloadFinishedPayload {
                     task_id,
                     success: true,

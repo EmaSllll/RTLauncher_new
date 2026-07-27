@@ -22,12 +22,12 @@ import type { MinecraftVersion, MinecraftVersionType } from "@/types";
 type EnglishCategory = "mod" | "modpack" | "resourcepack" | "shaders" | "datapack" | "worlds";
 
 const ENGLISH_CATEGORIES: { id: EnglishCategory; label: string; short: string; icon: typeof Box }[] = [
-  { id: "mod", label: "模组", short: "模组", icon: Box },
-  { id: "modpack", label: "整合包", short: "整合包", icon: Boxes },
-  { id: "resourcepack", label: "资源包", short: "资源包", icon: Palette },
-  { id: "shaders", label: "光影包", short: "光影包", icon: Sparkles },
-  { id: "datapack", label: "数据包", short: "数据包", icon: Database },
-  { id: "worlds", label: "地图", short: "地图", icon: Map },
+  { id: "mod", label: "Mods", short: "Mods", icon: Box },
+  { id: "modpack", label: "Modpacks", short: "Modpacks", icon: Boxes },
+  { id: "resourcepack", label: "Resource Packs", short: "Resource Packs", icon: Palette },
+  { id: "shaders", label: "Shader Packs", short: "Shaders", icon: Sparkles },
+  { id: "datapack", label: "Data Packs", short: "Data Packs", icon: Database },
+  { id: "worlds", label: "Worlds", short: "Worlds", icon: Map },
 ];
 
 interface SearchResultItem {
@@ -251,21 +251,10 @@ export default function DownloadPage() {
 
       const modrinthUrl = `https://api.modrinth.com/v2/search?query=${encodeURIComponent(query)}&limit=25&facets=${modrinthFacets}`;
 
-      // Modrinth 继续使用 fetch（API 支持 CORS），解析响应时对异常返回做提示
-      const modrinthPromise = fetch(modrinthUrl, { headers: { "User-Agent": "RTLauncher", "x-modrinth-api-version": "v2" } })
-        .then(async (r) => {
-          if (!r.ok) {
-            const text = await r.text().catch(() => "");
-            return { ok: false as const, status: r.status, message: text || `HTTP ${r.status}` };
-          }
-          try {
-            const data = await r.json();
-            return { ok: true as const, data };
-          } catch (err) {
-            return { ok: false as const, status: r.status, message: String(err) };
-          }
-        })
-        .catch((err) => ({ ok: false as const, status: 0, message: String(err) }));
+      // Modrinth 继续使用 fetch（API 支持 CORS）
+      const modrinthPromise = fetch(modrinthUrl, { headers: { "User-Agent": "RTLauncher" } })
+        .then(r => r.ok ? r.json() : null)
+        .catch(() => null);
 
       // CurseForge 通过后端代理搜索（避免 CORS 问题，改进 classId 搜索策略）
       const cfPromise = invoke('search_curseforge_projects', {
@@ -275,21 +264,18 @@ export default function DownloadPage() {
       }).then(result => {
         if (typeof result === 'string') {
           try {
-            return { ok: true as const, data: JSON.parse(result) };
-          } catch (err) {
-            return { ok: false as const, message: String(err) };
+            return JSON.parse(result);
+          } catch {
+            return null;
           }
         }
-        return { ok: true as const, data: result };
+        return result;
       }).catch((err) => {
         console.warn('CurseForge 搜索失败:', err);
-        return { ok: false as const, message: String(err) };
+        return null;
       });
 
-      const [modrinthResp, cfResp] = await Promise.all([modrinthPromise, cfPromise]);
-
-      const modrinthData = modrinthResp.ok ? modrinthResp.data : null;
-      const cfData = cfResp.ok ? cfResp.data : null;
+      const [modrinthData, cfData] = await Promise.all([modrinthPromise, cfPromise]);
 
       // 从后端代理结果中直接获取过滤后的 CurseForge 项目
       const cfAllItems: any[] = Array.isArray(cfData?.data) ? cfData.data : [];
@@ -367,15 +353,11 @@ export default function DownloadPage() {
       mergedResults.sort((a, b) => (b.downloads || 0) - (a.downloads || 0));
 
       setEnglishResults(mergedResults);
-      // 聚合来源状态（ok / count / error）
-      const cfHasSuccess = cfResp.ok && cfResp.ok && Array.isArray(cfData?.data);
+      // CurseForge 统计：检查后端代理是否返回有效数据
+      const cfHasSuccess = cfData?.data && Array.isArray(cfData.data);
       setEnglishSourceInfo({
-        modrinth: modrinthResp.ok
-          ? { ok: true, count: (modrinthData?.hits?.length as number | undefined) ?? 0 }
-          : { ok: false, count: 0, error: `HTTP ${modrinthResp.status} ${modrinthResp.message || ""}` },
-        curseforge: cfHasSuccess
-          ? { ok: true, count: finalCfItems.length }
-          : { ok: false, count: 0, error: cfResp.ok ? (cfResp as any).message ?? "未返回数据" : (cfResp as any).message ?? "未返回数据" },
+        modrinth: modrinthData ? { ok: true, count: modrinthData.hits?.length || 0 } : { ok: false, count: 0, error: "未返回数据" },
+        curseforge: cfHasSuccess ? { ok: true, count: finalCfItems.length } : { ok: false, count: 0, error: "未返回数据" },
       });
 
       if (mergedResults.length === 0) {
@@ -544,7 +526,7 @@ export default function DownloadPage() {
                 }`}
                 onClick={() => setTab("chinese")}
               >
-                中文资源检索
+                中文检索
               </button>
               <button
                 className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
@@ -552,7 +534,7 @@ export default function DownloadPage() {
                 }`}
                 onClick={() => setTab("english")}
               >
-                英文资源检索
+                英文检索
               </button>
             </div>
 
@@ -888,7 +870,7 @@ export default function DownloadPage() {
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                     <Input
-                      placeholder="搜索模组、整合包、资源包、光影包..."
+                      placeholder="Search mods, modpacks, resource packs, shaders..."
                       value={englishQuery}
                       onChange={(e) => {
                         setEnglishQuery(e.target.value);

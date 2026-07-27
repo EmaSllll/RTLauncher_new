@@ -11,52 +11,28 @@ fn get_moddata_connection() -> &'static Mutex<Option<Connection>> {
     MDDATA_CONN.get_or_init(|| Mutex::new(None))
 }
 
-/// 获取应用数据基础目录
-fn app_data_dir() -> PathBuf {
-    #[cfg(target_os = "macos")]
-    {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        let dir = PathBuf::from(format!("{}/Library/Application Support/RTLauncher", home));
-        let _ = fs::create_dir_all(&dir);
-        return dir;
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let dir = PathBuf::from("./RTL");
-        let _ = fs::create_dir_all(&dir);
-        return dir;
-    }
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    {
-        use crate::app_paths::linux_data_dir;
-        let dir = linux_data_dir();
-        let _ = fs::create_dir_all(&dir);
-        return dir;
-    }
-}
-
-/// 获取 moddata.db 的目标路径（应用数据目录）
+/// 获取 moddata.db 的目标路径（可执行文件同目录）
 fn get_moddata_target_path() -> PathBuf {
-    app_data_dir().join("moddata.db")
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            return dir.join("moddata.db");
+        }
+    }
+    PathBuf::from(".")
 }
 
 /// 获取 moddata.db 的文件路径
 /// 查找顺序：
-///   1. 应用数据目录下的 moddata.db
-///   2. 程序当前目录下的 moddata.db
-///   3. 程序可执行文件同目录下的 moddata.db
-///   4. 上层目录的 moddata.db（开发环境）
+///   1. 程序当前目录下的 moddata.db
+///   2. 程序可执行文件同目录下的 moddata.db
+///   3. 上层目录的 moddata.db（开发环境）
 fn resolve_moddata_path() -> Option<PathBuf> {
-    // 1) 应用数据目录（首选）
-    let p_app = get_moddata_target_path();
-    if p_app.exists() { return Some(p_app); }
-
-    // 2) 当前工作目录
+    // 1) 当前工作目录
     let cwd = PathBuf::from(".");
     let p1 = cwd.join("moddata.db");
     if p1.exists() { return Some(p1); }
 
-    // 3) 可执行文件目录
+    // 2) 可执行文件目录
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             let p = dir.join("moddata.db");
@@ -64,11 +40,11 @@ fn resolve_moddata_path() -> Option<PathBuf> {
         }
     }
 
-    // 4) 上层目录（开发环境，项目根）
+    // 3) 上层目录（开发环境，项目根）
     let p3 = cwd.join("..").join("moddata.db");
     if p3.exists() { return Some(p3); }
 
-    // 5) src-tauri 上层
+    // 4) src-tauri 上层
     let p4 = cwd.join("..").join("..").join("moddata.db");
     if p4.exists() { return Some(p4); }
 

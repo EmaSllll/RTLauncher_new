@@ -521,106 +521,36 @@ async fn download_url_async(url: &str, target: &Path) -> Result<()> {
         .await
         .map(|_| ())
 }
-const MOJANG_MANIFEST: &str = "https://launchermeta.mojang.com/mc/game/version_manifest.json";
-const BMCL_MANIFEST: &str = "https://bmclapi2.bangbang93.com/mc/game/version_manifest.json";
-const BMCL_PREFIX: &str = "https://bmclapi2.bangbang93.com";
-
-/// 将官方 Minecraft 资源 URL 转换为 BMCL 镜像 URL
-///   官方: https://launchermeta.mojang.com/v1/packages/<hash>/<version>.json
-///   BMCL: https://bmclapi2.bangbang93.com/version/<version>/json
-///   client.jar: https://bmclapi2.bangbang93.com/version/<version>/client
-fn bmcl_alternative_for_package(official_url: &str, version: &str) -> String {
-    format!("{}/version/{}/json", BMCL_PREFIX, version)
-}
-
 async fn fetch_minecraft_version_package(
     mc_version: &str,
 ) -> Result<serde_json::Value> {
-    use futures::stream::FuturesUnordered;
-    use futures::StreamExt;
-
     let client = crate::http_client::shared_client().await;
-
-    // 第一步：并行请求 version_manifest.json，谁先成功就用谁
-    let mut manifest_futures = FuturesUnordered::new();
-    for url in [MOJANG_MANIFEST, BMCL_MANIFEST] {
-        let c = client.clone();
-        let u = url.to_string();
-        manifest_futures.push(async move {
-            let json: serde_json::Value = c
-                .get(&u)
-                .send()
-                .await
-                .map_err(|e| e.to_string())?
-                .json()
-                .await
-                .map_err(|e| e.to_string())?;
-            Ok::<serde_json::Value, String>(json)
-        });
-    }
-
-    let mut last_manifest_err: Option<String> = None;
-    let mut package_url: Option<String> = None;
-    while let Some(result) = manifest_futures.next().await {
-        match result {
-            Ok(manifest) => {
-                if let Some(versions) = manifest["versions"].as_array() {
-                    if let Some(found) = versions.iter().find(|v| v["id"].as_str() == Some(mc_version)) {
-                        if let Some(url) = found["url"].as_str() {
-                            package_url = Some(url.to_string());
-                            break;
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                last_manifest_err = Some(e);
-            }
-        }
-    }
-
-    let package_url = package_url.ok_or_else(|| {
-        anyhow!(
-            "未在版本清单中找到 Minecraft {}（{}）",
-            mc_version,
-            last_manifest_err.unwrap_or_else(|| "清单解析失败".to_string())
-        )
-    })?;
-
-    // 第二步：请求 package.json，官方 URL + BMCL 备用 URL
-    let bmcl_package_url = bmcl_alternative_for_package(&package_url, mc_version);
-    let mut package_futures = FuturesUnordered::new();
-    for url in [package_url.as_str(), bmcl_package_url.as_str()] {
-        let c = client.clone();
-        let u = url.to_string();
-        package_futures.push(async move {
-            let json: serde_json::Value = c
-                .get(&u)
-                .send()
-                .await
-                .map_err(|e| e.to_string())?
-                .json()
-                .await
-                .map_err(|e| e.to_string())?;
-            Ok::<serde_json::Value, String>(json)
-        });
-    }
-
-    let mut last_package_err: Option<String> = None;
-    while let Some(result) = package_futures.next().await {
-        match result {
-            Ok(data) => return Ok(data),
-            Err(e) => {
-                last_package_err = Some(e);
-            }
-        }
-    }
-
-    Err(anyhow!(
-        "请求 Minecraft {} package.json 失败（{}）",
-        mc_version,
-        last_package_err.unwrap_or_else(|| "所有镜像源均失败".to_string())
-    ))
+    let manifest_url = "https://launchermeta.mojang.com/mc/game/version_manifest.json";
+    let manifest: serde_json::Value = client
+        .get(manifest_url)
+        .send()
+        .await
+        .with_context(|| format!("请求 {} 失败", manifest_url))?
+        .json()
+        .await
+        .context("解析 version_manifest.json 失败")?;
+    let versions = manifest["versions"]
+        .as_array()
+        .ok_or_else(|| anyhow!("缺少 versions 数组"))?;
+    let package_url = versions
+        .iter()
+        .find(|v| v["id"].as_str() == Some(mc_version))
+        .and_then(|v| v["url"].as_str().map(|s| s.to_string()))
+        .ok_or_else(|| anyhow!("未在 Mojang 版本清单中找到 Minecraft {}", mc_version))?;
+    let package: serde_json::Value = client
+        .get(&package_url)
+        .send()
+        .await
+        .with_context(|| format!("请求 {} 失败", package_url))?
+        .json()
+        .await
+        .context("解析 Minecraft package.json 失败")?;
+    Ok(package)
 }
 pub async fn ensure_minecraft_client_jar_async(
     mc_version: &str,
@@ -639,8 +569,6 @@ pub async fn ensure_minecraft_client_jar_async(
         .as_str()
         .ok_or_else(|| anyhow!("package.json 缺少 downloads.client.url"))?
         .to_string();
-    // 添加 BMCL 备用 URL：https://bmclapi2.bangbang93.com/version/<version>/client
-    let bmcl_client_url = format!("{}/version/{}/client", BMCL_PREFIX, mc_version);
     println!(
         "  下载原版 Minecraft {} client jar → {}",
         mc_version,
@@ -655,7 +583,7 @@ pub async fn ensure_minecraft_client_jar_async(
             .parent()
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| libraries_dir.to_path_buf()),
-        urls: vec![client_url, bmcl_client_url],
+        urls: vec![client_url],
         sha1: package["downloads"]["client"]["sha1"]
             .as_str()
             .map(|s| s.to_string()),

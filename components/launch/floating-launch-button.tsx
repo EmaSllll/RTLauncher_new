@@ -42,11 +42,12 @@ export function FloatingLaunchButton() {
     "未选择版本"
   );
 
-  // 初始化位置
+  // 初始化位置：横轴 1/2、纵轴 1/3（按钮初始为收起态 60×60，居中放置）
   useEffect(() => {
+    const BTN_SIZE = 60;
     setPosition({
-      x: 20,
-      y: window.innerHeight - 80,
+      x: window.innerWidth / 2 - BTN_SIZE / 2,
+      y: window.innerHeight / 3 - BTN_SIZE / 2,
     });
   }, []);
 
@@ -180,7 +181,7 @@ export function FloatingLaunchButton() {
         stiffness: 300,
         damping: 30
       }}
-      className="fixed z-50 cursor-move"
+      className="fixed z-50 cursor-move select-none"
       style={{
         left: position.x,
         top: position.y,

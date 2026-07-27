@@ -114,10 +114,9 @@ function translateProjectType(pt?: string): string {
     resourcepack: "资源包",
     "resource pack": "资源包",
     "texture pack": "资源包",
-    shader: "光影包",
-    shaders: "光影包",
-    "shader pack": "光影包",
-    "shaderpack": "光影包",
+    shader: "光影",
+    shaders: "光影",
+    "shader pack": "光影",
     datapack: "数据包",
     "data pack": "数据包",
     world: "地图",
@@ -417,43 +416,26 @@ export default function ModDetailContent({ modId }: { modId: string }) {
     try {
       setLiveError(null);
 
-      // 并行查询：Modrinth 直接请求（CORS 友好），CurseForge 通过后端代理访问（更可靠且避免前端暴露 API key）
+      // 并行查询 Modrinth 和 CurseForge 以获取项目完整信息
       const mrPromise = fetch(
         `https://api.modrinth.com/v2/project/${encodeURIComponent(modId)}`,
         { headers: { 'User-Agent': 'RTLauncher', 'x-modrinth-api-version': 'v2' } }
       )
-        .then(async (r) => {
-          if (!r.ok) {
-            const text = await r.text().catch(() => '');
-            return { ok: false as const, data: null, error: `HTTP ${r.status} ${text}` };
-          }
-          try {
-            return { ok: true as const, data: await r.json(), error: undefined };
-          } catch (err) {
-            return { ok: false as const, data: null, error: `JSON parse: ${String(err)}` };
-          }
-        })
-        .catch((err) => ({ ok: false as const, data: null, error: String(err) }));
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
 
-      // CurseForge 通过后端代理搜索（slug 精确匹配）
-      const cfPromise = invoke('search_curseforge_projects', {
-        query: modId,
-        category: 'mod',
-        pageSize: 20,
+      const cfUrl = `https://api.curseforge.com/v1/mods/search?slug=${encodeURIComponent(modId)}&gameId=432`;
+      const cfPromise = fetch(cfUrl, {
+        headers: {
+          'x-api-key': '$2a$10$VTAFCxje5a1Jkqv0aGWjQ.fULedAEPctDqppOkNMRVv.edVnG7KQ6',
+          Accept: 'application/json',
+          'User-Agent': 'RTLauncher',
+        },
       })
-        .then((result) => {
-          if (typeof result === 'string') {
-            try {
-              return { ok: true as const, data: JSON.parse(result), error: undefined };
-            } catch (err) {
-              return { ok: false as const, data: null, error: `JSON parse: ${String(err)}` };
-            }
-          }
-          return { ok: true as const, data: result as any, error: undefined };
-        })
-        .catch((err) => ({ ok: false as const, data: null, error: String(err) }));
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
 
-      const [mrResp, cfResp, mcmodData] = await Promise.all([
+      const [mrData, cfData, mcmodData] = await Promise.all([
         mrPromise,
         cfPromise,
         invoke<string>("search_moddata", { keyword: modId }).then(result => {
@@ -465,9 +447,6 @@ export default function ModDetailContent({ modId }: { modId: string }) {
           }
         }).catch(() => null)
       ]);
-
-      const mrData = mrResp.ok ? mrResp.data : null;
-      const cfDataRaw = cfResp.ok ? cfResp.data : null;
 
       let mrTitle = '';
       let mrDescription = '';
@@ -534,16 +513,16 @@ export default function ModDetailContent({ modId }: { modId: string }) {
       let cfClassId: number | undefined;
 
       if (
-        cfDataRaw &&
-        typeof cfDataRaw === 'object' &&
-        Array.isArray(cfDataRaw.data) &&
-        cfDataRaw.data.length > 0
+        cfData &&
+        typeof cfData === 'object' &&
+        Array.isArray(cfData.data) &&
+        cfData.data.length > 0
       ) {
         cfOk = true;
         const exact =
-          cfDataRaw.data.find(
+          cfData.data.find(
             (d: any) => (d.slug || '').toLowerCase() === modId.toLowerCase()
-          ) || cfDataRaw.data[0];
+          ) || cfData.data[0];
         cfTitle = exact.name || '';
         cfDescription = exact.summary || '';
         cfDownloads = typeof exact.downloadCount === 'number' ? exact.downloadCount : undefined;
@@ -610,31 +589,14 @@ export default function ModDetailContent({ modId }: { modId: string }) {
         author,
         source,
         sources: {
-          modrinth: {
-            ok: mrOk,
-            url: modrinthUrl,
-            error: mrResp.ok ? undefined : (mrResp as any).error,
-          },
-          curseforge: {
-            ok: cfOk,
-            url: curseforgeUrl,
-            error: cfResp.ok ? undefined : (cfResp as any).error,
-          },
+          modrinth: { ok: mrOk, url: modrinthUrl },
+          curseforge: { ok: cfOk, url: curseforgeUrl },
         },
         modrinthUrl,
         curseforgeUrl,
         mcmodUrl,
         classId: cfId,
       });
-
-      // 两个外部来源都失败时，在 UI 上提示一次，而不是掩盖
-      if (!mrOk && !cfOk && !liveError) {
-        const errMsg = [
-          mrResp.ok ? undefined : (mrResp as any).error,
-          cfResp.ok ? undefined : (cfResp as any).error,
-        ].filter(Boolean).join(' | ') || '未能从 Modrinth / CurseForge 获取项目信息';
-        setLiveError(errMsg);
-      }
     } catch (err) {
       console.error('获取项目在线信息失败:', err);
       setLiveError(String(err));

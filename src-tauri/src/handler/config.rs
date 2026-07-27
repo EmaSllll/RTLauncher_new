@@ -23,14 +23,8 @@ fn config_dir() -> String {
         format!("{}/Library/Application Support/RTLauncher/config", home)
     };
 
-    #[cfg(target_os = "windows")]
+    #[cfg(not(target_os = "macos"))]
     let dir = "./RTL/config".to_string();
-
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let dir = {
-        use crate::app_paths::linux_config_dir;
-        linux_config_dir().to_string_lossy().to_string()
-    };
 
     let _ = fs::create_dir_all(&dir);
     dir
@@ -168,10 +162,7 @@ pub fn get_java_download_dir() -> Result<String, String> {
     let dir = "./RTL/java".to_string();
 
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let dir = {
-        use crate::app_paths::linux_java_dir;
-        linux_java_dir().to_string_lossy().to_string()
-    };
+    let dir = "./java".to_string();
 
     let _ = fs::create_dir_all(&dir);
     Ok(dir)

@@ -44,6 +44,10 @@ output.log
 
 # RTLauncher runtime data
 /RTL/
+/src-tauri/bridge/
+/src-tauri/RTL/
+/src-tauri/instance/
+
 
 # Tauri signing keys (NEVER commit these!)
 signing-keys/

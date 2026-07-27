@@ -39,21 +39,21 @@ export interface DownloadTask {
 interface DownloadContextValue {
   tasks: DownloadTask[];
   /** 启动一个原版下载任务（排队制）*/
-  startDownload: (label: string, mcVersion: string) => Promise<number>;
+  startDownload: (label: string, mcVersion: string, instanceName?: string) => Promise<number>;
   /** 启动 Java 下载（不排队）*/
   startJavaDownload: (runtimeName: string) => Promise<number>;
   /** 启动 OptiFine 下载（不排队）*/
-  startOptifineDownload: (optifineVersion: string, mcVersion: string) => Promise<number>;
+  startOptifineDownload: (optifineVersion: string, mcVersion: string, instanceName?: string) => Promise<number>;
   /** 启动 Fabric 下载（不排队）*/
-  startFabricDownload: (mcVersion: string, loaderVersion: string, apiVersion?: string) => Promise<number>;
+  startFabricDownload: (mcVersion: string, loaderVersion: string, apiVersion?: string, instanceName?: string) => Promise<number>;
   /** 启动 Quilt 下载（不排队）*/
-  startQuiltDownload: (mcVersion: string, loaderVersion: string, apiVersion?: string) => Promise<number>;
+  startQuiltDownload: (mcVersion: string, loaderVersion: string, apiVersion?: string, instanceName?: string) => Promise<number>;
   /** 启动 Forge 下载（不排队）*/
-  startForgeDownload: (mcVersion: string, forgeVersion: string) => Promise<number>;
+  startForgeDownload: (mcVersion: string, forgeVersion: string, instanceName?: string) => Promise<number>;
   /** 启动 NeoForge 下载（不排队）*/
-  startNeoForgeDownload: (mcVersion: string, neoforgeVersion: string) => Promise<number>;
+  startNeoForgeDownload: (mcVersion: string, neoforgeVersion: string, instanceName?: string) => Promise<number>;
   /** 启动 LiteLoader 下载（不排队）*/
-  startLiteLoaderDownload: (mcVersion: string, liteloaderVersion: string) => Promise<number>;
+  startLiteLoaderDownload: (mcVersion: string, liteloaderVersion: string, instanceName?: string) => Promise<number>;
   /** Mod 文件下载 */
   startModDownload: (modSlug: string, modName: string, mcVersion: string, modLoader: string, downloadUrl: string) => Promise<number>;
   /** 通用资源文件下载（mod / resourcepack / shaderpack / datapack / world） */
@@ -83,6 +83,7 @@ interface QueueItem {
   localId: number;
   label: string;
   mcVersion: string;
+  instanceName?: string;
 }
 
 export function DownloadProvider({ children }: { children: React.ReactNode }) {
@@ -110,6 +111,7 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
     try {
       const taskId = await invoke<number>("download_patcher", {
         mcVersion: next.mcVersion,
+        instanceName: next.instanceName ?? null,
       });
       setTasks((prev) =>
         prev.map((t) =>
@@ -161,11 +163,11 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 
   /** 原版下载（排队制）*/
   const startDownload = useCallback(
-    async (label: string, mcVersion: string): Promise<number> => {
+    async (label: string, mcVersion: string, instanceName?: string): Promise<number> => {
       if (!isDownloadingRef.current) {
         isDownloadingRef.current = true;
         try {
-          const taskId = await invoke<number>("download_patcher", { mcVersion });
+          const taskId = await invoke<number>("download_patcher", { mcVersion, instanceName: instanceName ?? null });
           const task: DownloadTask = {
             taskId,
             label,
@@ -182,7 +184,7 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
         }
       } else {
         const localId = localIdCounterRef.current--;
-        pendingQueueRef.current.push({ localId, label, mcVersion });
+        pendingQueueRef.current.push({ localId, label, mcVersion, instanceName });
         const task: DownloadTask = {
           taskId: localId,
           label,
@@ -228,12 +230,12 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 
   /** OptiFine */
   const startOptifineDownload = useCallback(
-    async (optifineVersion: string, mcVersion: string) => {
+    async (optifineVersion: string, mcVersion: string, instanceName?: string) => {
       return startModLoaderDownload({
         label: optifineVersion,
         mcVersion,
         tauriCommand: "download_and_install_optifine",
-        params: { optifineVersion, mcVersion },
+        params: { optifineVersion, mcVersion, instanceName: instanceName ?? null },
       });
     },
     [startModLoaderDownload]
@@ -241,13 +243,13 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 
   /** Fabric */
   const startFabricDownload = useCallback(
-    async (mcVersion: string, loaderVersion: string, apiVersion?: string) => {
+    async (mcVersion: string, loaderVersion: string, apiVersion?: string, instanceName?: string) => {
       const label = `Fabric ${loaderVersion}${apiVersion ? ` + API ${apiVersion}` : ""}`;
       return startModLoaderDownload({
         label,
         mcVersion,
         tauriCommand: "download_and_install_fabric",
-        params: { mcVersion, loaderVersion, apiVersion: apiVersion || null },
+        params: { mcVersion, loaderVersion, apiVersion: apiVersion || null, instanceName: instanceName ?? null },
       });
     },
     [startModLoaderDownload]
@@ -255,13 +257,13 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 
   /** Quilt */
   const startQuiltDownload = useCallback(
-    async (mcVersion: string, loaderVersion: string, apiVersion?: string) => {
+    async (mcVersion: string, loaderVersion: string, apiVersion?: string, instanceName?: string) => {
       const label = `Quilt ${loaderVersion}${apiVersion ? ` + API ${apiVersion}` : ""}`;
       return startModLoaderDownload({
         label,
         mcVersion,
         tauriCommand: "download_and_install_quilt",
-        params: { mcVersion, loaderVersion, apiVersion: apiVersion || null },
+        params: { mcVersion, loaderVersion, apiVersion: apiVersion || null, instanceName: instanceName ?? null },
       });
     },
     [startModLoaderDownload]
@@ -269,13 +271,13 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 
   /** Forge */
   const startForgeDownload = useCallback(
-    async (mcVersion: string, forgeVersion: string) => {
+    async (mcVersion: string, forgeVersion: string, instanceName?: string) => {
       const label = `Forge ${forgeVersion} (MC ${mcVersion})`;
       return startModLoaderDownload({
         label,
         mcVersion,
         tauriCommand: "download_and_install_forge",
-        params: { mcVersion, forgeVersion },
+        params: { mcVersion, forgeVersion, instanceName: instanceName ?? null },
       });
     },
     [startModLoaderDownload]
@@ -283,13 +285,13 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 
   /** NeoForge */
   const startNeoForgeDownload = useCallback(
-    async (mcVersion: string, neoforgeVersion: string) => {
+    async (mcVersion: string, neoforgeVersion: string, instanceName?: string) => {
       const label = `NeoForge ${neoforgeVersion} (MC ${mcVersion})`;
       return startModLoaderDownload({
         label,
         mcVersion,
         tauriCommand: "download_and_install_neoforge",
-        params: { mcVersion, neoforgeVersion },
+        params: { mcVersion, neoforgeVersion, instanceName: instanceName ?? null },
       });
     },
     [startModLoaderDownload]
@@ -297,13 +299,13 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 
   /** LiteLoader */
   const startLiteLoaderDownload = useCallback(
-    async (mcVersion: string, liteloaderVersion: string) => {
+    async (mcVersion: string, liteloaderVersion: string, instanceName?: string) => {
       const label = `LiteLoader ${liteloaderVersion} (MC ${mcVersion})`;
       return startModLoaderDownload({
         label,
         mcVersion,
         tauriCommand: "download_and_install_liteloader",
-        params: { mcVersion, liteloaderVersion },
+        params: { mcVersion, liteloaderVersion, instanceName: instanceName ?? null },
       });
     },
     [startModLoaderDownload]
