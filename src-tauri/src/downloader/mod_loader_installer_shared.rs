@@ -17,8 +17,7 @@ pub struct LoaderInstallerConfig {
     pub mc_version_id: String,     
     pub library_mirrors: Vec<String>, 
 }
-/// Resolve Java to an absolute executable path so later existence checks do not
-/// mistake the PATH command name `java` for a missing file.
+/// 将 Java 解析为可执行文件的绝对路径，避免后续检查时把 PATH 中的命令名 `java` 误判为文件缺失。
 fn is_executable_file(path: &Path) -> bool {
     if !path.is_file() {
         return false;
@@ -100,7 +99,7 @@ fn required_java_major_for_mc(mc_version: &str) -> i32 {
         .first()
         .and_then(|s| s.parse::<i32>().ok())
         .unwrap_or(1);
-    // Minecraft switched to year-based versions (for example 26.2).
+    // Minecraft 已改用以年份为基础的版本号（例如 26.2）。
     if major >= 25 {
         return 21;
     }
