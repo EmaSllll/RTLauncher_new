@@ -42,7 +42,7 @@ use auth::littleskinLoader::{useMethod, use_method_with_credentials};
 use auth::yissadrail::{thirdPartyLogin, getAccountList, getPlayerSkin};
 use auth::official::{ms_request_device_code, ms_poll_and_login, ms_cancel_login, get_skin_base64, ms_get_skins_and_capes, ms_upload_skin, ms_activate_skin, ms_delete_skin, ms_set_active_cape};
 use mutiplayer::{mp_check_openp2p, mp_install_openp2p, mp_start_openp2p_host, mp_start_openp2p_join, mp_encode_room_info, mp_stop_openp2p, mp_is_openp2p_running, mp_poll_log, mp_get_openp2p_dir, mp_get_openp2p_path, ensure_openp2p_stopped};
-use version_management::{vm_scan_instances, vm_find_resource_packs, vm_parse_level_dat, vm_modify_game_rule, vm_list_dir, vm_ensure_instance_dirs, vm_delete_file, vm_rename_file, vm_delete_cached_file};
+use version_management::{vm_scan_instances, vm_find_resource_packs, vm_parse_level_dat, vm_modify_game_rule, vm_list_dir, vm_ensure_instance_dirs, vm_delete_file, vm_rename_file, vm_write_file_base64, vm_delete_cached_file};
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
@@ -106,6 +106,7 @@ pub fn run() {
             vm_ensure_instance_dirs,
             vm_delete_file,
             vm_rename_file,
+            vm_write_file_base64,
             vm_delete_cached_file,
             get_system_memory,
             optimize_memory_usage,

@@ -14,7 +14,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import {
   Tooltip,
   TooltipContent,
@@ -52,7 +52,18 @@ function NavButton({ item, isActive }: { item: NavItem; isActive: boolean }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Link href={item.href}>
+        <Link
+          href={item.href}
+          aria-label={item.label}
+          aria-current={isActive ? "page" : undefined}
+          className={cn(
+            item.isAvatar
+              ? "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              : buttonVariants({ variant: "ghost", size: "icon" }),
+            "relative overflow-hidden touch-manipulation",
+            !item.isAvatar && isActive && "text-accent-foreground"
+          )}
+        >
           {item.isAvatar ? (
             <span
               className={cn(
@@ -63,14 +74,7 @@ function NavButton({ item, isActive }: { item: NavItem; isActive: boolean }) {
               {item.icon}
             </span>
           ) : (
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                "relative overflow-hidden touch-manipulation",
-                isActive && "text-accent-foreground"
-              )}
-            >
+            <>
               {isActive && (
                 <motion.span
                   layoutId="active-nav-indicator"
@@ -79,7 +83,7 @@ function NavButton({ item, isActive }: { item: NavItem; isActive: boolean }) {
                 />
               )}
               <span className="relative z-10">{item.icon}</span>
-            </Button>
+            </>
           )}
         </Link>
       </TooltipTrigger>
@@ -90,14 +94,16 @@ function NavButton({ item, isActive }: { item: NavItem; isActive: boolean }) {
   )
 }
 
+function isNavItemActive(pathname: string, href: string) {
+  if (href === "/") return pathname === "/"
+  return pathname === href || pathname.startsWith(`${href}/`)
+}
+
 // 左侧边栏
 export function Sidebar({ className }: SidebarProps) {
   const pathname = usePathname()
 
-  const isActive = (href: string) => {
-    if (href === "/") return pathname === "/"
-    return pathname.startsWith(href)
-  }
+  const isActive = (href: string) => isNavItemActive(pathname, href)
 
   return (
     <aside

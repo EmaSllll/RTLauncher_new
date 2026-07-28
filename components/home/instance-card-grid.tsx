@@ -12,12 +12,19 @@ import {
 import { INSTANCE_CARDS } from "@/constants/data";
 import { cn } from "@/lib/utils";
 import { staggerContainer, staggerItem } from "@/lib/motion";
-import { useInstancePath } from "@/hooks/use-instance-path";
 import { useResourcePacks } from "@/hooks/use-resource-packs";
 import { useDirFiles } from "@/hooks/use-dir-files";
+import type { InstanceData } from "@/types";
 
-export function InstanceCardGrid() {
-  const { instanceDir, selectedInstance } = useInstancePath();
+type InstanceCardGridProps = {
+  instanceDir: string | undefined;
+  selectedInstance: InstanceData | null;
+};
+
+export function InstanceCardGrid({
+  instanceDir,
+  selectedInstance,
+}: InstanceCardGridProps) {
 
   // mods count 来自 Rust 扫描结果
   const modsCount = selectedInstance?.mods_count;
@@ -98,26 +105,29 @@ export function InstanceCardGrid() {
 
   return (
     <motion.div
-      className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 auto-rows-[minmax(0,1fr)] h-full items-stretch min-h-0"
+      className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
       variants={staggerContainer}
       initial="initial"
       animate="animate"
     >
       {INSTANCE_CARDS.map((card) => (
-        <motion.div key={card.id} variants={staggerItem} className="h-full">
-          <Link href={card.href} className="block h-full">
-            <Card className="shadow-sm hover:shadow-xl transition-all duration-300 cursor-pointer h-full flex flex-col border hover:border-primary/40">
-              <CardHeader>
+        <motion.div key={card.id} variants={staggerItem}>
+          <Link
+            href={card.href}
+            className="block h-full rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <Card className="h-full border py-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg">
+              <CardHeader className="px-4">
                 {/* 图标 */}
                 <div
                   className={cn(
-                    "w-14 h-14 rounded-xl flex items-center justify-center mb-4",
+                    "mb-3 flex size-11 items-center justify-center rounded-xl",
                     card.iconBgColor
                   )}
                 >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
-                    className={cn("h-7 w-7", card.iconColor)}
+                    className={cn("size-5", card.iconColor)}
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -126,11 +136,11 @@ export function InstanceCardGrid() {
                     {card.icon}
                   </svg>
                 </div>
-                <CardTitle className="text-lg">{card.title}</CardTitle>
+                <CardTitle>{card.title}</CardTitle>
                 <CardDescription className="text-xs">{card.description}</CardDescription>
               </CardHeader>
-              <CardContent className="flex-1 flex flex-col justify-between">
-                <div className="space-y-2">
+              <CardContent className="px-4">
+                <div className="space-y-1.5">
                   {getDynamicStats(card.id, card.stats).map((stat, index) => (
                     <p key={index} className="text-xs text-muted-foreground">
                       {stat}

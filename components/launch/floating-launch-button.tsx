@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { Loader2, Play, Square } from "lucide-react";
+import { ChevronUp, Loader2, Play, Square } from "lucide-react";
 import { useLaunchContext } from "@/components/launch/launch-provider";
 import { VersionSelectorDialog } from "@/components/launch/version-selector-dialog";
 

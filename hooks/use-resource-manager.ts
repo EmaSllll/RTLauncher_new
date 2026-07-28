@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { blobToBase64 } from "@/lib/file-utils";
 
 export interface ModDependency {
   mod_id: string;
@@ -28,6 +29,18 @@ export interface ModInfo {
   dependencies: ModDependency[];
   optional_dependencies: ModDependency[];
   incompatible_dependencies: ModDependency[];
+}
+
+type ResourceEntry = {
+  name: string;
+  is_dir: boolean;
+  extension: string;
+  size: number;
+};
+
+function isMissingDirectoryError(error: unknown) {
+  const message = String(error).toLowerCase();
+  return message.includes("not found") || message.includes("系统找不到");
 }
 
 /**
@@ -140,7 +153,7 @@ export function useResourceManager(
     setInstanceError(null);
     try {
       const dir = `${instanceDir}/${instanceSubdir}`;
-      const entries: { name: string; is_dir: boolean; extension: string; size: number }[] =
+      const entries: ResourceEntry[] =
         await invoke("vm_list_dir", { dirPath: dir, extensionsFilter: extensions });
       // world 类型保留目录（存档是目录），其他类型仅保留文件
       const filtered = cacheKind === "world"
@@ -168,17 +181,17 @@ export function useResourceManager(
           setModsParsing(false);
         }
       }
-    } catch (e: any) {
-      if (String(e).toLowerCase().includes("not found") || String(e).toLowerCase().includes("系统找不到")) {
+    } catch (error: unknown) {
+      if (isMissingDirectoryError(error)) {
         setInstanceFiles([]);
       } else {
-        setInstanceError(String(e));
+        setInstanceError(String(error));
         setInstanceFiles([]);
       }
     } finally {
       setInstanceLoading(false);
     }
-  }, [instanceDir, instanceSubdir, JSON.stringify(extensions), cacheKind, parseModMetadata]);
+  }, [instanceDir, instanceSubdir, extensions, cacheKind, parseModMetadata]);
 
   const fetchCacheFiles = useCallback(async () => {
     if (!mcVersion) {
@@ -239,17 +252,17 @@ export function useResourceManager(
           setModsParsing(false);
         }
       }
-    } catch (e: any) {
-      if (String(e).toLowerCase().includes("not found") || String(e).toLowerCase().includes("系统找不到")) {
+    } catch (error: unknown) {
+      if (isMissingDirectoryError(error)) {
         setCacheFiles([]);
       } else {
-        setCacheError(String(e));
+        setCacheError(String(error));
         setCacheFiles([]);
       }
     } finally {
       setCacheLoading(false);
     }
-  }, [cacheKind, mcVersion, modLoader, JSON.stringify(instanceFiles), parseModMetadata]);
+  }, [cacheKind, mcVersion, modLoader, instanceFiles, parseModMetadata]);
 
   const addToInstance = useCallback(
     async (fileName: string) => {
@@ -332,7 +345,7 @@ export function useResourceManager(
     
     document.body.appendChild(input);
     
-    return new Promise<void>((resolve) => {
+    return new Promise<void>((resolve, reject) => {
       input.addEventListener('change', async (e) => {
         const files = (e.target as HTMLInputElement).files;
         if (!files || files.length === 0) {
@@ -341,25 +354,25 @@ export function useResourceManager(
           return;
         }
 
-        const targetDir = `${instanceDir}/${instanceSubdir}`;
-        
-        for (const file of Array.from(files)) {
-          const arrayBuffer = await file.arrayBuffer();
-          const bytes = new Uint8Array(arrayBuffer);
-          const base64 = btoa(String.fromCharCode(...bytes));
-          
-          await invoke("vm_write_file_base64", {
-            dirPath: targetDir,
-            fileName: file.name,
-            contentBase64: base64,
-          });
+        try {
+          const targetDir = `${instanceDir}/${instanceSubdir}`;
+          for (const file of Array.from(files)) {
+            const base64 = await blobToBase64(file);
+            await invoke("vm_write_file_base64", {
+              dirPath: targetDir,
+              fileName: file.name,
+              contentBase64: base64,
+            });
+          }
+
+          fetchInstanceFiles();
+          fetchCacheFiles();
+          resolve();
+        } catch (error) {
+          reject(error);
+        } finally {
+          document.body.removeChild(input);
         }
-        
-        fetchInstanceFiles();
-        fetchCacheFiles();
-        
-        document.body.removeChild(input);
-        resolve();
       });
       
       input.click();
@@ -373,12 +386,16 @@ export function useResourceManager(
 
   // 初始化加载
   useEffect(() => {
-    if (instanceDir) {
-      fetchInstanceFiles();
-    }
-    if (mcVersion) {
-      fetchCacheFiles();
-    }
+    const timer = window.setTimeout(() => {
+      if (instanceDir) {
+        void fetchInstanceFiles();
+      }
+      if (mcVersion) {
+        void fetchCacheFiles();
+      }
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, [instanceDir, mcVersion, fetchInstanceFiles, fetchCacheFiles]);
 
   // 过滤结果 - 同时搜索文件名和模组名称

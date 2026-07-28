@@ -5,6 +5,7 @@ import { Camera, Copy, Check, X, Plus } from "lucide-react";
 import { useLaunchContext } from "@/components/launch/launch-provider";
 import { Button } from "@/components/ui/button";
 import { invoke } from "@tauri-apps/api/core";
+import { blobToBase64 } from "@/lib/file-utils";
 
 interface ScreenshotFile {
   name: string;
@@ -28,8 +29,8 @@ export default function GameSettingsScreenshots() {
 
   useEffect(() => {
     if (!configLoaded || !screenshotsDir) {
-      setLoading(false);
-      return;
+      const timer = window.setTimeout(() => setLoading(false), 0);
+      return () => window.clearTimeout(timer);
     }
 
     const loadScreenshots = async () => {
@@ -96,10 +97,7 @@ export default function GameSettingsScreenshots() {
       }
 
       for (const file of Array.from(files)) {
-        const arrayBuffer = await file.arrayBuffer();
-        const bytes = new Uint8Array(arrayBuffer);
-        const base64 = btoa(String.fromCharCode(...bytes));
-        
+        const base64 = await blobToBase64(file);
         await invoke("vm_write_file_base64", {
           dirPath: screenshotsDir,
           fileName: file.name,
