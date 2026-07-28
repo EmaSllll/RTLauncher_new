@@ -8,10 +8,11 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useAccountContext } from "@/components/accounts/account-provider";
 import { LoginDialog } from "@/components/accounts/login-dialog";
 import { SkinCapeManager } from "@/components/accounts/skin-cape-manager";
-import { X, Check, Plus, Trash2, Shirt } from "lucide-react";
+import { X, Check, Plus, Trash2, Shirt, RefreshCw } from "lucide-react";
 import { cn, getAvatarColor, getAvatarInitials } from "@/lib/utils";
 import { overlayFade, scaleIn } from "@/lib/motion";
 import type { Account } from "@/types";
+import { redownloadLittleSkinSkin, getSkinBase64 } from "@/lib/auth";
 
 interface AccountSwitcherProps {
   open: boolean;
@@ -24,10 +25,11 @@ export function AccountSwitcher({
   onClose,
   onSelect,
 }: AccountSwitcherProps) {
-  const { profiles, selectedProfile, removeProfile } = useAccountContext();
+  const { profiles, selectedProfile, removeProfile, updateProfile } = useAccountContext();
   const [loginOpen, setLoginOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Account | null>(null);
   const [skinManagerAccount, setSkinManagerAccount] = useState<Account | null>(null);
+  const [refreshingSkinId, setRefreshingSkinId] = useState<string | null>(null);
 
   return (
     <>
@@ -128,6 +130,42 @@ export function AccountSwitcher({
                           title="皮肤与披风管理"
                         >
                           <Shirt className="size-4" />
+                        </Button>
+                      )}
+
+                      {/* LittleSkin 账户：显示刷新皮肤按钮 */}
+                      {profile.authType === "littleskin" && (
+                        <Button
+                          variant="ghost"
+                          size="icon-sm"
+                          disabled={refreshingSkinId === profile.id}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity touch-manipulation disabled:opacity-100"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (!profile.uuid || refreshingSkinId) return;
+                            const pid = profile.id;
+                            const puuid = profile.uuid;
+                            setRefreshingSkinId(pid);
+                            // 用 IIFE 触发真正异步，避免 onClick 返回 Promise 导致 React 传播 Event 错误
+                            (async () => {
+                              try {
+                                await redownloadLittleSkinSkin(puuid);
+                                const skinSrc = await getSkinBase64(puuid);
+                                updateProfile(pid, { skinUrl: skinSrc });
+                              } catch (err) {
+                                console.warn("刷新皮肤失败:", err);
+                              } finally {
+                                setRefreshingSkinId((curr) => (curr === pid ? null : curr));
+                              }
+                            })();
+                          }}
+                          title="刷新皮肤"
+                        >
+                          <RefreshCw
+                            className={`size-4 ${
+                              refreshingSkinId === profile.id ? "animate-spin" : ""
+                            }`}
+                          />
                         </Button>
                       )}
 

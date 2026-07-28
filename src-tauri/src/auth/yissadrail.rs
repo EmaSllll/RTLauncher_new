@@ -26,11 +26,29 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 const FOLDER_PATH: &str = "./.minecraft/versions";
 
-pub fn downloadInjecter() {
+/// 获取或下载 authlib-injector，返回其文件路径
+/// 如果下载失败则返回空字符串
+pub fn get_or_download_authlib_injector() -> String {
     // 初始化
     let URL_BMCL = "https://bmclapi2.bangbang93.com/mirrors/authlib-injector/artifact/latest.json";
     let URL_YUSHI = "https://authlib-injector.yushi.moe/artifact/latest.json";
-    let httpClient = reqwest::blocking::Client::new();
+    let httpClient = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .unwrap_or_else(|_| reqwest::blocking::Client::new());
+
+    // 先检查现有版本目录中是否已有 authlib-injector jar
+    if let Ok(entries) = fs::read_dir(FOLDER_PATH) {
+        for entry in entries.flatten() {
+            if let Ok(name) = entry.file_name().into_string() {
+                if name.starts_with("authlib-injector") && name.ends_with(".jar") {
+                    let path = format!("{}/{}", FOLDER_PATH, name);
+                    eprintln!("[AuthlibInjector] 找到现有文件: {}", path);
+                    return path;
+                }
+            }
+        }
+    }
 
     // 尝试bmcl源
     let mut jsonResponse = httpClient.get(URL_BMCL).send();
@@ -38,38 +56,36 @@ pub fn downloadInjecter() {
     
     // 尝试yushi源
     if jsonResponse.is_err() {
+        eprintln!("[AuthlibInjector] BMCL源失败，尝试Yushi源: {}", jsonResponse.err().unwrap());
         jsonResponse = httpClient.get(URL_YUSHI).send();
         if jsonResponse.is_err() {
-            error!("两个链接都连接失败了");
-            return;
+            error!("两个 authlib-injector 下载源都连接失败了");
+            return String::new();
         }
     }
     
     // 解析JSON
     let jsonText = jsonResponse.unwrap().text();
     if jsonText.is_err() {
-        error!("获取JSON失败");
-        return;
+        error!("获取 authlib-injector JSON失败");
+        return String::new();
     }
     
-    jsonData = serde_json::from_str(&jsonText.unwrap());
-    if jsonData.is_err() {
-        error!("JSON格式错误");
-        return;
+    let parse_result: Result<serde_json::Value, _> = serde_json::from_str(&jsonText.unwrap());
+    match parse_result {
+        Ok(data) => jsonData = data,
+        Err(e) => {
+            error!("authlib-injector JSON格式错误: {}", e);
+            return String::new();
+        }
     }
-    
-    let jsonData: serde_json::Value = jsonData.unwrap();
     
     // 获取下载地址
-    let downloadUrl = jsonData.get("download_url");
+    let downloadUrl = jsonData.get("download_url")
+        .and_then(|u| u.as_str());
     if downloadUrl.is_none() {
         error!("JSON中没有下载地址");
-        return;
-    }
-    let downloadUrl = downloadUrl.unwrap().as_str();
-    if downloadUrl.is_none() {
-        error!("下载地址格式错误");
-        return;
+        return String::new();
     }
     let downloadUrl = downloadUrl.unwrap();
     
@@ -82,88 +98,68 @@ pub fn downloadInjecter() {
     
     // 检查文件是否已存在
     if fs::metadata(&filePath).is_ok() {
-        let fileContent = fs::read(&filePath);
-        if fileContent.is_err() {
-            error!("读取现有文件失败");
-            return;
+        if let Ok(fileContent) = fs::read(&filePath) {
+            let fileSha256 = hex::encode(Sha256::digest(&fileContent));
+            
+            // 获取校验和
+            if let Some(checksumValue) = jsonData.get("checksums")
+                .and_then(|c| c.get("sha256"))
+                .and_then(|s| s.as_str()) 
+            {
+                if fileSha256 == checksumValue {
+                    info!("[AuthlibInjector] 文件已存在且校验成功: {}", filePath);
+                    return filePath;
+                }
+            }
         }
-        let fileContent = fileContent.unwrap();
-        let fileSha256 = hex::encode(Sha256::digest(&fileContent));
-        
-        // 获取校验和
-        let checksumValue = jsonData.get("checksums")
-            .and_then(|c| c.get("sha256"))
-            .and_then(|s| s.as_str());
-        if checksumValue.is_none() {
-            error!("无法获取校验值");
-            return;
-        }
-        let checksumValue = checksumValue.unwrap();
-        
-        if fileSha256 == checksumValue {
-            info!("文件已存在且校验成功");
-            return;
-        }
-        let downloadResponse = httpClient.get(downloadUrl).send();
-        if downloadResponse.is_err() {
-            error!("下载文件失败");
-            return;
-        }
-        info!("文件已更新");
-        return;
     }
     
     // 下载文件
+    eprintln!("[AuthlibInjector] 开始下载: {}", downloadUrl);
     let downloadResponse = httpClient.get(downloadUrl).send();
     if downloadResponse.is_err() {
-        error!("下载文件失败");
-        return;
+        error!("[AuthlibInjector] 下载文件失败: {}", downloadResponse.err().unwrap());
+        return String::new();
     }
     
     let fileContent = downloadResponse.unwrap().bytes();
     if fileContent.is_err() {
-        error!("读取下载内容失败");
-        return;
+        error!("[AuthlibInjector] 读取下载内容失败");
+        return String::new();
     }
+    let bytes = fileContent.unwrap();
+    eprintln!("[AuthlibInjector] 下载完成，大小: {} bytes", bytes.len());
 
     // 创建目录
     if let Err(err) = fs::create_dir_all(FOLDER_PATH) {
         error!("创建目录失败: {}", err);
-        return;
+        return String::new();
     }
 
     // 保存文件
-    let writeResult = fs::write(&filePath, fileContent.unwrap());
-    if writeResult.is_err() {
-        error!("保存文件失败: {}", writeResult.err().unwrap());
-        return;
+    if let Err(err) = fs::write(&filePath, &bytes) {
+        error!("保存文件失败: {}", err);
+        return String::new();
     }
     
     // 验证文件
-    let checksumValue = jsonData.get("checksums")
+    if let Some(checksumValue) = jsonData.get("checksums")
         .and_then(|c| c.get("sha256"))
-        .and_then(|s| s.as_str());
-    if checksumValue.is_none() {
-        error!("无法获取校验值");
-        return;
+        .and_then(|s| s.as_str())
+    {
+        let fileSha256 = hex::encode(Sha256::digest(&bytes));
+        if fileSha256 == checksumValue {
+            info!("[AuthlibInjector] 文件下载成功，校验成功: {}", filePath);
+        } else {
+            error!("[AuthlibInjector] 校验失败，但仍返回路径供尝试使用");
+        }
     }
-    let checksumValue = checksumValue.unwrap();
     
-    // 计算文件的SHA256
-    let mut fileHandle = fs::File::open(&filePath).unwrap();
-    let mut fileBytes = Vec::new();
-    fileHandle.read_to_end(&mut fileBytes).unwrap();
-    
-    let mut hasher = Sha256::new();
-    hasher.update(&fileBytes);
-    let fileSha256 = hex::encode(hasher.finalize());
-    
-    // 比较校验值
-    if fileSha256 == checksumValue {
-        info!("文件下载成功，校验成功");
-    } else {
-        error!("文件下载成功，校验失败");
-    }
+    filePath
+}
+
+pub fn downloadInjecter() {
+    let _ = get_or_download_authlib_injector();
 }
 
 #[tauri::command]

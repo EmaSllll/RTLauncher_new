@@ -1,6 +1,7 @@
 use crate::downloader::optifine_installer;
 use crate::downloader::original_dwl::process_version;
 use crate::downloader::dwPatch::get_minecraft_dir;
+use crate::downloader::shared_utils::{sanitize_instance_name, merge_version_jsons_to_instance};
 use regex::Regex;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -161,6 +162,7 @@ pub async fn download_and_install_optifine(
     app: AppHandle,
     optifine_version: String,
     mc_version: String,
+    instance_name: Option<String>,
 ) -> Result<u64, String> {
     let task_id = OPTIFINE_TASK_COUNTER.fetch_add(1, Ordering::SeqCst);
     let minecraft_path = get_minecraft_dir()?;
@@ -202,6 +204,7 @@ pub async fn download_and_install_optifine(
     let optifine_ver = optifine_version.clone();
     let cancel_clone = cancel.clone();
     let minecraft_path_clone = minecraft_path.clone();
+    let instance_name_cloned = instance_name.clone();
 
     tokio::spawn(async move {
         // 阶段1: 下载原版 Minecraft (0-50%)
@@ -272,12 +275,14 @@ pub async fn download_and_install_optifine(
             // 发送下载 OptiFine 安装器的进度
             let _ = tx.send(55.0).await;
 
+            let optifine_ver_clone = optifine_ver.clone();
+            let version_clone = version.clone();
             let install_task = tokio::task::spawn_blocking(move || {
                 optifine_installer::install_optifine_alone(
-                    &optifine_ver,
+                    &optifine_ver_clone,
                     &minecraft_path_str,
                     &opt_wrapper_path,
-                    &version,
+                    &version_clone,
                 )
             });
 
@@ -303,10 +308,32 @@ pub async fn download_and_install_optifine(
             });
         } else {
             match install_result {
-                Ok(_) => {
+                Ok(loader_version) => {
                     // 发送安装完成进度
                     let _ = tx.send(100.0).await;
                     println!("OptiFine 安装成功，发送完成事件");
+
+                    if let Some(inst_name) = instance_name_cloned {
+                        let clean_name = sanitize_instance_name(&inst_name);
+                        println!("[OptiFine] 创建实例目录: {}", clean_name);
+                        let default_name = format!("{}-optifine-{}", version, optifine_ver);
+                        let final_name = if clean_name.trim().is_empty() {
+                            sanitize_instance_name(&default_name)
+                        } else {
+                            clean_name
+                        };
+                        match merge_version_jsons_to_instance(
+                            &final_name,
+                            &version,
+                            &optifine_ver,
+                            "optifine",
+                            &minecraft_path_clone,
+                        ) {
+                            Ok(_) => println!("[OptiFine] 实例 JSON 合并完成: {}", final_name),
+                            Err(e) => println!("[OptiFine] 警告: 合并实例 JSON 失败: {}", e),
+                        }
+                    }
+
                     let _ = app_finish.emit("optifine-download-finished", OptifineDownloadFinishedPayload {
                         task_id,
                         success: true,

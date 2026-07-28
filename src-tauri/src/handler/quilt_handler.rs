@@ -1,5 +1,6 @@
 use crate::downloader::quilt_installer;
 use crate::downloader::dwPatch::get_minecraft_dir;
+use crate::downloader::shared_utils::{sanitize_instance_name, merge_version_jsons_to_instance};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -124,6 +125,7 @@ pub async fn download_and_install_quilt(
     mc_version: String,
     loader_version: String,
     api_version: Option<String>,
+    instance_name: Option<String>,
 ) -> Result<u64, String> {
     let task_id = QUILT_TASK_COUNTER.fetch_add(1, Ordering::SeqCst);
     let minecraft_path = get_minecraft_dir()?;
@@ -167,6 +169,7 @@ pub async fn download_and_install_quilt(
     let api_ver = api_version.clone();
     let cancel_clone = cancel.clone();
     let minecraft_path_clone = minecraft_path.clone();
+    let instance_name_cloned = instance_name.clone();
 
     tokio::spawn(async move {
         // ============= 并行下载：原版 Minecraft + Quilt 安装 =============
@@ -201,7 +204,7 @@ pub async fn download_and_install_quilt(
             let minecraft_path_str = mc_path_b.to_string_lossy().to_string();
 
             // 安装 Quilt Loader (60-85%)，使用子进度 channel
-            {
+            let loader_dir = {
                 let (sub_tx, mut sub_rx) = tokio::sync::mpsc::channel::<f64>(64);
                 let sub_tx_out = tx_for_quilt.clone();
                 tokio::spawn(async move {
@@ -217,8 +220,8 @@ pub async fn download_and_install_quilt(
                     Some(sub_tx),
                 )
                 .await
-                .map_err(|e| format!("Quilt Loader 安装失败: {}", e))?;
-            }
+                .map_err(|e| format!("Quilt Loader 安装失败: {}", e))?
+            };
 
             let _ = tx_for_quilt.send(85.0).await;
 
@@ -243,7 +246,7 @@ pub async fn download_and_install_quilt(
             }
 
             let _ = tx_for_quilt.send(100.0).await;
-            Ok::<(), String>(())
+            Ok::<String, String>(loader_dir)
         });
 
         // --- 等待两个 task 完成 ---
@@ -279,8 +282,30 @@ pub async fn download_and_install_quilt(
         }
 
         match quilt_result {
-            Ok(_) => {
+            Ok(loader_version_name) => {
                 println!("Quilt 安装成功: {}", loader_ver);
+
+                if let Some(inst_name) = instance_name_cloned {
+                    let clean_name = sanitize_instance_name(&inst_name);
+                    println!("[Quilt] 创建实例目录: {}", clean_name);
+                    let default_name = format!("{}-quilt-{}", version, loader_ver);
+                    let final_name = if clean_name.trim().is_empty() {
+                        sanitize_instance_name(&default_name)
+                    } else {
+                        clean_name
+                    };
+                    match merge_version_jsons_to_instance(
+                        &final_name,
+                        &version,
+                        &loader_version_name,
+                        "quilt",
+                        &minecraft_path_clone,
+                    ) {
+                        Ok(_) => println!("[Quilt] 实例 JSON 合并完成: {}", final_name),
+                        Err(e) => println!("[Quilt] 警告: 合并实例 JSON 失败: {}", e),
+                    }
+                }
+
                 let _ = app_finish.emit("quilt-download-finished", QuiltDownloadFinishedPayload {
                     task_id,
                     success: true,
