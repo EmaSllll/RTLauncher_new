@@ -56,14 +56,14 @@ export default function MultiplayerPage() {
     })();
   }, [checkStatus, getOpenP2PDir, getOpenP2PPath]);
 
-  // 运行时日志轮询：立即读取一次，之后每 5 秒拉取新增内容。
+  // 运行时日志轮询：立即读取一次，之后每 1 秒拉取新增内容。
   // 在 starting/running 状态下都轮询，确保能看到启动阶段的输出
   useEffect(() => {
     if (status !== "running" && status !== "starting") return;
     void pollLog();
     const timer = setInterval(() => {
       void pollLog();
-    }, 5000);
+    }, 1000);
     return () => clearInterval(timer);
   }, [status, pollLog]);
 

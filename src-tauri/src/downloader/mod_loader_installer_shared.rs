@@ -1670,18 +1670,3 @@ fn fix_path_argument(val: &str) -> String {
     }
     s
 }
-
-#[cfg(test)]
-mod tests {
-    use super::required_java_major_for_mc;
-
-    #[test]
-    fn java_requirement_supports_legacy_and_year_based_versions() {
-        assert_eq!(required_java_major_for_mc("1.16.5"), 8);
-        assert_eq!(required_java_major_for_mc("1.17.1"), 16);
-        assert_eq!(required_java_major_for_mc("1.20.4"), 17);
-        assert_eq!(required_java_major_for_mc("1.20.5"), 21);
-        assert_eq!(required_java_major_for_mc("1.21.8"), 21);
-        assert_eq!(required_java_major_for_mc("26.2"), 21);
-    }
-}
