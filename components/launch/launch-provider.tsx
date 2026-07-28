@@ -11,6 +11,7 @@ import React, {
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useAccountContext } from "@/components/accounts/account-provider";
+import { isTauriRuntime } from "@/lib/tauri-runtime";
 import type { LaunchConfig, LaunchLogEntry, LaunchStatus } from "@/types";
 
 /** 默认启动配置 */
@@ -150,6 +151,8 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
 
   // 监听游戏日志事件（来自 Minecraft log4j stdout/stderr）
   useEffect(() => {
+    if (!isTauriRuntime()) return;
+
     let unlisten: (() => void) | null = null;
     listen<{ level: string; message: string }>("game-log", (event) => {
       const { level, message } = event.payload;
@@ -173,6 +176,8 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
 
   // 监听游戏进程退出事件
   useEffect(() => {
+    if (!isTauriRuntime()) return;
+
     let unlisten: (() => void) | null = null;
     listen<number>("game-exited", (event) => {
       const exitCode = event.payload;
@@ -195,6 +200,8 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
 
   // 监听游戏完全启动事件（JVM 启动完成、资源加载完成）
   useEffect(() => {
+    if (!isTauriRuntime()) return;
+
     let unlisten: (() => void) | null = null;
     listen<number>("game-fully-started", (event) => {
       const pid = event.payload;

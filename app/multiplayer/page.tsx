@@ -32,6 +32,8 @@ export default function MultiplayerPage() {
   const [openP2PPath, setOpenP2PPath] = useState<string>("");
   const [copied, setCopied] = useState(false);
   const [dirCopied, setDirCopied] = useState(false);
+  const runningModeLabel =
+    runMode === "host" ? "房主模式" : runMode === "join" ? "加入模式" : "后台进程";
 
   // 房主模式输入
   const [roomName, setRoomName] = useState("");
@@ -54,12 +56,13 @@ export default function MultiplayerPage() {
     })();
   }, [checkStatus, getOpenP2PDir, getOpenP2PPath]);
 
-  // 运行时日志轮询（每 1 秒拉取一次新增日志）
+  // 运行时日志轮询：立即读取一次，之后每 1 秒拉取新增内容。
   // 在 starting/running 状态下都轮询，确保能看到启动阶段的输出
   useEffect(() => {
     if (status !== "running" && status !== "starting") return;
-    const timer = setInterval(async () => {
-      await pollLog();
+    void pollLog();
+    const timer = setInterval(() => {
+      void pollLog();
     }, 1000);
     return () => clearInterval(timer);
   }, [status, pollLog]);
@@ -192,7 +195,7 @@ export default function MultiplayerPage() {
               <div className="flex items-center gap-2 text-sm text-foreground">
                 <div className="size-2 rounded-full bg-green-500 animate-pulse" />
                 <span className="font-medium">
-                  OpenP2P 正在运行（{runMode === "host" ? "房主模式" : "加入模式"}）
+                  OpenP2P 正在运行（{runningModeLabel}）
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -223,7 +226,11 @@ export default function MultiplayerPage() {
 
                 <div className="text-center space-y-2 max-w-md">
                   <h2 className="text-lg font-semibold text-foreground">
-                    {runMode === "host" ? "房间已创建" : "已加入房间"}
+                    {runMode === "host"
+                      ? "房间已创建"
+                      : runMode === "join"
+                        ? "已加入房间"
+                        : "OpenP2P 已在后台运行"}
                   </h2>
                   <p className="text-sm text-muted-foreground leading-relaxed">
                     OpenP2P 正在后台静默运行，不会弹出任何命令窗口。
@@ -306,14 +313,14 @@ export default function MultiplayerPage() {
                 </div>
                 <div
                   ref={logRef}
-                  className="flex-1 min-h-0 overflow-auto bg-black/40 dark:bg-black/20 p-3 font-mono text-[11px] leading-relaxed"
+                  className="flex-1 min-h-0 overflow-auto bg-[#071a2e] dark:bg-[#061322] p-3 font-mono text-[11px] leading-relaxed"
                 >
                   {logText ? (
                     <pre className="whitespace-pre-wrap break-all text-green-400/90 dark:text-green-300/90">
                       {logText}
                     </pre>
                   ) : (
-                    <div className="h-full flex flex-col items-center justify-center gap-2 text-muted-foreground/60">
+                    <div className="h-full flex flex-col items-center justify-center gap-2 text-slate-400">
                       <Loader2 className="size-4 animate-spin" />
                       <p className="text-[11px]">正在等待 OpenP2P 输出日志...</p>
                       <p className="text-[10px]">如果长时间没有内容，可能是 openp2p 启动失败或参数不正确</p>
@@ -389,8 +396,11 @@ export default function MultiplayerPage() {
                       placeholder="例如：25565"
                       className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary font-mono"
                     />
-                    <p className="text-[10px] text-muted-foreground">
-                      这是你游戏服务的端口号（Minecraft 默认 25565）。
+                    <p className="flex items-start gap-1.5 text-sm font-semibold leading-relaxed text-red-600 dark:text-red-400">
+                      <AlertCircle className="mt-0.5 size-4 shrink-0" />
+                      <span>
+                        重要：请填写 Minecraft“对局域网开放”后显示的局域网联机端口号！
+                      </span>
                     </p>
                   </div>
 

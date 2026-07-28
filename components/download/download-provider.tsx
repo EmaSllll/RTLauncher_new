@@ -14,6 +14,7 @@ import {
   setupAllDownloadListeners,
   makeStartDownloadFn,
 } from "./download-event-utils";
+import { isTauriRuntime } from "@/lib/tauri-runtime";
 
 export type DownloadTaskStatus =
   | "queued"
@@ -133,6 +134,8 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
 
   /** ========== 注册事件 ========== */
   useEffect(() => {
+    if (!isTauriRuntime()) return;
+
     let cancelled = false;
     const cancelledRef = { current: false };
 

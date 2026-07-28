@@ -205,6 +205,7 @@ export default function GameSettings() {
                       <Link
                         key={card.href}
                         href={card.href}
+                        suppressHydrationWarning
                         className="flex flex-col items-center justify-center gap-3 flex-1 min-w-[140px] max-w-[200px] h-[180px] rounded-2xl border-[3px] border-border bg-card/40 hover:bg-accent/40 active:bg-accent/70 transition-all hover:border-foreground/50 hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50"
                       >
                         <div className="flex size-12 items-center justify-center rounded-xl bg-muted">
@@ -227,6 +228,7 @@ export default function GameSettings() {
                       <Link
                         key={card.href}
                         href={card.href}
+                        suppressHydrationWarning
                         className="flex flex-col items-center justify-center gap-3 flex-1 min-w-[120px] max-w-[180px] h-[160px] rounded-2xl border-[3px] border-border bg-card/40 hover:bg-accent/40 active:bg-accent/70 transition-all hover:border-foreground/50 hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50"
                       >
                         <div className="flex size-10 items-center justify-center rounded-xl bg-muted">
@@ -249,6 +251,7 @@ export default function GameSettings() {
         <div className="shrink-0 flex justify-end px-4 pt-4 pb-8">
           <Link
             href="/game-settings/modpacks"
+            suppressHydrationWarning
             className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl border border-border bg-card/30 hover:bg-accent/40 active:bg-accent/70 transition-all hover:border-foreground/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50 text-sm font-medium"
           >
             <Package className="size-4" />

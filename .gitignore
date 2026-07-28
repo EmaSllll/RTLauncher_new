@@ -56,3 +56,13 @@ no-password-key.txt
 no-password-key.txt.pub
 /.omc
 /.worktrees/
+
+# Local IDE
+/.idea/
+/.npm-cache/
+/.pnpm-store/
+/.dev-server*.log
+/.tauri-dev.log
+/.tauri-codex-dev.json
+/.tauri-start.ps1
+/downloads/
