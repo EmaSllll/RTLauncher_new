@@ -105,7 +105,7 @@ export function InstanceCardGrid() {
     >
       {INSTANCE_CARDS.map((card) => (
         <motion.div key={card.id} variants={staggerItem} className="h-full">
-          <Link href={card.href} className="block h-full">
+          <Link href={card.href} className="block h-full" suppressHydrationWarning>
             <Card className="shadow-sm hover:shadow-xl transition-all duration-300 cursor-pointer h-full flex flex-col border hover:border-primary/40">
               <CardHeader>
                 {/* 图标 */}

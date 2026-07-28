@@ -1,9 +1,10 @@
 use crate::downloader::concurrent_download::{self, DownloadTask};
+use crate::handler::config::{get_java_download_dir, get_launcher_paths_config};
 use anyhow::{anyhow, bail, Context, Result};
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha1::{Digest, Sha1};
 use std::collections::HashMap;
+use std::env;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -16,41 +17,93 @@ pub struct LoaderInstallerConfig {
     pub mc_version_id: String,     
     pub library_mirrors: Vec<String>, 
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct JavaInstallationInfo {
-    pub path: String,
-    pub version: String,
-    pub major_version: i32,
-    pub vendor: String,
-    pub architecture: String,
-    #[serde(default)]
-    pub java_type: String,
-}
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct LauncherPathsConfig {
-    pub java_paths: Vec<String>,
-    pub selected_java_path: String,
-    #[serde(default)]
-    pub java_installations: HashMap<String, JavaInstallationInfo>,
-    pub minecraft_paths: Vec<String>,
-    pub selected_minecraft_path: String,
-    #[serde(default)]
-    pub default_minecraft_path: String,
-}
-fn launcher_config_path() -> PathBuf {
-    PathBuf::from("./RTL/config").join("launcher.json")
-}
-fn read_launcher_java_config() -> Option<(Vec<String>, HashMap<String, JavaInstallationInfo>, String)> {
-    let path = launcher_config_path();
-    if !path.exists() {
-        return None;
+/// Resolve Java to an absolute executable path so later existence checks do not
+/// mistake the PATH command name `java` for a missing file.
+fn is_executable_file(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
     }
-    let text = fs::read_to_string(&path).ok()?;
-    let cfg: LauncherPathsConfig = serde_json::from_str(&text).ok()?;
-    Some((cfg.java_paths, cfg.java_installations, cfg.selected_java_path))
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        return fs::metadata(path)
+            .map(|metadata| metadata.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false);
+    }
+    #[cfg(not(unix))]
+    {
+        true
+    }
 }
+
+fn find_system_java() -> Option<PathBuf> {
+    let executable = if cfg!(target_os = "windows") {
+        "java.exe"
+    } else {
+        "java"
+    };
+
+    if let Some(java_home) = env::var_os("JAVA_HOME") {
+        let candidate = PathBuf::from(java_home).join("bin").join(executable);
+        if is_executable_file(&candidate) {
+            return Some(candidate);
+        }
+    }
+
+    env::var_os("PATH").and_then(|path| {
+        env::split_paths(&path)
+            .map(|dir| dir.join(executable))
+            .find(|candidate| is_executable_file(candidate))
+    })
+}
+
+fn runtime_java_major(runtime_dir: &Path) -> Option<i32> {
+    let release = [
+        runtime_dir.join("release"),
+        runtime_dir.join("Contents").join("Home").join("release"),
+    ]
+    .into_iter()
+    .find_map(|path| fs::read_to_string(path).ok())?;
+    let version = release
+        .lines()
+        .find_map(|line| line.strip_prefix("JAVA_VERSION="))?
+        .trim_matches('"');
+    let parts: Vec<&str> = version.split('.').collect();
+    if parts.first().copied() == Some("1") {
+        parts.get(1)?.parse().ok()
+    } else {
+        parts.first()?.parse().ok()
+    }
+}
+
+fn runtime_java_executable(runtime_dir: &Path) -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    let candidates = vec![runtime_dir.join("bin").join("java.exe")];
+    #[cfg(not(target_os = "windows"))]
+    let candidates = vec![
+        runtime_dir.join("bin").join("java"),
+        runtime_dir
+            .join("Contents")
+            .join("Home")
+            .join("bin")
+            .join("java"),
+    ];
+
+    candidates
+        .into_iter()
+        .find(|candidate| is_executable_file(candidate))
+}
+
 fn required_java_major_for_mc(mc_version: &str) -> i32 {
     let parts: Vec<&str> = mc_version.split('.').collect();
+    let major = parts
+        .first()
+        .and_then(|s| s.parse::<i32>().ok())
+        .unwrap_or(1);
+    // Minecraft switched to year-based versions (for example 26.2).
+    if major >= 25 {
+        return 21;
+    }
     let minor = parts
         .get(1)
         .and_then(|s| s.parse::<i32>().ok())
@@ -72,17 +125,14 @@ pub fn pick_java_executable(mc_version: &str) -> String {
         "[JavaPicker] MC {} 需要 Java {}+，正在从配置中查找...",
         mc_version, required
     );
-    let (java_paths, java_installations, selected_java) = match read_launcher_java_config() {
-        Some(v) => v,
-        None => {
-            println!("[JavaPicker] launcher.json 不存在，回退到默认 java");
-            return "java".to_string();
-        }
-    };
+    let launcher_config = get_launcher_paths_config();
+    let java_paths = launcher_config.java_paths;
+    let java_installations = launcher_config.java_installations;
+    let selected_java = launcher_config.selected_java_path;
     if !java_installations.is_empty() {
         let exact_key = required.to_string();
         if let Some(info) = java_installations.get(&exact_key) {
-            if Path::new(&info.path).exists() {
+            if is_executable_file(Path::new(&info.path)) {
                 println!(
                     "[JavaPicker] 使用精确匹配 Java {}: {}",
                     required, info.path
@@ -103,13 +153,13 @@ pub fn pick_java_executable(mc_version: &str) -> String {
             }
         }
         if let Some((v, p)) = best {
-            if Path::new(&p).exists() {
+            if is_executable_file(Path::new(&p)) {
                 println!("[JavaPicker] 使用兼容 Java {}: {}", v, p);
                 return p;
             }
         }
         for info in java_installations.values() {
-            if Path::new(&info.path).exists() {
+            if is_executable_file(Path::new(&info.path)) {
                 println!(
                     "[JavaPicker] 回退到已安装 Java {}: {}",
                     info.major_version, info.path
@@ -119,31 +169,43 @@ pub fn pick_java_executable(mc_version: &str) -> String {
         }
     }
     for p in &java_paths {
-        if Path::new(p).exists() {
+        if is_executable_file(Path::new(p)) {
             println!("[JavaPicker] 使用 java_paths 中的: {}", p);
             return p.clone();
         }
     }
-    if !selected_java.is_empty() && Path::new(&selected_java).exists() {
+    if !selected_java.is_empty() && is_executable_file(Path::new(&selected_java)) {
         println!("[JavaPicker] 使用 selected_java_path: {}", selected_java);
         return selected_java;
     }
-    let java_download_dir = PathBuf::from("./RTL/java");
+    let java_download_dir = get_java_download_dir()
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("."));
     if java_download_dir.exists() {
         if let Ok(read_dir) = fs::read_dir(&java_download_dir) {
+            let mut compatible = Vec::new();
             for entry in read_dir.flatten() {
                 let dir = entry.path();
-                #[cfg(target_os = "windows")]
-                let exe = dir.join("bin").join("java.exe");
-                #[cfg(not(target_os = "windows"))]
-                let exe = dir.join("bin").join("java");
-                if exe.exists() {
-                    let s = exe.to_string_lossy().to_string();
-                    println!("[JavaPicker] 从下载目录扫描到: {}", s);
-                    return s;
+                if let Some(exe) = runtime_java_executable(&dir) {
+                    if let Some(major) = runtime_java_major(&dir) {
+                        if major >= required {
+                            compatible.push((major, exe));
+                        }
+                    }
                 }
             }
+            compatible.sort_by_key(|(major, _)| *major);
+            if let Some((major, exe)) = compatible.into_iter().next() {
+                let java = exe.to_string_lossy().to_string();
+                println!("[JavaPicker] 使用已下载的兼容 Java {}: {}", major, java);
+                return java;
+            }
         }
+    }
+    if let Some(java) = find_system_java() {
+        let java = java.to_string_lossy().to_string();
+        println!("[JavaPicker] 从系统 PATH 找到 Java: {}", java);
+        return java;
     }
     println!("[JavaPicker] 未找到可用 Java，回退到系统默认 'java'");
     "java".to_string()
@@ -1385,15 +1447,14 @@ pub async fn install(
             };
             let target_dir = root.join("libraries").join(&dir_part);
             let full_file = target_dir.join(&file_name);
-            // 跳过带特殊分类器后缀、Maven 上不存在的 JAR
-            // 注意：NeoForge 的 -universal.jar 实际上在 maven.neoforged.net 上存在，
-            // 所以只对非 neoforge 条目的 -universal.jar / -client.jar / -server.jar 跳过
+            // client/server 分类器是 Forge 安装处理器生成的产物，并不发布在 Maven，
+            // 因此不能把它们当作普通依赖下载。NeoForge/Forge 的 universal JAR
+            // 则可能真实发布，仍保留下载。
             let is_loader_self = name.starts_with("net.minecraftforge:forge:")
                 || name.starts_with("net.neoforged:neoforge:");
-            if !is_loader_self
-                && (file_name.ends_with("-universal.jar")
-                    || file_name.ends_with("-client.jar")
-                    || file_name.ends_with("-server.jar"))
+            if file_name.ends_with("-client.jar")
+                || file_name.ends_with("-server.jar")
+                || (!is_loader_self && file_name.ends_with("-universal.jar"))
             {
                 continue;
             }
@@ -1609,4 +1670,19 @@ fn fix_path_argument(val: &str) -> String {
         s = s.replace("\\\\", "\\");
     }
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::required_java_major_for_mc;
+
+    #[test]
+    fn java_requirement_supports_legacy_and_year_based_versions() {
+        assert_eq!(required_java_major_for_mc("1.16.5"), 8);
+        assert_eq!(required_java_major_for_mc("1.17.1"), 16);
+        assert_eq!(required_java_major_for_mc("1.20.4"), 17);
+        assert_eq!(required_java_major_for_mc("1.20.5"), 21);
+        assert_eq!(required_java_major_for_mc("1.21.8"), 21);
+        assert_eq!(required_java_major_for_mc("26.2"), 21);
+    }
 }

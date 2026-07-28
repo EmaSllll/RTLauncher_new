@@ -1,13 +1,17 @@
+#[cfg(target_os = "linux")]
 use std::path::{Path, PathBuf};
 
+#[cfg(target_os = "linux")]
 const APP_DIRECTORY_NAME: &str = "RTLauncher";
 
+#[cfg(target_os = "linux")]
 struct LinuxXdgDirs<'a> {
     config: Option<&'a Path>,
     data: Option<&'a Path>,
     cache: Option<&'a Path>,
 }
 
+#[cfg(target_os = "linux")]
 fn linux_writable_paths(xdg: Option<LinuxXdgDirs<'_>>, home: Option<&Path>) -> [PathBuf; 4] {
     let fallback_root = std::env::temp_dir().join(APP_DIRECTORY_NAME);
     let home = home.filter(|path| path.is_absolute());
@@ -46,6 +50,7 @@ fn linux_writable_paths(xdg: Option<LinuxXdgDirs<'_>>, home: Option<&Path>) -> [
     [config, java, cache, minecraft]
 }
 
+#[cfg(target_os = "linux")]
 fn linux_paths_from_environment() -> [PathBuf; 4] {
     let config = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
     let data = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from);
@@ -60,10 +65,12 @@ fn linux_paths_from_environment() -> [PathBuf; 4] {
     linux_writable_paths(Some(xdg), home.as_deref())
 }
 
+#[cfg(target_os = "linux")]
 pub fn linux_config_dir() -> PathBuf {
     linux_paths_from_environment()[0].clone()
 }
 
+#[cfg(target_os = "linux")]
 pub fn linux_data_dir() -> PathBuf {
     linux_paths_from_environment()[1]
         .parent()
@@ -71,19 +78,22 @@ pub fn linux_data_dir() -> PathBuf {
         .to_path_buf()
 }
 
+#[cfg(target_os = "linux")]
 pub fn linux_java_dir() -> PathBuf {
     linux_paths_from_environment()[1].clone()
 }
 
+#[cfg(target_os = "linux")]
 pub fn linux_cache_dir() -> PathBuf {
     linux_paths_from_environment()[2].clone()
 }
 
+#[cfg(target_os = "linux")]
 pub fn linux_minecraft_dir() -> PathBuf {
     linux_paths_from_environment()[3].clone()
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tests {
     use super::*;
     use std::path::Path;
