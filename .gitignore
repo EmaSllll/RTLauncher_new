@@ -56,3 +56,5 @@ no-password-key.txt
 no-password-key.txt.pub
 /.omc
 /.worktrees/
+/src-tauri/RTL
+gen_latest_json.js
