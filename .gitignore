@@ -57,7 +57,7 @@ no-password-key.txt.pub
 /.omc
 /.worktrees/
 
-# Local IDE and Codex development artifacts
+# Local IDE
 /.idea/
 /.npm-cache/
 /.pnpm-store/
