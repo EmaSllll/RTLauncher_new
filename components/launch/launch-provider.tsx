@@ -11,7 +11,8 @@ import React, {
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useAccountContext } from "@/components/accounts/account-provider";
-import type { LaunchConfig, LaunchLogEntry, LaunchStatus } from "@/types";
+import type { LaunchConfig, LaunchLogEntry, LaunchStatus, LaunchProgress } from "@/types";
+import { log4jParser } from "@/components/launch/log4j-progress-parser";
 
 /** 默认启动配置 */
 const DEFAULT_LAUNCH_CONFIG: LaunchConfig = {
@@ -55,6 +56,8 @@ interface LaunchContextValue {
   lastLaunchTime: string | null;
   /** 配置是否已加载完成 */
   configLoaded: boolean;
+  /** 启动进度 */
+  progress: LaunchProgress | null;
 }
 
 const LaunchContext = createContext<LaunchContextValue | null>(null);
@@ -108,6 +111,7 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lastCommandArgs, setLastCommandArgs] = useState<string | null>(null);
   const [lastLaunchTime, setLastLaunchTime] = useState<string | null>(null);
+  const [progress, setProgress] = useState<LaunchProgress | null>(null);
   const logIdRef = useRef(0);
 
   const { selectedProfile } = useAccountContext();
@@ -155,6 +159,22 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
       const { level, message } = event.payload;
       const logLevel: "error" | "info" | "warn" =
         level === "error" || level === "warn" ? level : "info";
+
+      // 使用 log4j 解析器分析日志并更新进度
+      if (status === "launching" || status === "preparing") {
+        const parsedProgress = log4jParser.parseLog(message);
+        if (parsedProgress.stage) {
+          const allStages = log4jParser.getAllStages();
+          const currentStageIndex = allStages.findIndex(s => s.id === parsedProgress.stage?.id);
+          setProgress({
+            currentStep: currentStageIndex + 1,
+            totalSteps: allStages.length,
+            currentStage: parsedProgress.stage.name,
+            percentage: parsedProgress.progress,
+          });
+        }
+      }
+
       setLogs((prev) => {
         const next = [
           ...prev,
@@ -169,7 +189,7 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
       });
     }).then((fn) => { unlisten = fn; });
     return () => { unlisten?.(); };
-  }, []);
+  }, [status]);
 
   // 监听游戏进程退出事件
   useEffect(() => {
@@ -180,6 +200,8 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
       setLastLaunchTime(timeStr);
       try { localStorage.setItem("rtl-last-launch-time", timeStr); } catch { /* ignore */ }
       setStatus("idle");
+      setProgress(null); // 清理进度状态
+      log4jParser.reset(); // 重置日志解析器
       setLogs((prev) => [
         ...prev,
         {
@@ -199,6 +221,7 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
     listen<number>("game-fully-started", (event) => {
       const pid = event.payload;
       setStatus("running");
+      setProgress(null);
       setLogs((prev) => [
         ...prev,
         {
@@ -208,6 +231,21 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
           message: `游戏已完全启动 (PID ${pid})，停止 JVM 追踪`,
         },
       ]);
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, []);
+
+  // 监听启动进度事件
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    listen<{ current_step: number; total_steps: number; current_stage: string; percentage: number }>("launch-progress", (event) => {
+      const { current_step, total_steps, current_stage, percentage } = event.payload;
+      setProgress({
+        currentStep: current_step,
+        totalSteps: total_steps,
+        currentStage: current_stage,
+        percentage: percentage,
+      });
     }).then((fn) => { unlisten = fn; });
     return () => { unlisten?.(); };
   }, []);
@@ -229,6 +267,7 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
           },
         ]);
         setStatus("idle");
+        setProgress(null);
       } catch (e) {
         setErrorMessage(e instanceof Error ? e.message : String(e));
       }
@@ -259,6 +298,8 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
       }
 
       setErrorMessage(null);
+      setProgress(null);
+      log4jParser.reset(); // 重置日志解析器
       setStatus("preparing");
       addLog("info", "正在准备启动参数...");
 
@@ -317,6 +358,7 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
         lastCommandArgs,
         lastLaunchTime,
         configLoaded,
+        progress,
       }}
     >
       {children}

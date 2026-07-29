@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { ChevronUp, Loader2, Play, Square } from "lucide-react";
 import { useLaunchContext } from "@/components/launch/launch-provider";
 import { VersionSelectorDialog } from "@/components/launch/version-selector-dialog";
+import { LaunchProgress } from "@/components/launch/launch-progress";
+import { LaunchProgressStages } from "@/components/launch/launch-progress-stages";
 
 /**
  * 全局悬浮启动按钮组件
@@ -215,12 +217,22 @@ export function FloatingLaunchButton() {
       ) : (
         <div className="w-36 bg-card border shadow-lg rounded-lg overflow-hidden flex flex-col">
                 {/* 标题栏 - 点击收起（作为交互子元素，不触发长按/拖动） */}
-                <div 
+                <div
                   className="bg-muted px-2 py-1 text-xs font-medium truncate cursor-pointer select-none"
                   data-no-drag="true"
                   onClick={() => setIsMinimized(true)}
                 >
                   {displayName}
+                </div>
+
+                {/* 启动进度 */}
+                <div className="p-2 pt-1">
+                  <LaunchProgress />
+                </div>
+
+                {/* 详细启动阶段 (仅在展开时显示) */}
+                <div className="px-2 pb-1">
+                  <LaunchProgressStages />
                 </div>
 
                 {/* 启动按钮 */}
@@ -234,7 +246,7 @@ export function FloatingLaunchButton() {
                     {isLaunching ? (
                       <>
                         <Loader2 className="size-3 animate-spin" />
-                        {status === "preparing" ? "准备中" : "启动中"}
+                        {status === "preparing" ? "准备中" : "Launching"}
                       </>
                     ) : isRunning ? (
                       <>

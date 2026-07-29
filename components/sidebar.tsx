@@ -20,31 +20,29 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { useUIConfigContext } from "@/components/ui-config/ui-config-provider"
 
 interface SidebarProps {
   className?: string
 }
 
 interface NavItem {
+  id: string
   icon: React.ReactNode
   label: string
   href: string
   isAvatar?: boolean
 }
 
-// 顶部导航项
-const topNavItems: NavItem[] = [
-  { icon: <Home className="size-4" />, label: "首页", href: "/" },
-  { icon: <Gamepad2 className="size-4" />, label: "游戏设置", href: "/game-settings" },
-  { icon: <Rocket className="size-4" />, label: "启动", href: "/launch" },
-  { icon: <Download className="size-4" />, label: "下载", href: "/download" },
-  { icon: <Globe className="size-4" />, label: "联机", href: "/multiplayer" },
-  { icon: <Wrench className="size-4" />, label: "工具", href: "/tools" },
-]
-
-// 底部导航项 —— 设置
-const bottomNavItems: NavItem[] = [
-  { icon: <Settings className="size-4" />, label: "设置", href: "/settings" },
+// 所有导航项定义
+const allNavItems: NavItem[] = [
+  { id: "home", icon: <Home className="size-4" />, label: "首页", href: "/" },
+  { id: "game-settings", icon: <Gamepad2 className="size-4" />, label: "游戏设置", href: "/game-settings" },
+  { id: "launch", icon: <Rocket className="size-4" />, label: "启动", href: "/launch" },
+  { id: "download", icon: <Download className="size-4" />, label: "下载", href: "/download" },
+  { id: "multiplayer", icon: <Globe className="size-4" />, label: "联机", href: "/multiplayer" },
+  { id: "tools", icon: <Wrench className="size-4" />, label: "工具", href: "/tools" },
+  { id: "settings", icon: <Settings className="size-4" />, label: "设置", href: "/settings" },
 ]
 
 // 导航按钮
@@ -102,8 +100,21 @@ function isNavItemActive(pathname: string, href: string) {
 // 左侧边栏
 export function Sidebar({ className }: SidebarProps) {
   const pathname = usePathname()
+  const { config, configLoaded } = useUIConfigContext()
 
   const isActive = (href: string) => isNavItemActive(pathname, href)
+
+  // 根据配置过滤可见的导航项
+  const visibleNavItems = configLoaded
+    ? allNavItems.filter(item => {
+        const tabConfig = config.sidebarTabs.find(tab => tab.id === item.id);
+        return tabConfig ? tabConfig.visible : true;
+      })
+    : allNavItems;
+
+  // 分离顶部和底部导航项
+  const topNavItems = visibleNavItems.filter(item => item.id !== "settings");
+  const bottomNavItems = visibleNavItems.filter(item => item.id === "settings");
 
   return (
     <aside
