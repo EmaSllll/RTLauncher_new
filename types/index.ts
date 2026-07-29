@@ -213,6 +213,44 @@ export type LaunchLogEntry = {
 };
 
 /**
+ * 启动进度信息
+ */
+export type LaunchProgress = {
+  /** 当前阶段 (0-100) */
+  currentStep: number;
+  /** 总步骤数 */
+  totalSteps: number;
+  /** 当前阶段描述 */
+  currentStage: string;
+  /** 进度百分比 (0-100) */
+  percentage: number;
+};
+
+/**
+ * 侧边栏标签页配置
+ */
+export type SidebarTabConfig = {
+  /** 标签页ID */
+  id: string;
+  /** 标签页名称 */
+  name: string;
+  /** 是否可见 */
+  visible: boolean;
+  /** 是否可以隐藏（某些核心功能可能不允许隐藏） */
+  canHide: boolean;
+  /** 显示顺序 */
+  order: number;
+};
+
+/**
+ * 用户界面配置
+ */
+export type UIConfig = {
+  /** 侧边栏标签页配置 */
+  sidebarTabs: SidebarTabConfig[];
+};
+
+/**
  * 多人联机模式
  */
 export type MultiplayerMode = "host" | "join";

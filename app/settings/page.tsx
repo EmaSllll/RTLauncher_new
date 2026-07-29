@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { AppearanceSection } from "@/components/settings/section-appearance";
 import { AboutSection } from "@/components/settings/section-about";
-import { Settings, Sparkles, Package } from "lucide-react";
+import { SidebarConfigSection } from "@/components/settings/section-sidebar-config";
+import { Settings, Sparkles, Package, Layout } from "lucide-react";
 
 interface NavItem {
   id: string;
@@ -13,12 +14,13 @@ interface NavItem {
 }
 
 const NAV_ITEMS: NavItem[] = [
+  { id: "section-sidebar-config", label: "侧边栏配置", icon: <Layout className="size-4" /> },
   { id: "section-appearance", label: "外观", icon: <Sparkles className="size-4" /> },
   { id: "section-about", label: "版本更新", icon: <Package className="size-4" /> },
 ];
 
 export default function SettingsPage() {
-  const [activeId, setActiveId] = useState<string>(NAV_ITEMS[0].id);
+  const [activeId, setActiveId] = useState<string>("section-sidebar-config");
 
   // 使用 IntersectionObserver 自动高亮当前可见区域
   useEffect(() => {
@@ -107,6 +109,7 @@ export default function SettingsPage() {
           className="h-full flex-1 overflow-y-auto px-4 py-4 md:px-6"
         >
           <div className="mx-auto max-w-2xl space-y-4">
+            <SidebarConfigSection />
             <AppearanceSection />
             <AboutSection />
             <div className="py-3 text-center text-xs text-muted-foreground">
