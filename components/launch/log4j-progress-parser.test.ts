@@ -4,6 +4,7 @@
  */
 
 import { log4jParser } from "./log4j-progress-parser";
+import { beforeEach, describe, expect, it } from "vitest";
 
 // 测试日志样本
 const testLogs = [
@@ -58,3 +59,20 @@ export function runLog4jParserTest() {
 if (typeof window !== "undefined") {
   (window as any).runLog4jParserTest = runLog4jParserTest;
 }
+
+describe("log4jParser", () => {
+  beforeEach(() => {
+    log4jParser.reset();
+  });
+
+  it("advances through the sample launch logs and reaches ready", () => {
+    let result = log4jParser.parseLog("");
+    for (const log of testLogs) {
+      result = log4jParser.parseLog(log);
+    }
+
+    expect(result.stage?.id).toBe("ready");
+    expect(result.isComplete).toBe(true);
+    expect(result.progress).toBe(100);
+  });
+});

@@ -82,17 +82,14 @@ function waitForPageContent(
   })
 }
 
-const topNavItems: NavItem[] = [
-  { icon: <Home className="size-4" />, label: "首页", href: "/" },
-  { icon: <Gamepad2 className="size-4" />, label: "游戏设置", href: "/game-settings" },
-  { icon: <Rocket className="size-4" />, label: "启动", href: "/launch" },
-  { icon: <Download className="size-4" />, label: "下载", href: "/download" },
-  { icon: <Globe className="size-4" />, label: "联机", href: "/multiplayer" },
-  { icon: <Wrench className="size-4" />, label: "工具", href: "/tools" },
-]
-
-const bottomNavItems: NavItem[] = [
-  { icon: <Settings className="size-4" />, label: "设置", href: "/settings" },
+const allNavItems: NavItem[] = [
+  { id: "home", icon: <Home className="size-4" />, label: "首页", href: "/" },
+  { id: "game-settings", icon: <Gamepad2 className="size-4" />, label: "游戏设置", href: "/game-settings" },
+  { id: "launch", icon: <Rocket className="size-4" />, label: "启动", href: "/launch" },
+  { id: "download", icon: <Download className="size-4" />, label: "下载", href: "/download" },
+  { id: "multiplayer", icon: <Globe className="size-4" />, label: "联机", href: "/multiplayer" },
+  { id: "tools", icon: <Wrench className="size-4" />, label: "工具", href: "/tools" },
+  { id: "settings", icon: <Settings className="size-4" />, label: "设置", href: "/settings" },
 ]
 
 function NavButton({ item, isActive }: { item: NavItem; isActive: boolean }) {
@@ -155,6 +152,15 @@ function NavButton({ item, isActive }: { item: NavItem; isActive: boolean }) {
           href={item.href}
           onClick={handleNavigation}
           suppressHydrationWarning
+          aria-label={item.label}
+          aria-current={isActive ? "page" : undefined}
+          className={cn(
+            item.isAvatar
+              ? "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              : buttonVariants({ variant: "ghost", size: "icon" }),
+            "relative overflow-hidden touch-manipulation",
+            !item.isAvatar && isActive && "text-accent-foreground"
+          )}
         >
           {item.isAvatar ? (
             <span
@@ -184,6 +190,11 @@ function NavButton({ item, isActive }: { item: NavItem; isActive: boolean }) {
       </TooltipContent>
     </Tooltip>
   )
+}
+
+function isNavItemActive(pathname: string, href: string) {
+  if (href === "/") return pathname === "/"
+  return pathname === href || pathname.startsWith(`${href}/`)
 }
 
 export function Sidebar({ className }: SidebarProps) {

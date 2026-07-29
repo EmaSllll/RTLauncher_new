@@ -12,7 +12,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useAccountContext } from "@/components/accounts/account-provider";
 import { isTauriRuntime } from "@/lib/tauri-runtime";
-import type { LaunchConfig, LaunchLogEntry, LaunchStatus } from "@/types";
+import { log4jParser } from "@/components/launch/log4j-progress-parser";
+import type { LaunchConfig, LaunchLogEntry, LaunchProgress, LaunchStatus } from "@/types";
 
 /** 默认启动配置 */
 const DEFAULT_LAUNCH_CONFIG: LaunchConfig = {
