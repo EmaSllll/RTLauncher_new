@@ -45,16 +45,11 @@ export default function RootLayout({
                         {/* 全局拖放处理组件 - 必须放在 DownloadProvider 内部 */}
                         <GlobalDragDrop />
 
-                      <div className="flex flex-1 overflow-hidden">
-                        <Sidebar />
-          <main className="flex-1 overflow-hidden [view-transition-name:page-content]">
-                          <PageTransition>{children}</PageTransition>
-                        </main>
-                      </div>
+                        <TitleBar />
 
                         <div className="flex flex-1 overflow-hidden">
                           <Sidebar />
-                          <main className="flex-1 overflow-hidden">
+                          <main className="flex-1 overflow-hidden [view-transition-name:page-content]">
                             <PageTransition>{children}</PageTransition>
                           </main>
                         </div>
