@@ -99,18 +99,18 @@ pub fn get_or_download_authlib_injector() -> String {
     // 检查文件是否已存在
     if fs::metadata(&filePath).is_ok() {
         if let Ok(fileContent) = fs::read(&filePath) {
-            let fileSha256 = hex::encode(Sha256::digest(&fileContent));
-            
-            // 获取校验和
+        let fileSha256 = hex::encode(Sha256::digest(&fileContent));
+        
+        // 获取校验和
             if let Some(checksumValue) = jsonData.get("checksums")
-                .and_then(|c| c.get("sha256"))
+            .and_then(|c| c.get("sha256"))
                 .and_then(|s| s.as_str()) 
             {
-                if fileSha256 == checksumValue {
+        if fileSha256 == checksumValue {
                     info!("[AuthlibInjector] 文件已存在且校验成功: {}", filePath);
                     return filePath;
                 }
-            }
+        }
         }
     }
     
@@ -148,9 +148,9 @@ pub fn get_or_download_authlib_injector() -> String {
         .and_then(|s| s.as_str())
     {
         let fileSha256 = hex::encode(Sha256::digest(&bytes));
-        if fileSha256 == checksumValue {
+    if fileSha256 == checksumValue {
             info!("[AuthlibInjector] 文件下载成功，校验成功: {}", filePath);
-        } else {
+    } else {
             error!("[AuthlibInjector] 校验失败，但仍返回路径供尝试使用");
         }
     }

@@ -90,7 +90,7 @@ export function QuiltApiDetail({ mcVersion, onBack }: QuiltApiDetailProps) {
 
   return (
     <>
-      <div className="flex h-full flex-col gap-4">
+    <div className="flex h-full flex-col gap-4">
       {/* 返回按钮 + 版本信息头 */}
       <div className="flex items-center gap-3 shrink-0">
         <Button

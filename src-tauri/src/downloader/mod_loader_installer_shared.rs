@@ -13,9 +13,9 @@ use zip::ZipArchive;
 pub struct LoaderInstallerConfig {
     pub installer_jar_path: PathBuf,
     pub java_executable_path: PathBuf,
-    pub mc_version: String,
-    pub mc_version_id: String,
-    pub library_mirrors: Vec<String>,
+    pub mc_version: String,        
+    pub mc_version_id: String,     
+    pub library_mirrors: Vec<String>, 
 }
 /// 将 Java 解析为可执行文件的绝对路径，避免后续检查时把 PATH 中的命令名 `java` 误判为文件缺失。
 fn is_executable_file(path: &Path) -> bool {
@@ -1316,7 +1316,7 @@ pub async fn install(
     .into_iter()
     .collect();
     let raw_processors = parse_processors(&ip_model_mut);
-    let mut proc_list: Vec<(String, Vec<String>, Vec<String>)> = Vec::new();
+    let mut proc_list: Vec<(String, Vec<String>, Vec<String>)> = Vec::new(); 
     for (p_idx, proc) in raw_processors.iter().enumerate() {
         println!(
             "  [Raw {}/{}] jar={}, 原始 args={:?}",
@@ -1646,7 +1646,7 @@ pub async fn install(
     } else {
         fs::write(&options_path, "lang:zh_cn")?;
     }
-
+    
     println!("\n✓ 安装完成: {}", id);
     Ok(id)
 }
