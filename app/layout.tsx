@@ -49,7 +49,7 @@ export default function RootLayout({
 
                         <div className="flex flex-1 overflow-hidden">
                           <Sidebar />
-                          <main className="flex-1 overflow-hidden">
+                          <main className="flex-1 overflow-hidden [view-transition-name:page-content]">
                             <PageTransition>{children}</PageTransition>
                           </main>
                         </div>

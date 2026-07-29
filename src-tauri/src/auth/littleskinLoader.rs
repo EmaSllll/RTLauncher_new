@@ -244,15 +244,20 @@ impl LittleSkinClient {
                             .and_then(|n| n.as_str())
                             .unwrap_or("Unknown")
                             .to_string();
-                        let uuid = first
+                        let raw_uuid = first
                             .get("uuid")
                             .and_then(|u| u.as_str())
                             .unwrap_or("")
                             .to_string();
+                        let uuid = format_uuid(&raw_uuid);
                         let tid_skin = first.get("tid_skin").and_then(|t| t.as_i64());
 
+                        eprintln!("[LittleSkin OAuth] 玩家信息: name={}, raw_uuid={}, formatted_uuid={}", name, raw_uuid, uuid);
+
                         // 下载真实皮肤 PNG 到本地 (供 3D 展示)
-                        let _ = crate::auth::official::download_littleskin_skin(&uuid);
+                        if let Err(e) = crate::auth::official::download_littleskin_skin_with_name(&uuid, &name) {
+                            eprintln!("[LittleSkin OAuth] 皮肤下载失败（非致命）: {}", e);
+                        }
 
                         upsert_player(
                             &conn,
@@ -399,32 +404,42 @@ pub fn authenticate_with_credentials(
     if parsed.available_profiles.is_empty() {
         // 如果没有可用角色，使用 selectedProfile 或 user 信息
         if let Some(sp) = &parsed.selected_profile {
-            let _ = crate::auth::official::download_littleskin_skin(&format_uuid(&sp.id));
+            let formatted_uuid = format_uuid(&sp.id);
+            if let Err(e) = crate::auth::official::download_littleskin_skin_with_name(&formatted_uuid, &sp.name) {
+                eprintln!("[LittleSkin登录] 角色 {} 皮肤下载失败（非致命）: {}", sp.name, e);
+            }
             results.push(LittleSkinAccountResult {
                 name: sp.name.clone(),
-                uuid: format_uuid(&sp.id),
+                uuid: formatted_uuid.clone(),
                 access_token: parsed.accessToken.clone(),
-                skin_url: Some(format_uuid(&sp.id)),
+                skin_url: Some(formatted_uuid),
             });
         } else if let Some(user) = &parsed.user {
-            let _ = crate::auth::official::download_littleskin_skin(&format_uuid(&user.id));
+            let formatted_uuid = format_uuid(&user.id);
+            let uname = user.username.clone().unwrap_or_else(|| "Player".to_string());
+            if let Err(e) = crate::auth::official::download_littleskin_skin_with_name(&formatted_uuid, &uname) {
+                eprintln!("[LittleSkin登录] 用户皮肤下载失败（非致命）: {}", e);
+            }
             results.push(LittleSkinAccountResult {
-                name: user.username.clone().unwrap_or_else(|| "Player".to_string()),
-                uuid: format_uuid(&user.id),
+                name: uname,
+                uuid: formatted_uuid.clone(),
                 access_token: parsed.accessToken.clone(),
-                skin_url: Some(format_uuid(&user.id)),
+                skin_url: Some(formatted_uuid),
             });
         } else {
             return Err("账户未创建玩家角色，请先在 LittleSkin 创建角色".to_string());
         }
     } else {
         for profile in &parsed.available_profiles {
-            let _ = crate::auth::official::download_littleskin_skin(&format_uuid(&profile.id));
+            let formatted_uuid = format_uuid(&profile.id);
+            if let Err(e) = crate::auth::official::download_littleskin_skin_with_name(&formatted_uuid, &profile.name) {
+                eprintln!("[LittleSkin登录] 角色 {} 皮肤下载失败（非致命）: {}", profile.name, e);
+            }
             results.push(LittleSkinAccountResult {
                 name: profile.name.clone(),
-                uuid: format_uuid(&profile.id),
+                uuid: formatted_uuid.clone(),
                 access_token: parsed.accessToken.clone(),
-                skin_url: Some(format_uuid(&profile.id)),
+                skin_url: Some(formatted_uuid),
             });
         }
     }

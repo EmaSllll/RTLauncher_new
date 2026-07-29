@@ -1,9 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { LoaderSelector } from "@/components/download/loader-selector";
 import { LoaderVersionList } from "@/components/download/loader-version-list";
 import { FabricApiDetail } from "@/components/download/fabric-api-detail";
@@ -28,6 +35,13 @@ interface VersionDetailProps {
   onBack: () => void;
 }
 
+interface PendingDownloadInfo {
+  kind: "vanilla" | "loader";
+  loaderType?: LoaderType;
+  loaderVersion?: LoaderVersion;
+  defaultName: string;
+}
+
 export function VersionDetail({ version, onBack }: VersionDetailProps) {
   const [selectedLoader, setSelectedLoader] = useState<LoaderType | null>(null);
   const [showFabricApi, setShowFabricApi] = useState(false);
@@ -45,6 +59,10 @@ export function VersionDetail({ version, onBack }: VersionDetailProps) {
   const [loadingNeoforge, setLoadingNeoforge] = useState(false);
   const [liteloaderVersions, setLiteloaderVersions] = useState<LoaderVersion[]>([]);
   const [loadingLiteloader, setLoadingLiteloader] = useState(false);
+  const [showNameDialog, setShowNameDialog] = useState(false);
+  const [pendingDownload, setPendingDownload] = useState<PendingDownloadInfo | null>(null);
+  const [instanceNameInput, setInstanceNameInput] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
   const { startDownload, startOptifineDownload, startFabricDownload, startQuiltDownload, startForgeDownload, startNeoForgeDownload, startLiteLoaderDownload } = useDownloadManager();
   const { config } = useLaunchContext();
 
@@ -237,96 +255,88 @@ export function VersionDetail({ version, onBack }: VersionDetailProps) {
     }
   }, [selectedLoader, version.id]);
 
+  const promptInstanceNameAndDownload = (info: PendingDownloadInfo) => {
+    setPendingDownload(info);
+    setInstanceNameInput(info.defaultName);
+    setShowNameDialog(true);
+    setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 50);
+  };
+
+  const confirmDownload = async () => {
+    if (!pendingDownload) return;
+    const name = instanceNameInput.trim();
+    const instanceName = name.length > 0 ? name : pendingDownload.defaultName;
+
+    setShowNameDialog(false);
+    const info = pendingDownload;
+    setPendingDownload(null);
+
+    if (info.kind === "vanilla") {
+      await startDownload(`Minecraft ${version.id}`, version.id, instanceName);
+      return;
+    }
+
+    const loaderType = info.loaderType!;
+    const loaderVersion = info.loaderVersion!;
+    try {
+      if (loaderType === "optifine") {
+        const optifineVersion = loaderVersion.filename || `${loaderVersion.version}.jar`;
+        const taskId = await startOptifineDownload(optifineVersion, version.id, instanceName);
+        console.log(`OptiFine 下载任务已启动，任务ID: ${taskId}`);
+      } else if (loaderType === "fabric") {
+        const taskId = await startFabricDownload(version.id, loaderVersion.version, undefined, instanceName);
+        console.log(`Fabric 下载任务已启动，任务ID: ${taskId}`);
+      } else if (loaderType === "quilt") {
+        const taskId = await startQuiltDownload(version.id, loaderVersion.version, undefined, instanceName);
+        console.log(`Quilt 下载任务已启动，任务ID: ${taskId}`);
+      } else if (loaderType === "forge") {
+        const taskId = await startForgeDownload(version.id, loaderVersion.version, instanceName);
+        console.log(`Forge 下载任务已启动，任务ID: ${taskId}`);
+      } else if (loaderType === "neoforge") {
+        const taskId = await startNeoForgeDownload(version.id, loaderVersion.version, instanceName);
+        console.log(`NeoForge 下载任务已启动，任务ID: ${taskId}`);
+      } else if (loaderType === "liteloader") {
+        const taskId = await startLiteLoaderDownload(version.id, loaderVersion.version, instanceName);
+        console.log(`LiteLoader 下载任务已启动，任务ID: ${taskId}`);
+      } else {
+        const loaderName =
+          LOADER_OPTIONS.find((l) => l.id === loaderType)?.name ?? loaderType;
+        startDownload(
+          `${version.id} + ${loaderName} ${loaderVersion.version}`,
+          version.id,
+          instanceName
+        );
+      }
+    } catch (err) {
+      console.error("下载失败:", err);
+    }
+  };
+
   const handleSelectLoader = (loaderId: LoaderType) => {
     if (loaderId === "vanilla") {
-      startDownload(`Minecraft ${version.id}`, version.id);
+      promptInstanceNameAndDownload({
+        kind: "vanilla",
+        defaultName: version.id,
+      });
       return;
     }
     setSelectedLoader(loaderId);
   };
 
   const handleInstallLoaderVersion = async (loaderVersion: LoaderVersion) => {
+    if (!selectedLoader) return;
     const loaderName =
       LOADER_OPTIONS.find((l) => l.id === selectedLoader)?.name ??
       selectedLoader;
-    
-    // 如果是OptiFine，调用download_and_install_optifine命令
-    if (selectedLoader === "optifine") {
-      try {
-        const optifineVersion = loaderVersion.filename || `${loaderVersion.version}.jar`;
-        // 使用新的下载命令，会先下载原版再安装optifine
-        // 返回taskId，用于跟踪安装状态
-        const taskId = await startOptifineDownload(optifineVersion, version.id);
-        console.log(`OptiFine 下载任务已启动，任务ID: ${taskId}`);
-      } catch (err) {
-        console.error("下载并安装OptiFine失败:", err);
-        // 可以添加一个错误提示
-      }
-      return;
-    }
-    
-    // 如果是Fabric，调用download_and_install_fabric命令
-    if (selectedLoader === "fabric") {
-      try {
-        const taskId = await startFabricDownload(version.id, loaderVersion.version);
-        console.log(`Fabric 下载任务已启动，任务ID: ${taskId}`);
-      } catch (err) {
-        console.error("下载并安装Fabric失败:", err);
-        // 可以添加一个错误提示
-      }
-      return;
-    }
-
-    // 如果是Quilt，调用download_and_install_quilt命令
-    if (selectedLoader === "quilt") {
-      try {
-        const taskId = await startQuiltDownload(version.id, loaderVersion.version);
-        console.log(`Quilt 下载任务已启动，任务ID: ${taskId}`);
-      } catch (err) {
-        console.error("下载并安装Quilt失败:", err);
-        // 可以添加一个错误提示
-      }
-      return;
-    }
-
-    // 如果是Forge，调用download_and_install_forge命令
-    if (selectedLoader === "forge") {
-      try {
-        const taskId = await startForgeDownload(version.id, loaderVersion.version);
-        console.log(`Forge 下载任务已启动，任务ID: ${taskId}`);
-      } catch (err) {
-        console.error("下载并安装Forge失败:", err);
-      }
-      return;
-    }
-
-    // 如果是NeoForge，调用download_and_install_neoforge命令
-    if (selectedLoader === "neoforge") {
-      try {
-        const taskId = await startNeoForgeDownload(version.id, loaderVersion.version);
-        console.log(`NeoForge 下载任务已启动，任务ID: ${taskId}`);
-      } catch (err) {
-        console.error("下载并安装NeoForge失败:", err);
-      }
-      return;
-    }
-
-    // 如果是LiteLoader，调用download_and_install_liteloader命令
-    if (selectedLoader === "liteloader") {
-      try {
-        const taskId = await startLiteLoaderDownload(version.id, loaderVersion.version);
-        console.log(`LiteLoader 下载任务已启动，任务ID: ${taskId}`);
-      } catch (err) {
-        console.error("下载并安装LiteLoader失败:", err);
-      }
-      return;
-    }
-
-    // 其他加载器，使用原有的下载流程
-    startDownload(
-      `${version.id} + ${loaderName} ${loaderVersion.version}`,
-      version.id
-    );
+    promptInstanceNameAndDownload({
+      kind: "loader",
+      loaderType: selectedLoader,
+      loaderVersion,
+      defaultName: `${version.id}-${loaderName}-${loaderVersion.version}`,
+    });
   };
 
   const selectedLoaderInfo = selectedLoader
@@ -350,7 +360,8 @@ export function VersionDetail({ version, onBack }: VersionDetailProps) {
     : [];
 
   return (
-    <div className="flex h-full flex-col gap-4">
+    <>
+      <div className="flex h-full flex-col gap-4">
       {/* 返回按钮 + 版本信息头 */}
       <div className="flex items-center gap-3 shrink-0">
         <Button
@@ -525,5 +536,52 @@ export function VersionDetail({ version, onBack }: VersionDetailProps) {
         </AnimatePresence>
       </div>
     </div>
+
+    {/* 实例名称输入对话框 */}
+    <Dialog open={showNameDialog} onOpenChange={setShowNameDialog}>
+      <DialogContent className="!max-w-lg p-0">
+        <DialogHeader>
+          <DialogTitle>
+            实例名称
+          </DialogTitle>
+        </DialogHeader>
+        <div className="p-5 space-y-4">
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              请为这个 Minecraft 实例命名，未填写则使用默认名称：
+              <code className="mx-1 px-1.5 py-0.5 rounded bg-muted text-xs">
+                {pendingDownload?.defaultName}
+              </code>
+            </p>
+            <Input
+              ref={inputRef}
+              placeholder={pendingDownload?.defaultName}
+              value={instanceNameInput}
+              onChange={(e) => setInstanceNameInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  confirmDownload();
+                }
+              }}
+            />
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowNameDialog(false);
+                setPendingDownload(null);
+              }}
+            >
+              取消
+            </Button>
+            <Button onClick={confirmDownload}>
+              开始下载
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

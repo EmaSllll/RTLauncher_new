@@ -15,7 +15,7 @@ type InstallStatus =
   | "error";
 
 export function OpenP2PInstaller() {
-  const { installOpenP2P, checkStatus, status } = useMultiplayerContext();
+  const { installOpenP2P, status } = useMultiplayerContext();
   const router = useRouter();
 
   const [innerStatus, setInnerStatus] = useState<InstallStatus>("checking");
@@ -37,17 +37,16 @@ export function OpenP2PInstaller() {
   const dialogOpenRef = useRef(dialogOpen);
   dialogOpenRef.current = dialogOpen;
 
-  // 检查是否已安装，未安装时自动弹窗
+  // 状态检查由联机页面在挂载时统一触发。这里仅同步弹窗状态，
+  // 避免 starting/running 变化时再次检查进程，把刚启动的界面错误切回“就绪”。
   useEffect(() => {
-    checkStatus();
-    // 根据 provider 的状态同步本地状态
     if (status === "not_installed") {
       setInnerStatus("not_installed");
       setDialogOpen(true);
     } else if (status === "installed" || status === "running" || status === "starting" || status === "stopping") {
       setInnerStatus("installed");
     }
-  }, [checkStatus, status]);
+  }, [status]);
 
   // 监听 Tauri 拖拽事件，仅在对话框打开时处理
   useEffect(() => {
@@ -182,7 +181,7 @@ export function OpenP2PInstaller() {
                       将 openp2p 可执行文件拖到此处
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Windows 版本通常命名为 openp2p.exe
+                      Windows 通常为 openp2p.exe，Linux 与 macOS 通常为 openp2p
                     </p>
                   </div>
                 </>

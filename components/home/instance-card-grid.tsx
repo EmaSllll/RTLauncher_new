@@ -113,13 +113,10 @@ export function InstanceCardGrid({
       animate="animate"
     >
       {INSTANCE_CARDS.map((card) => (
-        <motion.div key={card.id} variants={staggerItem}>
-          <Link
-            href={card.href}
-            className="block h-full rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <Card className="h-full border py-4 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg">
-              <CardHeader className="px-4">
+        <motion.div key={card.id} variants={staggerItem} className="h-full">
+          <Link href={card.href} className="block h-full" suppressHydrationWarning>
+            <Card className="shadow-sm hover:shadow-xl transition-all duration-300 cursor-pointer h-full flex flex-col border hover:border-primary/40">
+              <CardHeader>
                 {/* 图标 */}
                 <div
                   className={cn(
