@@ -13,18 +13,20 @@ import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { useUIConfigContext } from "@/components/ui-config/ui-config-provider"
 
 interface SidebarProps {
   className?: string
 }
 
 interface NavItem {
+  id: string
   icon: React.ReactNode
   label: string
   href: string
@@ -164,14 +166,7 @@ function NavButton({ item, isActive }: { item: NavItem; isActive: boolean }) {
               {item.icon}
             </span>
           ) : (
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                "relative overflow-hidden touch-manipulation",
-                isActive && "text-accent-foreground"
-              )}
-            >
+            <>
               {isActive && (
                 <motion.span
                   layoutId="active-nav-indicator"
@@ -180,7 +175,7 @@ function NavButton({ item, isActive }: { item: NavItem; isActive: boolean }) {
                 />
               )}
               <span className="relative z-10">{item.icon}</span>
-            </Button>
+            </>
           )}
         </Link>
       </TooltipTrigger>
@@ -193,11 +188,21 @@ function NavButton({ item, isActive }: { item: NavItem; isActive: boolean }) {
 
 export function Sidebar({ className }: SidebarProps) {
   const pathname = usePathname()
+  const { config, configLoaded } = useUIConfigContext()
 
-  const isActive = (href: string) => {
-    if (href === "/") return pathname === "/"
-    return pathname.startsWith(href)
-  }
+  const isActive = (href: string) => isNavItemActive(pathname, href)
+
+  // 根据配置过滤可见的导航项
+  const visibleNavItems = configLoaded
+    ? allNavItems.filter(item => {
+        const tabConfig = config.sidebarTabs.find(tab => tab.id === item.id);
+        return tabConfig ? tabConfig.visible : true;
+      })
+    : allNavItems;
+
+  // 分离顶部和底部导航项
+  const topNavItems = visibleNavItems.filter(item => item.id !== "settings");
+  const bottomNavItems = visibleNavItems.filter(item => item.id === "settings");
 
   return (
     <aside

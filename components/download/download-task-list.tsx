@@ -66,6 +66,7 @@ function TaskRow({ task, onRemove, onCancel }: { task: DownloadTask; onRemove: (
               className="size-5 shrink-0"
               onClick={onCancel}
               title="取消排队"
+              aria-label="取消排队"
             >
               <X className="size-3" />
             </Button>
@@ -80,6 +81,7 @@ function TaskRow({ task, onRemove, onCancel }: { task: DownloadTask; onRemove: (
                 className="size-5"
                 onClick={onCancel}
                 title="取消下载"
+                aria-label="取消下载"
               >
                 <X className="size-3" />
               </Button>
@@ -90,6 +92,8 @@ function TaskRow({ task, onRemove, onCancel }: { task: DownloadTask; onRemove: (
               size="icon-sm"
               className="size-5 shrink-0"
               onClick={onRemove}
+              title="移除任务"
+              aria-label="移除任务"
             >
               <X className="size-3" />
             </Button>
@@ -141,6 +145,16 @@ export function DownloadTaskList() {
   const draggingRef = useRef(false);
   const dragStartRef = useRef<{ offsetX: number; offsetY: number }>({ offsetX: 0, offsetY: 0 });
 
+  const clampToViewport = useCallback((next: { x: number; y: number }) => {
+    const panel = panelRef.current;
+    const width = panel?.offsetWidth ?? 0;
+    const height = panel?.offsetHeight ?? 0;
+    return {
+      x: Math.max(0, Math.min(Math.max(0, window.innerWidth - width), next.x)),
+      y: Math.max(0, Math.min(Math.max(0, window.innerHeight - height), next.y)),
+    };
+  }, []);
+
   const onMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     // 只响应鼠标左键
     if (e.button !== 0) return;
@@ -160,20 +174,26 @@ export function DownloadTaskList() {
     const onMove = (e: MouseEvent) => {
       if (!draggingRef.current) return;
       const { offsetX, offsetY } = dragStartRef.current;
-      const nextX = Math.max(0, Math.min(window.innerWidth - 10, e.clientX - offsetX));
-      const nextY = Math.max(0, Math.min(window.innerHeight - 10, e.clientY - offsetY));
-      setPosition({ x: nextX, y: nextY });
+      setPosition(clampToViewport({
+        x: e.clientX - offsetX,
+        y: e.clientY - offsetY,
+      }));
     };
     const onUp = () => {
       draggingRef.current = false;
     };
+    const onResize = () => {
+      setPosition((current) => current ? clampToViewport(current) : current);
+    };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
+    window.addEventListener("resize", onResize);
     return () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("resize", onResize);
     };
-  }, []);
+  }, [clampToViewport]);
 
   const panelStyle: React.CSSProperties = position
     ? { left: position.x, top: position.y, right: "auto", bottom: "auto" }
@@ -225,6 +245,7 @@ export function DownloadTaskList() {
                       className="size-6"
                       onClick={clearFinished}
                       title="清除已完成"
+                      aria-label="清除已完成任务"
                       onMouseDown={(e) => e.stopPropagation()}
                     >
                       <Trash2 className="size-3" />
@@ -238,6 +259,8 @@ export function DownloadTaskList() {
                 className="size-6"
                 onClick={() => setCollapsed((prev) => !prev)}
                 onMouseDown={(e) => e.stopPropagation()}
+                title={collapsed ? "展开下载任务" : "折叠下载任务"}
+                aria-label={collapsed ? "展开下载任务" : "折叠下载任务"}
               >
                 {collapsed ? (
                   <ChevronUp className="size-3" />

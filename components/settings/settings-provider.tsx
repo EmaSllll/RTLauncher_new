@@ -6,6 +6,7 @@ import * as React from "react";
 // 类型定义
 // ============================================================
 export type ThemeMode = "light" | "dark";
+export type HomeMode = "simple" | "full";
 
 export interface BackgroundConfig {
   imageDataUrl?: string;
@@ -24,6 +25,7 @@ export interface AppearanceSettings {
   themeColor: ThemeColor; // "default" 或 oklch 字符串
   fontSize: number; // 12 ~ 18（整数 px，仅影响文字）
   background: BackgroundConfig;
+  homeMode: HomeMode; // 主页模式：simple 或 full
 }
 
 export interface LauncherSettings {
@@ -62,6 +64,7 @@ export const DEFAULT_SETTINGS: LauncherSettings = {
       opacity: 0.55,
       blur: 6,
     },
+    homeMode: "full", // 默认完整模式
   },
 };
 

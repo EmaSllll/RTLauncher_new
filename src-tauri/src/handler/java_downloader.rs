@@ -7,7 +7,6 @@ use std::sync::Arc;
 use futures::stream::{self, StreamExt};
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, AsyncSeekExt};
-use tokio::sync::Semaphore;
 use std::time::Duration;
 use tauri::Emitter;
 
@@ -129,7 +128,7 @@ fn get_platform_identifier() -> &'static str {
 
 #[tauri::command]
 pub async fn get_java_versions() -> Result<Vec<JavaVersionInfo>, String> {
-    let client = reqwest::Client::new();
+    let client = crate::http_client::shared_client().await;
     let response = client.get(JAVA_MANIFEST_URL).send().await
         .map_err(|e| format!("获取Java版本列表失败: {}", e))?;
 
@@ -172,9 +171,13 @@ pub async fn download_java_runtime(
     task_id: u64,
     window: tauri::Window,
 ) -> Result<DownloadResult, String> {
-    let client = reqwest::Client::new();
+    let client = crate::http_client::shared_client().await;
     let response = client.get(JAVA_MANIFEST_URL).send().await
         .map_err(|e| format!("获取Java版本列表失败: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("获取Java版本列表失败: HTTP {}", response.status()));
+    }
 
     let manifest: JavaManifest = response.json().await
         .map_err(|e| format!("解析Java版本列表失败: {}", e))?;
@@ -268,13 +271,12 @@ async fn download_java_files(
 ) -> Result<(), String> {
     let total = tasks.len();
     let progress = Arc::new(DownloadProgress::new(total));
-    let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_DOWNLOADS));
     // 复用共享 HTTP client（连接池更优、配置更完整）
     let client = crate::http_client::shared_client().await;
 
     let progress_clone = progress.clone();
     let window_clone = window.clone();
-    tokio::spawn(async move {
+    let progress_reporter = tokio::spawn(async move {
         loop {
             let done = progress_clone.done.load(Ordering::SeqCst);
             let percent = if total > 0 {
@@ -293,34 +295,22 @@ async fn download_java_files(
         }
     });
 
-    let (large_tasks, small_tasks): (Vec<_>, Vec<_>) = tasks.into_iter()
-        .partition(|task| task.size > 5 * 1024 * 1024);
-
-    let small_futures: Vec<_> = small_tasks.into_iter().map(|task| {
+    // Java 运行时通常包含大量小文件。无限并发会占满连接池和文件句柄，
+    // 因此所有文件共用同一并发上限，而不是只限制大文件。
+    let download_futures = tasks.into_iter().map(|task| {
         let progress = progress.clone();
         let client = client.clone();
-        download_java_file(task, client, None, progress)
-    }).collect();
+        download_java_file(task, client, progress)
+    });
 
-    let small_results = stream::iter(small_futures)
-        .buffer_unordered(usize::MAX)
-        .collect::<Vec<_>>()
-        .await;
-
-    let mut large_futures = Vec::new();
-    for task in large_tasks {
-        let semaphore = Some(semaphore.clone());
-        let progress = progress.clone();
-        let client = client.clone();
-        large_futures.push(download_java_file(task, client, semaphore, progress));
-    }
-
-    let large_results = stream::iter(large_futures)
+    let results = stream::iter(download_futures)
         .buffer_unordered(MAX_CONCURRENT_DOWNLOADS)
         .collect::<Vec<_>>()
         .await;
 
-    let results = small_results.into_iter().chain(large_results.into_iter()).collect::<Vec<_>>();
+    // 失败任务不会增加 done；不停止该任务会让它永久保留在后台。
+    progress_reporter.abort();
+    let _ = progress_reporter.await;
 
     let _ = window.emit("java-download-progress", serde_json::json!({
         "task_id": task_id,
@@ -344,15 +334,8 @@ async fn download_java_files(
 async fn download_java_file(
     task: DownloadTask,
     client: Arc<reqwest::Client>,
-    semaphore: Option<Arc<Semaphore>>,
     progress: Arc<DownloadProgress>,
 ) -> Result<(), String> {
-    let _permit = if let Some(ref sem) = semaphore {
-        Some(sem.acquire().await.map_err(|e| format!("获取信号量失败: {}", e))?)
-    } else {
-        None
-    };
-
     // 如果目标文件已存在且 SHA1 匹配，直接跳过
     if let Ok(mut file) = File::open(&task.target_path).await {
         if check_sha1(&mut file, &task.sha1).await.unwrap_or(false) {

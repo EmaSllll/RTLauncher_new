@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -30,12 +30,9 @@ export function VersionSidebar({ className }: VersionSidebarProps) {
   const [loading, setLoading] = useState(true);
   const [isExpanded, setIsExpanded] = useState(true);
 
-  // 加载已安装的游戏版本
-  useEffect(() => {
-    loadInstances();
-  }, [config.minecraftPath]);
-
-  const loadInstances = async () => {
+  // 加载已安装的游戏版本。版本安装在 .minecraft/versions 下，而不是
+  // 一个独立的 instances 目录；路径不一致会导致侧边栏始终显示为空。
+  const loadInstances = useCallback(async () => {
     if (!config.minecraftPath) {
       setInstances([]);
       setLoading(false);
@@ -44,8 +41,7 @@ export function VersionSidebar({ className }: VersionSidebarProps) {
 
     try {
       setLoading(true);
-      // vm_scan_instances 需要的是 instances 目录路径
-      const instancesPath = `${config.minecraftPath}/instances`;
+      const instancesPath = `${config.minecraftPath}/versions`;
       const result = await invoke<InstanceData[]>("vm_scan_instances", {
         instancesPath,
       });
@@ -56,7 +52,15 @@ export function VersionSidebar({ className }: VersionSidebarProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [config.minecraftPath]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadInstances();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [loadInstances]);
 
   const handleSelectVersion = (instance: InstanceData) => {
     // 更新启动配置中的版本信息
@@ -130,7 +134,8 @@ export function VersionSidebar({ className }: VersionSidebarProps) {
             </div>
           ) : (
             instances.map((instance) => {
-              const isSelected = config.versionName === instance.name;
+              const isSelected =
+                config.loadName === instance.name || config.versionName === instance.name;
 
               return (
                 <motion.button

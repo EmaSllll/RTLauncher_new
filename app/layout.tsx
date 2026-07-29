@@ -13,6 +13,7 @@ import { FloatingLaunchButton } from "@/components/launch/floating-launch-button
 import { MultiplayerProvider } from "@/components/multiplayer/multiplayer-provider";
 import { PageTransition } from "@/components/page-transition";
 import { GlobalDragDrop } from "@/components/global/global-drag-drop";
+import { UIConfigProvider } from "@/components/ui-config/ui-config-provider";
 
 export const metadata: Metadata = {
   title: "RTLauncher",
@@ -34,16 +35,15 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <SettingsProvider>
-            <AccountProvider>
-              <LaunchProvider>
-                <MultiplayerProvider>
-                  <DownloadProvider>
-                    <TooltipProvider>
-                      {/* 全局拖放处理组件 - 必须放在 DownloadProvider 内部 */}
-                      <GlobalDragDrop />
-                       
-                      <TitleBar />
+          <UIConfigProvider>
+            <SettingsProvider>
+              <AccountProvider>
+                <LaunchProvider>
+                  <MultiplayerProvider>
+                    <DownloadProvider>
+                      <TooltipProvider>
+                        {/* 全局拖放处理组件 - 必须放在 DownloadProvider 内部 */}
+                        <GlobalDragDrop />
 
                       <div className="flex flex-1 overflow-hidden">
                         <Sidebar />
@@ -52,16 +52,24 @@ export default function RootLayout({
                         </main>
                       </div>
 
-                      <DownloadTaskList />
-                       
-                      {/* 全局悬浮启动按钮 - 类似下载任务，所有页面可见 */}
-                      <FloatingLaunchButton />
-                    </TooltipProvider>
-                  </DownloadProvider>
-                </MultiplayerProvider>
-              </LaunchProvider>
-            </AccountProvider>
-          </SettingsProvider>
+                        <div className="flex flex-1 overflow-hidden">
+                          <Sidebar />
+                          <main className="flex-1 overflow-hidden">
+                            <PageTransition>{children}</PageTransition>
+                          </main>
+                        </div>
+
+                        <DownloadTaskList />
+
+                        {/* 全局悬浮启动按钮 - 类似下载任务，所有页面可见 */}
+                        <FloatingLaunchButton />
+                      </TooltipProvider>
+                    </DownloadProvider>
+                  </MultiplayerProvider>
+                </LaunchProvider>
+              </AccountProvider>
+            </SettingsProvider>
+          </UIConfigProvider>
         </ThemeProvider>
       </body>
     </html>

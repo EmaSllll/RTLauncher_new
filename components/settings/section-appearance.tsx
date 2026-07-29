@@ -12,11 +12,12 @@ import {
   BG_OPACITY_MIN,
   BG_OPACITY_MAX,
   type ThemeMode,
+  type HomeMode,
 } from "@/components/settings/settings-provider";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { ImagePlus, RotateCcw, Sparkles, Sun, Moon, Type, X } from "lucide-react";
+import { ImagePlus, RotateCcw, Sparkles, Sun, Moon, Type, X, Layout } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // ============================================================
@@ -287,6 +288,52 @@ function BackgroundRow({
 }
 
 // ============================================================
+// 主页模式（Simple / Full）
+// ============================================================
+function HomeModeRow({
+  value,
+  onChange,
+}: {
+  value: HomeMode;
+  onChange: (v: HomeMode) => void;
+}) {
+  return (
+    <div className="space-y-2.5">
+      <div className="flex items-center justify-between">
+        <Label className="font-medium text-sm flex items-center gap-1.5">
+          <Layout className="size-3.5 text-muted-foreground" />
+          主页模式
+        </Label>
+        <span className="text-xs text-muted-foreground">{value === "simple" ? "简约" : "完整"}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Button
+          type="button"
+          variant={value === "simple" ? "default" : "outline"}
+          onClick={() => onChange("simple")}
+          className="gap-2 h-8"
+        >
+          简约
+        </Button>
+        <Button
+          type="button"
+          variant={value === "full" ? "default" : "outline"}
+          onClick={() => onChange("full")}
+          className="gap-2 h-8"
+        >
+          完整
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {value === "simple" 
+          ? "简约模式：仅显示账户相关内容" 
+          : "完整模式：显示所有功能模块"}
+      </p>
+    </div>
+  );
+}
+
+// ============================================================
 // 主组件
 // ============================================================
 export function AppearanceSection() {
@@ -341,6 +388,13 @@ export function AppearanceSection() {
         <FontSizeRow
           value={appearance.fontSize}
           onChange={(v) => update("appearance", { fontSize: v })}
+        />
+
+        <div className="h-px bg-border" />
+
+        <HomeModeRow
+          value={appearance.homeMode}
+          onChange={(v) => update("appearance", { homeMode: v })}
         />
 
         <div className="h-px bg-border" />
