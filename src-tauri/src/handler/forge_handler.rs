@@ -31,8 +31,6 @@ struct ForgeDownloadFinishedPayload {
 static FORGE_TASK_COUNTER: AtomicU64 = AtomicU64::new(4000000);
 struct ForgeActiveTaskInfo {
     cancel: Arc<AtomicBool>,
-    mc_version: String,
-    forge_version: String,
 }
 fn forge_active_tasks() -> &'static Mutex<HashMap<u64, ForgeActiveTaskInfo>> {
     static INSTANCE: OnceLock<Mutex<HashMap<u64, ForgeActiveTaskInfo>>> = OnceLock::new();
@@ -72,8 +70,6 @@ pub async fn download_and_install_forge(
             task_id,
             ForgeActiveTaskInfo {
                 cancel: cancel.clone(),
-                mc_version: mc_version.clone(),
-                forge_version: forge_version.clone(),
             },
         );
     }

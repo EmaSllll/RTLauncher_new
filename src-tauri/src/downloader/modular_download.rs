@@ -32,7 +32,7 @@ const MAX_RETRIES_PER_CHUNK: u32 = 5;
 const CHUNK_TIMEOUT_BASE: Duration = Duration::from_secs(15);
 const OVERALL_TIMEOUT_SECONDS: u64 = 600;
 
-fn workers_for_size(size: u64) -> usize {
+fn workers_for_size(_size: u64) -> usize {
     // 每个文件内部只开 1 个 worker，串行下载
     // 并发由外层 smart_batch_download 管理（文件级并发）
     1
@@ -2060,17 +2060,19 @@ async fn smart_batch_download(
             let recent_successes = recent.iter().filter(|&&x| x).count();
             let success_rate = recent_successes as f64 / recent_count as f64;
 
-            let mut new_conc = current_concurrency;
-            if success_rate >= 0.9 && current_in_flight >= current_concurrency.saturating_sub(1) {
-                new_conc = ((current_concurrency as f64) * 1.25).round() as usize;
-                new_conc = new_conc.max(current_concurrency + 1).min(SMART_MAX_CONCURRENCY);
+            let new_conc = if success_rate >= 0.9
+                && current_in_flight >= current_concurrency.saturating_sub(1)
+            {
+                (((current_concurrency as f64) * 1.25).round() as usize)
+                    .max(current_concurrency + 1)
+                    .min(SMART_MAX_CONCURRENCY)
             } else if success_rate >= 0.5 {
-                new_conc = ((current_concurrency as f64) * 0.75).round() as usize;
-                new_conc = new_conc.max(SMART_MIN_CONCURRENCY);
+                (((current_concurrency as f64) * 0.75).round() as usize)
+                    .max(SMART_MIN_CONCURRENCY)
             } else {
-                new_conc = ((current_concurrency as f64) * 0.55).round() as usize;
-                new_conc = new_conc.max(SMART_MIN_CONCURRENCY);
-            }
+                (((current_concurrency as f64) * 0.55).round() as usize)
+                    .max(SMART_MIN_CONCURRENCY)
+            };
             if new_conc != current_concurrency {
                 concurrency.store(new_conc as u64, Ordering::SeqCst);
                 println!("[SmartDownload] 调整并发: {} → {} | 最近{}个成功率={:.0}% | 已完成{}/{}",

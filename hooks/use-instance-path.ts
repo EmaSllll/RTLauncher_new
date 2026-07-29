@@ -6,6 +6,29 @@ import { useLaunchContext } from "@/components/launch/launch-provider";
 import { useInstances } from "@/hooks/use-instances";
 import type { InstanceData } from "@/types";
 
+const ensuredInstanceDirs = new Set<string>();
+const pendingInstanceDirEnsures = new Map<string, Promise<void>>();
+
+function ensureInstanceDirs(instanceDir: string): Promise<void> {
+  if (ensuredInstanceDirs.has(instanceDir)) {
+    return Promise.resolve();
+  }
+
+  const pending = pendingInstanceDirEnsures.get(instanceDir);
+  if (pending) return pending;
+
+  const request = invoke("vm_ensure_instance_dirs", { instanceDir })
+    .then(() => {
+      ensuredInstanceDirs.add(instanceDir);
+    })
+    .finally(() => {
+      pendingInstanceDirEnsures.delete(instanceDir);
+    });
+
+  pendingInstanceDirEnsures.set(instanceDir, request);
+  return request;
+}
+
 export interface InstancePathInfo {
   /** <minecraftPath>/versions/<name>，无实例时为 undefined */
   instanceDir: string | undefined;
@@ -90,12 +113,14 @@ export function useInstancePath(): InstancePathInfo {
     : undefined;
 
   useEffect(() => {
-    if (instanceDir) {
-      invoke("vm_ensure_instance_dirs", { instanceDir }).catch((e) =>
+    // 等待扫描确认实例后再创建标准目录；否则首页与目标页面会在路由
+    // 切换期间同时对同一目录发起写入请求。
+    if (instanceDir && selectedInstance) {
+      ensureInstanceDirs(instanceDir).catch((e) =>
         console.warn("ensure_instance_dirs failed:", e)
       );
     }
-  }, [instanceDir]);
+  }, [instanceDir, selectedInstance]);
 
   return {
     instanceDir,

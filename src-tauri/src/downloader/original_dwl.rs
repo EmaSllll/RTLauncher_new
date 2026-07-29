@@ -26,13 +26,11 @@ struct DownloadTask {
     size: u64,
 }
 struct DownloadProgress {
-    total: Arc<AtomicUsize>,
     done: Arc<AtomicUsize>, 
 }
 impl DownloadProgress {
-    fn new(total: usize) -> Self {
+    fn new() -> Self {
         Self {
-            total: Arc::new(AtomicUsize::new(total)),
             done: Arc::new(AtomicUsize::new(0)),
         }
     }
@@ -122,7 +120,7 @@ struct Rule {
 struct OsRule {
     name: Option<String>,
 }
-pub async fn download_task(
+async fn download_task(
     task: DownloadTask,
     client: Arc<reqwest::Client>,
     semaphore: Arc<Semaphore>,
@@ -325,7 +323,7 @@ pub async fn process_version(
         });
     }
     let total = tasks.len();
-    let progress = Arc::new(DownloadProgress::new(total));
+    let progress = Arc::new(DownloadProgress::new());
     let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_DOWNLOADS));
     let client = shared_client().await;
     let progress_reporter = {

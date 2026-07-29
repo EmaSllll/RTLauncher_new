@@ -1,3 +1,5 @@
+// NBT compatibility helpers are shared with optional instance-management flows.
+#[allow(dead_code)]
 pub mod resource_checker;
 
 use serde::Serialize;
@@ -150,9 +152,6 @@ fn build_instance_data(instance_dir: &Path, minecraft_path: &Path) -> Option<Ins
         .and_then(|n| n.to_str())
         .unwrap_or("Unknown")
         .to_string();
-
-    // 确保实例目录中存在所有 Minecraft 标准子目录（mods/resourcepacks/shaderpacks/saves/datapacks/config）
-    let _ = ensure_instance_dirs(instance_dir);
 
     // 计算 mods 数量
     let mods_dir = instance_dir.join("mods");

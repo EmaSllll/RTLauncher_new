@@ -37,9 +37,6 @@ static FABRIC_TASK_COUNTER: AtomicU64 = AtomicU64::new(2000000);
 
 struct FabricActiveTaskInfo {
     cancel: Arc<AtomicBool>,
-    mc_version: String,
-    fabric_loader_version: String,
-    fabric_api_version: Option<String>,
 }
 
 fn fabric_active_tasks() -> &'static Mutex<HashMap<u64, FabricActiveTaskInfo>> {
@@ -141,9 +138,6 @@ pub async fn download_and_install_fabric(
         let mut tasks = fabric_active_tasks().lock().unwrap();
         tasks.insert(task_id, FabricActiveTaskInfo {
             cancel: cancel.clone(),
-            mc_version: mc_version.clone(),
-            fabric_loader_version: loader_version.clone(),
-            fabric_api_version: api_version.clone(),
         });
     }
 

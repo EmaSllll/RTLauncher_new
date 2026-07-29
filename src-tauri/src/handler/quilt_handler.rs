@@ -36,9 +36,6 @@ static QUILT_TASK_COUNTER: AtomicU64 = AtomicU64::new(3000000);
 
 struct QuiltActiveTaskInfo {
     cancel: Arc<AtomicBool>,
-    mc_version: String,
-    quilt_loader_version: String,
-    quilt_api_version: Option<String>,
 }
 
 fn quilt_active_tasks() -> &'static Mutex<HashMap<u64, QuiltActiveTaskInfo>> {
@@ -139,9 +136,6 @@ pub async fn download_and_install_quilt(
         let mut tasks = quilt_active_tasks().lock().unwrap();
         tasks.insert(task_id, QuiltActiveTaskInfo {
             cancel: cancel.clone(),
-            mc_version: mc_version.clone(),
-            quilt_loader_version: loader_version.clone(),
-            quilt_api_version: api_version.clone(),
         });
     }
 

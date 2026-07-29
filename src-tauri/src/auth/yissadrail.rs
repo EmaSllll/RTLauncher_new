@@ -21,7 +21,7 @@ use log::{info, error};
 use sha2::{Sha256, Digest};
 use std::fs;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Write;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 const FOLDER_PATH: &str = "./.minecraft/versions";

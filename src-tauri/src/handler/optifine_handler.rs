@@ -39,8 +39,6 @@ static OPTIFINE_TASK_COUNTER: AtomicU64 = AtomicU64::new(1000000);
 
 struct OptifineActiveTaskInfo {
     cancel: Arc<AtomicBool>,
-    mc_version: String,
-    optifine_version: String,
 }
 
 fn optifine_active_tasks() -> &'static Mutex<HashMap<u64, OptifineActiveTaskInfo>> {
@@ -176,8 +174,6 @@ pub async fn download_and_install_optifine(
         let mut tasks = optifine_active_tasks().lock().unwrap();
         tasks.insert(task_id, OptifineActiveTaskInfo {
             cancel: cancel.clone(),
-            mc_version: mc_version.clone(),
-            optifine_version: optifine_version.clone(),
         });
     }
 
@@ -308,7 +304,7 @@ pub async fn download_and_install_optifine(
             });
         } else {
             match install_result {
-                Ok(loader_version) => {
+            Ok(_) => {
                     // 发送安装完成进度
                     let _ = tx.send(100.0).await;
                     println!("OptiFine 安装成功，发送完成事件");

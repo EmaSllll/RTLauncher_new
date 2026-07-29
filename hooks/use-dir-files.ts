@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { DirEntry } from "@/types";
 
@@ -24,6 +24,7 @@ export function useDirFiles(
   const [entries, setEntries] = useState<DirEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
 
   // 调用方经常以内联数组传入筛选器。用内容生成稳定的数组，避免数组
   // 引用变化导致读取回调和 effect 在每次渲染后重复执行。
@@ -34,8 +35,11 @@ export function useDirFiles(
   );
 
   const fetch = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     if (!dirPath) {
       setEntries([]);
+      setLoading(false);
+      setError(null);
       return;
     }
     setLoading(true);
@@ -45,19 +49,25 @@ export function useDirFiles(
         dirPath,
         extensionsFilter: stableExtensionsFilter,
       });
-      setEntries(data);
+      if (requestId === requestIdRef.current) {
+        setEntries(data);
+      }
     } catch (e) {
-      setError(String(e));
+      if (requestId === requestIdRef.current) {
+        setError(String(e));
+      }
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [dirPath, stableExtensionsFilter]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      void fetch();
-    }, 0);
-    return () => window.clearTimeout(timer);
+    void fetch();
+    return () => {
+      requestIdRef.current += 1;
+    };
   }, [fetch]);
 
   return { entries, loading, error, refetch: fetch };
