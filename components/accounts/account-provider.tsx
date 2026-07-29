@@ -10,6 +10,7 @@ import {
   msPollAndLogin,
   msCancelLogin,
   getSkinBase64,
+  redownloadLittleSkinSkin,
   type LittleSkinAccount,
   type ThirdPartyAccountList,
   type DeviceCodeInfo,
@@ -22,6 +23,8 @@ type AccountContextType = {
   selectedProfile: Account | null;
   selectProfile: (acc: Account) => void;
   removeProfile: (id: string) => void;
+  /** 更新单个账户信息（例如刷新皮肤URL） */
+  updateProfile: (id: string, patch: Partial<Account>) => void;
   /** LittleSkin OAuth 登录 */
   loginWithLittleSkin: () => Promise<void>;
   /** LittleSkin 账号密码登录（PCL2 风格，无需浏览器），返回玩家列表 */
@@ -91,12 +94,37 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
   const msLoginVersionRef = React.useRef<number>(0);
 
   // 客户端挂载后从 localStorage 恢复数据，避免 SSR hydration 不匹配
+  // 同时刷新 LittleSkin 账户的皮肤，确保显示最新的皮肤
   useEffect(() => {
     const all = loadProfiles();
     const id = loadSelectedId();
     const selected = all.find((p) => p.id === id) ?? all[0] ?? null;
     setProfiles(all);
     setSelectedProfile(selected);
+
+    // 挂载后异步刷新所有 LittleSkin 账户的皮肤
+    // 确保用户在 LittleSkin 网站更换皮肤后，重新打开启动器能看到最新皮肤
+    all.forEach((profile) => {
+      if (profile.authType === "littleskin" && profile.uuid) {
+        const pid = profile.id;
+        const puuid = profile.uuid;
+        (async () => {
+          try {
+            // 先尝试重新下载皮肤（用户可能在网站上换了皮肤）
+            await redownloadLittleSkinSkin(puuid);
+            // 下载成功后，读取并更新皮肤显示
+            const skinSrc = await getSkinBase64(puuid);
+            setProfiles((prev) =>
+              prev.map((p) =>
+                p.id === pid ? { ...p, skinUrl: skinSrc } : p
+              )
+            );
+          } catch {
+            // 刷新失败不影响，保持原来的皮肤（如果有的话）
+          }
+        })();
+      }
+    });
   }, []);
 
   // 持久化
@@ -134,6 +162,20 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     [selectedProfile]
   );
 
+  const updateProfile = useCallback(
+    (id: string, patch: Partial<Account>) => {
+      setProfiles((prev) => {
+        const updated = prev.map((p) => (p.id === id ? { ...p, ...patch } : p));
+        // 如果更新的是当前选中的账户，也同步更新 selectedProfile
+        if (selectedProfile?.id === id) {
+          setSelectedProfile((curr) => (curr ? { ...curr, ...patch } : curr));
+        }
+        return updated;
+      });
+    },
+    [selectedProfile]
+  );
+
   // ---- LittleSkin 账号密码登录（PCL2 风格，无需浏览器）----
   const loginWithLittleSkinCredentials = useCallback(
     async (username: string, password: string) => {
@@ -161,6 +203,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       authType: "littleskin",
       status: "LittleSkin 登录",
       accessToken: account.access_token,
+      yggdrasilUrl: "https://littleskin.cn/api/yggdrasil",
       skinUrl: account.skin_url ?? undefined,
     };
     setProfiles((prev) => {
@@ -170,17 +213,29 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     setSelectedProfile(newAccount);
     // 异步获取皮肤 base64（皮肤已经下载到本地）
     if (account.skin_url) {
-      getSkinBase64(account.skin_url)
-        .then((skinSrc) => {
+      const accountId = `ls-${account.uuid}`;
+      const skinUrlKey = account.skin_url;
+      const accountUuid = account.uuid;
+      // 使用 IIFE 包裹，避免 .catch(async fn) 反模式
+      (async () => {
+        try {
+          const skinSrc = await getSkinBase64(skinUrlKey);
           setProfiles((prev) =>
-            prev.map((p) =>
-              p.id === `ls-${account.uuid}` ? { ...p, skinUrl: skinSrc } : p
-            )
+            prev.map((p) => (p.id === accountId ? { ...p, skinUrl: skinSrc } : p))
           );
-        })
-        .catch(() => {
-          // 静默失败
-        });
+        } catch {
+          // 第一次失败：尝试重新下载皮肤
+          try {
+            await redownloadLittleSkinSkin(accountUuid);
+            const skinSrc = await getSkinBase64(skinUrlKey);
+            setProfiles((prev) =>
+              prev.map((p) => (p.id === accountId ? { ...p, skinUrl: skinSrc } : p))
+            );
+          } catch {
+            // 重新下载也失败，静默忽略
+          }
+        }
+      })();
     }
   }, []);
 
@@ -197,6 +252,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
         authType: "littleskin",
         status: "LittleSkin 登录",
         accessToken: info.access_token,
+        yggdrasilUrl: "https://littleskin.cn/api/yggdrasil",
         skinUrl: info.skin_url ?? undefined,
       };
       setProfiles((prev) => {
@@ -208,15 +264,28 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       setSelectedProfile(newAccount);
       // 异步获取皮肤 base64
       if (info.skin_url) {
-        getSkinBase64(info.skin_url)
-          .then((skinSrc) => {
+        const accountId = `ls-${info.uuid}`;
+        const skinUrlKey = info.skin_url;
+        const accountUuid = info.uuid;
+        (async () => {
+          try {
+            const skinSrc = await getSkinBase64(skinUrlKey);
             setProfiles((prev) =>
-              prev.map((p) =>
-                p.id === `ls-${info.uuid}` ? { ...p, skinUrl: skinSrc } : p
-              )
+              prev.map((p) => (p.id === accountId ? { ...p, skinUrl: skinSrc } : p))
             );
-          })
-          .catch(() => {});
+          } catch {
+            // 第一次失败：尝试重新下载皮肤
+            try {
+              await redownloadLittleSkinSkin(accountUuid);
+              const skinSrc = await getSkinBase64(skinUrlKey);
+              setProfiles((prev) =>
+                prev.map((p) => (p.id === accountId ? { ...p, skinUrl: skinSrc } : p))
+              );
+            } catch {
+              // 重新下载也失败，静默忽略
+            }
+          }
+        })();
       }
       setLoginState("idle");
     } catch (e: unknown) {
@@ -405,6 +474,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
         selectedProfile,
         selectProfile,
         removeProfile,
+        updateProfile,
         loginWithLittleSkin,
         loginWithLittleSkinCredentials,
         addLittleSkinAccount,

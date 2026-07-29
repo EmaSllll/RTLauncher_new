@@ -64,7 +64,7 @@ pub fn get_minecraft_dir() -> Result<PathBuf, String> {
     Ok(default_minecraft_dir())
 }
 #[tauri::command]
-pub async fn download_patcher(app: AppHandle, mcVersion: String) -> Result<u64, String> {
+pub async fn download_patcher(app: AppHandle, mcVersion: String, instance_name: Option<String>) -> Result<u64, String> {
     let task_id = TASK_COUNTER.fetch_add(1, Ordering::SeqCst);
     let minecraft_path = get_minecraft_dir()?;
     std::fs::create_dir_all(&minecraft_path).map_err(|e| format!("创建目录失败: {}", e))?;
@@ -87,15 +87,17 @@ pub async fn download_patcher(app: AppHandle, mcVersion: String) -> Result<u64, 
     let app_finish = app.clone();
     let version = mcVersion.clone();
     let cancel_clone = cancel.clone();
+    let minecraft_path_cloned = minecraft_path.clone();
+    let instance_name_cloned = instance_name.clone();
     tokio::spawn(async move {
-        let result = process_version(&version, &minecraft_path, tx, cancel_clone.clone()).await;
+        let result = process_version(&version, &minecraft_path_cloned, tx, cancel_clone.clone()).await;
         {
             let mut tasks = active_tasks().lock().unwrap();
             tasks.remove(&task_id);
         }
         let was_cancelled = cancel_clone.load(Ordering::SeqCst);
         if was_cancelled {
-            let version_dir = minecraft_path.join("versions").join(&version);
+            let version_dir = minecraft_path_cloned.join("versions").join(&version);
             let _ = std::fs::remove_dir_all(&version_dir);
             let _ = app_finish.emit("download-finished", DownloadFinishedPayload {
                 task_id,
@@ -106,6 +108,43 @@ pub async fn download_patcher(app: AppHandle, mcVersion: String) -> Result<u64, 
         } else {
             match result {
                 Ok(warnings) => {
+                    // 如果有自定义实例名，则创建单独的实例目录（复制原版json）
+                    if let Some(inst_name) = instance_name_cloned {
+                        let clean_name = super::shared_utils::sanitize_instance_name(&inst_name);
+                        println!("[Vanilla] 创建实例目录: {}", clean_name);
+                        let final_name = if clean_name.trim().is_empty() {
+                            version.clone()
+                        } else {
+                            clean_name
+                        };
+                        if final_name != version {
+                            let versions_dir = minecraft_path_cloned.join("versions");
+                            let src_dir = versions_dir.join(&version);
+                            let dst_dir = versions_dir.join(&final_name);
+                            if src_dir.exists() && !dst_dir.exists() {
+                                let _ = std::fs::create_dir_all(&dst_dir);
+                                // 复制 version.json 和 jar
+                                for ext in ["json", "jar"] {
+                                    let src_file = src_dir.join(format!("{}.{}", version, ext));
+                                    let dst_file = dst_dir.join(format!("{}.{}", final_name, ext));
+                                    if src_file.exists() {
+                                        let _ = std::fs::copy(&src_file, &dst_file);
+                                    }
+                                }
+                                // 修改复制的 version.json 中的 id 字段
+                                let dst_json = dst_dir.join(format!("{}.json", final_name));
+                                if let Ok(content) = std::fs::read_to_string(&dst_json) {
+                                    if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) {
+                                        json["id"] = serde_json::Value::String(final_name.clone());
+                                        if let Ok(new_content) = serde_json::to_string_pretty(&json) {
+                                            let _ = std::fs::write(&dst_json, new_content);
+                                            println!("[Vanilla] 实例创建完成: {}", final_name);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     let failed_count = warnings.len();
                     let _ = app_finish.emit("download-finished", DownloadFinishedPayload {
                         task_id,

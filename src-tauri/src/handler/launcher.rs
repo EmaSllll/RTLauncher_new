@@ -1763,8 +1763,27 @@ fn build_jvm_arguments_inner(
         }
     }
 
-    if !authlib_injector_path.is_empty() && !yggdrasil_api.is_empty() {
-        args.push(format!("-javaagent:{}={}", authlib_injector_path, yggdrasil_api));
+    // 处理 authlib-injector + Yggdrasil 第三方验证（LittleSkin 等）
+    let effective_authlib_path = if !yggdrasil_api.is_empty() && authlib_injector_path.is_empty() {
+        // 用户配置了第三方验证服务器，但没有指定 authlib-injector 路径
+        // 自动下载/查找 authlib-injector
+        eprintln!("[Launcher] 检测到 Yggdrasil API: {}, 自动获取 authlib-injector...", yggdrasil_api);
+        let downloaded = crate::auth::yissadrail::get_or_download_authlib_injector();
+        if downloaded.is_empty() {
+            eprintln!("[Launcher] 警告: 无法获取 authlib-injector，游戏内皮肤可能无法显示");
+        } else {
+            eprintln!("[Launcher] 使用 authlib-injector: {}", downloaded);
+        }
+        downloaded
+    } else {
+        authlib_injector_path.to_string()
+    };
+
+    if !effective_authlib_path.is_empty() && !yggdrasil_api.is_empty() {
+        args.push(format!("-javaagent:{}={}", effective_authlib_path, yggdrasil_api));
+        // 对于 LittleSkin 等皮肤站，添加 no-verify 选项避免部分 SSL 问题
+        args.push("-Dauthlibinjector.noVerify=true".to_string());
+        args.push("-Dauthlibinjector.mojangNamespace=default".to_string());
     }
 
     if !prefetched_data.is_empty() {
