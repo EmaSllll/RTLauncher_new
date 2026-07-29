@@ -25,11 +25,12 @@ export function useDirFiles(
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 稳定化 extensionsFilter 引用，避免每次渲染都重新触发 fetch
-  const stableFilter = useMemo(
-    () => extensionsFilter ?? [],
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [extensionsFilter?.join(",")]
+  // 调用方经常以内联数组传入筛选器。用内容生成稳定的数组，避免数组
+  // 引用变化导致读取回调和 effect 在每次渲染后重复执行。
+  const extensionsKey = extensionsFilter?.join(",") ?? "";
+  const stableExtensionsFilter = useMemo(
+    () => (extensionsKey ? extensionsKey.split(",") : []),
+    [extensionsKey],
   );
 
   const fetch = useCallback(async () => {
@@ -42,7 +43,7 @@ export function useDirFiles(
     try {
       const data = await invoke<DirEntry[]>("vm_list_dir", {
         dirPath,
-        extensionsFilter: stableFilter,
+        extensionsFilter: stableExtensionsFilter,
       });
       setEntries(data);
     } catch (e) {
@@ -50,10 +51,13 @@ export function useDirFiles(
     } finally {
       setLoading(false);
     }
-  }, [dirPath, stableFilter]);
+  }, [dirPath, stableExtensionsFilter]);
 
   useEffect(() => {
-    fetch();
+    const timer = window.setTimeout(() => {
+      void fetch();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [fetch]);
 
   return { entries, loading, error, refetch: fetch };

@@ -56,3 +56,7 @@ no-password-key.txt
 no-password-key.txt.pub
 /.omc
 /.worktrees/
+
+# AI Agents
+/.devin
+/.agents

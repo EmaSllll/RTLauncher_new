@@ -68,9 +68,9 @@ libc = "0.2"
 # 这会显著减小最终 exe 体积（从 ~20MB → ~8-10MB）
 # 构建时间会变长，但产物更小、运行更快
 [profile.release]
-opt-level = "z"           # 以体积为首要目标的优化级别（比 "s" 更小）
-lto = true                 # 链接时优化 - 去除所有未使用代码（最大影响）
-codegen-units = 1          # 单代码生成单元（配合 LTO 最大化效果）
+opt-level = "s"           # 使用 size 优化而不是 "z" 以减少内存使用
+lto = false               # 禁用 LTO 以大幅减少内存使用
+codegen-units = 256       # 最大代码生成单元以最小化内存使用
 strip = "symbols"          # 去除调试符号
 panic = "abort"            # panic 时直接终止，移除 stack-unwinding 代码
 incremental = false        # 禁用增量编译（release 不需要）
