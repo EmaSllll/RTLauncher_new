@@ -39,6 +39,8 @@ export interface ResourcePageConfig {
   versionSource?: "instance" | "config";
   /** 允许通过的文件扩展名（小写，不含点） */
   extensions: string[];
+  /** 左列是否支持进入子目录 */
+  directoryNavigation?: boolean;
   /** 从文件名中去除扩展名的函数（用于简化显示） */
   simplifyName: (name: string) => string;
   /** 右列图标（默认：文件夹图标） */
@@ -83,6 +85,7 @@ export function createResourcePage(config: ResourcePageConfig): React.FC {
     needsModLoader = false,
     versionSource = "config",
     extensions,
+    directoryNavigation = false,
     simplifyName,
     rightIcon,
     rightIconBg = "bg-emerald-500/10",
@@ -131,6 +134,9 @@ export function createResourcePage(config: ResourcePageConfig): React.FC {
       setCacheSearch,
       instanceFiles,
       cacheFiles,
+      openInstanceDirectory,
+      goToParentInstanceDirectory,
+      instanceDirectoryPath,
     } = useResourceManager(
       instanceDir,
       instanceSubdir,
@@ -138,6 +144,7 @@ export function createResourcePage(config: ResourcePageConfig): React.FC {
       mcVersion,
       modLoader,
       extensions,
+      directoryNavigation,
     );
 
     if (!configLoaded) {
@@ -205,6 +212,9 @@ export function createResourcePage(config: ResourcePageConfig): React.FC {
         leftSearch={instanceSearch}
         setLeftSearch={setInstanceSearch}
         leftBadge={`${instanceFiles.length} 个`}
+        leftDirectoryPath={directoryNavigation ? instanceDirectoryPath : undefined}
+        onOpenLeftDirectory={directoryNavigation ? openInstanceDirectory : undefined}
+        onNavigateUpLeft={directoryNavigation ? goToParentInstanceDirectory : undefined}
         rightTitle=""
         rightIcon={rightIcon || <Folder className="size-5 text-emerald-500" />}
         rightIconBg={rightIconBg}
@@ -258,6 +268,7 @@ export function useResourcePage(config: ResourcePageConfig): {
     needsModLoader = false,
     versionSource = "config",
     extensions,
+    directoryNavigation = false,
     simplifyName,
     rightIcon,
     rightIconBg = "bg-emerald-500/10",
@@ -292,6 +303,7 @@ export function useResourcePage(config: ResourcePageConfig): {
     mcVersion,
     modLoader,
     extensions,
+    directoryNavigation,
   );
 
   const description =
@@ -321,6 +333,9 @@ export function useResourcePage(config: ResourcePageConfig): {
       leftSearch: manager.instanceSearch,
       setLeftSearch: manager.setInstanceSearch,
       leftBadge: `${manager.instanceFiles.length} 个`,
+      leftDirectoryPath: directoryNavigation ? manager.instanceDirectoryPath : undefined,
+      onOpenLeftDirectory: directoryNavigation ? manager.openInstanceDirectory : undefined,
+      onNavigateUpLeft: directoryNavigation ? manager.goToParentInstanceDirectory : undefined,
       leftModInfo: manager.instanceModInfo,
       rightTitle: "",
       rightIcon: rightIcon || <Folder className="size-5 text-emerald-500" />,

@@ -2,7 +2,19 @@
 
 import React, { useState } from "react";
 import { motion } from "framer-motion";
-import { Search, ArrowRight, RefreshCw, Plus, Trash2, Edit3, Check, X, Info } from "lucide-react";
+import {
+  Search,
+  ArrowRight,
+  RefreshCw,
+  Plus,
+  Trash2,
+  Edit3,
+  Check,
+  X,
+  Info,
+  Folder,
+  ChevronLeft,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -51,6 +63,7 @@ export interface ModInfo {
 export interface FileItem {
   name: string;
   size: number;
+  isDir?: boolean;
 }
 
 export interface ResourcePanelProps {
@@ -65,6 +78,12 @@ export interface ResourcePanelProps {
   leftSearch: string;
   setLeftSearch: (s: string) => void;
   leftBadge?: string;
+  /** 当前实例目录下的相对路径；传入后显示面包屑 */
+  leftDirectoryPath?: string[];
+  /** 双击左列目录时调用 */
+  onOpenLeftDirectory?: (directoryName: string) => void;
+  /** 返回左列的上一级目录 */
+  onNavigateUpLeft?: () => void;
   // 左列模组元数据缓存
   leftModInfo?: Map<string, ModInfo>;
   // 右列
@@ -108,6 +127,9 @@ export default function ResourcePanel({
   leftSearch,
   setLeftSearch,
   leftBadge,
+  leftDirectoryPath = [],
+  onOpenLeftDirectory,
+  onNavigateUpLeft,
   leftModInfo,
   rightTitle,
   rightDescription,
@@ -254,13 +276,32 @@ export default function ResourcePanel({
               ].filter(Boolean).join(" · ")
             : (getFileSubtitle ? getFileSubtitle(file) : formatSize(file.size));
           const hasDetail = !!onOpenModDetail;
+          const canOpenDirectory = file.isDir && !!onOpenLeftDirectory;
 
           return (
             <motion.div
               key={file.name}
               variants={staggerItem}
-              className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-accent/50 transition-colors group"
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-accent/50 transition-colors group ${
+                canOpenDirectory ? "cursor-pointer" : ""
+              }`}
+              role={canOpenDirectory ? "button" : undefined}
+              tabIndex={canOpenDirectory ? 0 : undefined}
+              aria-label={canOpenDirectory ? `打开目录 ${file.name}` : undefined}
+              onDoubleClick={canOpenDirectory ? (event) => {
+                if ((event.target as HTMLElement).closest("button")) return;
+                onOpenLeftDirectory(file.name);
+              } : undefined}
+              onKeyDown={canOpenDirectory ? (event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  onOpenLeftDirectory(file.name);
+                }
+              } : undefined}
             >
+              {file.isDir && (
+                <Folder className="size-4 shrink-0 text-amber-500" aria-hidden="true" />
+              )}
               <div className="flex-1 min-w-0">
                 {canRename && renamingName === file.name ? (
                   <div className="flex items-center gap-2">
@@ -414,10 +455,30 @@ export default function ResourcePanel({
             <div className={`flex size-7 items-center justify-center rounded-lg ${leftIconBg}`}>
               {React.cloneElement(leftIcon as any, { className: "size-3.5 text-current" })}
             </div>
-            <div className="min-w-0 flex-1">
-              <h2 className="text-sm font-semibold leading-tight">当前实例中</h2>
-              <p className="text-xs text-muted-foreground truncate">已加入的文件</p>
-            </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-sm font-semibold leading-tight">当前实例中</h2>
+                  {leftDirectoryPath.length > 0 ? (
+                    <div className="flex items-center gap-1 text-xs text-muted-foreground min-w-0">
+                      {onNavigateUpLeft && (
+                        <button
+                          type="button"
+                          className="shrink-0 hover:text-foreground"
+                          onClick={onNavigateUpLeft}
+                          title="返回上一级目录"
+                        >
+                          <ChevronLeft className="inline size-3.5" /> 返回
+                        </button>
+                      )}
+                      <span className="truncate" title={leftDirectoryPath.join(" / ")}>
+                        {leftDirectoryPath.join(" / ")}
+                      </span>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground truncate">
+                      {onOpenLeftDirectory ? "双击文件夹进入" : "已加入的文件"}
+                    </p>
+                  )}
+                </div>
             {leftBadge && <Badge variant="secondary" className="text-xs shrink-0">{leftBadge}</Badge>}
             <div className="relative w-40 shrink-0">
               <Search className="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground pointer-events-none" />
