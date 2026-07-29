@@ -31,8 +31,6 @@ struct NeoForgeDownloadFinishedPayload {
 static NEOFORGE_TASK_COUNTER: AtomicU64 = AtomicU64::new(5000000);
 struct NeoForgeActiveTaskInfo {
     cancel: Arc<AtomicBool>,
-    mc_version: String,
-    neoforge_version: String,
 }
 fn neoforge_active_tasks() -> &'static Mutex<HashMap<u64, NeoForgeActiveTaskInfo>> {
     static INSTANCE: OnceLock<Mutex<HashMap<u64, NeoForgeActiveTaskInfo>>> = OnceLock::new();
@@ -72,8 +70,6 @@ pub async fn download_and_install_neoforge(
             task_id,
             NeoForgeActiveTaskInfo {
                 cancel: cancel.clone(),
-                mc_version: mc_version.clone(),
-                neoforge_version: neoforge_version.clone(),
             },
         );
     }

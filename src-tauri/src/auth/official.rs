@@ -49,8 +49,10 @@ struct TokenResponse {
 
 #[derive(Serialize, Deserialize, Debug)]
 struct XboxLiveTokenResponse {
-    Token: String,
-    DisplayClaims: DisplayClaims,
+    #[serde(rename = "Token")]
+    token: String,
+    #[serde(rename = "DisplayClaims")]
+    display_claims: DisplayClaims,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -343,11 +345,11 @@ async fn check_account_time(
             .await?;
 
             let xbox_token_response = authenticate_with_xbox_live(client, &token_response.access_token).await?;
-            let xsts_token_response = get_xsts_token(client, &xbox_token_response.Token).await?;
+            let xsts_token_response = get_xsts_token(client, &xbox_token_response.token).await?;
             let minecraft_login_response = authenticate_with_minecraft(
                 client,
-                &xbox_token_response.DisplayClaims.xui[0].uhs,
-                &xsts_token_response.Token,
+                &xbox_token_response.display_claims.xui[0].uhs,
+                &xsts_token_response.token,
             )
             .await?;
 
@@ -1061,13 +1063,13 @@ async fn add_new_account(
                 let xbox_token_response = authenticate_with_xbox_live(client, &token.access_token).await?;
 
                 // 4. 获取XSTS token
-                let xsts_token_response = get_xsts_token(client, &xbox_token_response.Token).await?;
+                let xsts_token_response = get_xsts_token(client, &xbox_token_response.token).await?;
 
                 // 5. Minecraft认证
                 let minecraft_login_response = authenticate_with_minecraft(
                     client,
-                    &xbox_token_response.DisplayClaims.xui[0].uhs,
-                    &xsts_token_response.Token,
+                    &xbox_token_response.display_claims.xui[0].uhs,
+                    &xsts_token_response.token,
                 )
                 .await?;
 
@@ -1201,18 +1203,18 @@ pub async fn ms_poll_and_login(device_code: String, interval: u64) -> Result<Acc
             })?;
 
         // XSTS Token
-        let xsts = get_xsts_token(&client, &xbox.Token)
+        let xsts = get_xsts_token(&client, &xbox.token)
             .await
             .map_err(|e| format!("XSTS 认证失败: {}", e))?;
 
         // Minecraft 认证
-        let uhs = xbox.DisplayClaims.xui.first()
+        let uhs = xbox.display_claims.xui.first()
             .map(|x| x.uhs.clone())
             .ok_or_else(|| "Xbox Live 认证返回的 xui 为空".to_string())?;
         let mc_login = authenticate_with_minecraft(
             &client,
             &uhs,
-            &xsts.Token,
+            &xsts.token,
         )
         .await
         .map_err(|e| format!("Minecraft 认证失败: {}", e))?;

@@ -26,8 +26,6 @@ struct LiteLoaderDownloadFinishedPayload {
 static LITELOADER_TASK_COUNTER: AtomicU64 = AtomicU64::new(6000000);
 struct LiteLoaderActiveTaskInfo {
     cancel: Arc<AtomicBool>,
-    mc_version: String,
-    liteloader_version: String,
 }
 fn liteloader_active_tasks() -> &'static Mutex<HashMap<u64, LiteLoaderActiveTaskInfo>> {
     static INSTANCE: OnceLock<Mutex<HashMap<u64, LiteLoaderActiveTaskInfo>>> = OnceLock::new();
@@ -67,8 +65,6 @@ pub async fn download_and_install_liteloader(
             task_id,
             LiteLoaderActiveTaskInfo {
                 cancel: cancel.clone(),
-                mc_version: mc_version.clone(),
-                liteloader_version: liteloader_version.clone(),
             },
         );
     }

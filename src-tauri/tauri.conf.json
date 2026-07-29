@@ -41,7 +41,8 @@
       "icons/icon.ico",
       "icons/icon.png"
     ],
-    "category": "Game"
+    "category": "Game",
+    "targets": ["deb"]
   },
   "plugins": {
     "updater": {

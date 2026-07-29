@@ -87,14 +87,12 @@ struct DownloadTask {
 }
 
 struct DownloadProgress {
-    total: Arc<AtomicUsize>,
     done: Arc<AtomicUsize>,
 }
 
 impl DownloadProgress {
-    fn new(total: usize) -> Self {
+    fn new() -> Self {
         Self {
-            total: Arc::new(AtomicUsize::new(total)),
             done: Arc::new(AtomicUsize::new(0)),
         }
     }
@@ -270,7 +268,7 @@ async fn download_java_files(
     window: tauri::Window,
 ) -> Result<(), String> {
     let total = tasks.len();
-    let progress = Arc::new(DownloadProgress::new(total));
+    let progress = Arc::new(DownloadProgress::new());
     // 复用共享 HTTP client（连接池更优、配置更完整）
     let client = crate::http_client::shared_client().await;
 

@@ -57,6 +57,10 @@ no-password-key.txt.pub
 /.omc
 /.worktrees/
 
+# AI Agents
+/.devin
+/.agents
+
 # Local IDE
 /.idea/
 /.npm-cache/

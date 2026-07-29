@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import Link from "next/link";
+import { useMemo } from "react";
 import {
   Card,
   CardContent,
@@ -25,14 +26,17 @@ export function InstanceCardGrid({
   instanceDir,
   selectedInstance,
 }: InstanceCardGridProps) {
-
   // mods count 来自 Rust 扫描结果
   const modsCount = selectedInstance?.mods_count;
 
+  // 使用 useMemo 稳定化路径字符串，避免每次渲染都重新创建
+  const savesPath = useMemo(() => (instanceDir ? `${instanceDir}/saves` : undefined), [instanceDir]);
+  const shaderpacksPath = useMemo(() => (instanceDir ? `${instanceDir}/shaderpacks` : undefined), [instanceDir]);
+  const screenshotsPath = useMemo(() => (instanceDir ? `${instanceDir}/screenshots` : undefined), [instanceDir]);
+  const schematicsPath = useMemo(() => (instanceDir ? `${instanceDir}/schematics` : undefined), [instanceDir]);
+
   // 世界（saves/ 下的目录数）
-  const { entries: worldEntries } = useDirFiles(
-    instanceDir ? `${instanceDir}/saves` : undefined
-  );
+  const { entries: worldEntries } = useDirFiles(savesPath);
   const worldCount = worldEntries.filter((e) => e.is_dir).length;
   const latestWorld = worldEntries.find((e) => e.is_dir)?.name;
 
@@ -40,19 +44,17 @@ export function InstanceCardGrid({
   const { packs: resourcePacks } = useResourcePacks(instanceDir ?? undefined);
 
   // 光影包（shaderpacks/）
-  const { entries: shaderEntries } = useDirFiles(
-    instanceDir ? `${instanceDir}/shaderpacks` : undefined
-  );
+  const { entries: shaderEntries } = useDirFiles(shaderpacksPath);
 
   // 截图
   const { entries: screenshotEntries } = useDirFiles(
-    instanceDir ? `${instanceDir}/screenshots` : undefined,
+    screenshotsPath,
     ["png", "jpg", "jpeg", "webp"]
   );
 
   // 投影原理图
   const { entries: schematicEntries } = useDirFiles(
-    instanceDir ? `${instanceDir}/schematics` : undefined,
+    schematicsPath,
     ["schematic", "nbt", "litematic", "schem"]
   );
 
@@ -112,7 +114,12 @@ export function InstanceCardGrid({
     >
       {INSTANCE_CARDS.map((card) => (
         <motion.div key={card.id} variants={staggerItem} className="h-full">
-          <Link href={card.href} className="block h-full" suppressHydrationWarning>
+          <Link
+            href={card.href}
+            prefetch={false}
+            className="block h-full"
+            suppressHydrationWarning
+          >
             <Card className="shadow-sm hover:shadow-xl transition-all duration-300 cursor-pointer h-full flex flex-col border hover:border-primary/40">
               <CardHeader>
                 {/* 图标 */}

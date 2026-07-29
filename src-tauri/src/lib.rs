@@ -1,4 +1,6 @@
 mod auth;
+// Platform-specific paths expose a few helpers used by packaging integrations.
+#[allow(dead_code)]
 mod app_paths;
 mod handler;
 mod downloader;

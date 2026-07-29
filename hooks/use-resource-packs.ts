@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ResourcePackInfo } from "@/types";
 
@@ -21,10 +21,14 @@ export function useResourcePacks(rootPath?: string): UseResourcePacksReturn {
   const [packs, setPacks] = useState<ResourcePackInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestIdRef = useRef(0);
 
   const fetch = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     if (!rootPath) {
       setPacks([]);
+      setLoading(false);
+      setError(null);
       return;
     }
     setLoading(true);
@@ -34,16 +38,25 @@ export function useResourcePacks(rootPath?: string): UseResourcePacksReturn {
         "vm_find_resource_packs",
         { rootPath }
       );
-      setPacks(data);
+      if (requestId === requestIdRef.current) {
+        setPacks(data);
+      }
     } catch (e) {
-      setError(String(e));
+      if (requestId === requestIdRef.current) {
+        setError(String(e));
+      }
     } finally {
-      setLoading(false);
+      if (requestId === requestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [rootPath]);
 
   useEffect(() => {
-    fetch();
+    void fetch();
+    return () => {
+      requestIdRef.current += 1;
+    };
   }, [fetch]);
 
   return { packs, loading, error, refetch: fetch };
