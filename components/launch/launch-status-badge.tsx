@@ -29,7 +29,7 @@ const statusConfig: Record<
     color: "text-blue-500",
   },
   launching: {
-    label: "启动中",
+    label: "Launching",
     icon: <Loader2 className="size-3 animate-spin" />,
     color: "text-amber-500",
   },

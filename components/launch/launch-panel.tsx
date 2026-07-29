@@ -9,6 +9,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { useLaunchContext } from "@/components/launch/launch-provider";
 import { useAccountContext } from "@/components/accounts/account-provider";
 import { LaunchStatusBadge } from "@/components/launch/launch-status-badge";
+import { LaunchProgress } from "@/components/launch/launch-progress";
+import { LaunchProgressStages } from "@/components/launch/launch-progress-stages";
 import { fadeSlideUp } from "@/lib/motion";
 import { cn, getAvatarColor, getAvatarInitials } from "@/lib/utils";
 import {
@@ -138,6 +140,12 @@ export function LaunchPanel() {
           )}
         </AnimatePresence>
 
+        {/* 启动进度 */}
+        <LaunchProgress />
+
+        {/* 详细启动阶段 */}
+        <LaunchProgressStages />
+
         {/* 启动按钮 */}
         <Button
           size="lg"
@@ -148,7 +156,7 @@ export function LaunchPanel() {
           {isLaunching ? (
             <>
               <Loader2 className="size-4 animate-spin" />
-              {status === "preparing" ? "停止准备" : "停止启动"}
+              {status === "preparing" ? "停止准备" : "Launching"}
             </>
           ) : isRunning ? (
             <>

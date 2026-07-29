@@ -3,9 +3,11 @@
 import { useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { Loader2, Play, Square } from "lucide-react";
+import { ChevronUp, Loader2, Play, Square } from "lucide-react";
 import { useLaunchContext } from "@/components/launch/launch-provider";
 import { VersionSelectorDialog } from "@/components/launch/version-selector-dialog";
+import { LaunchProgress } from "@/components/launch/launch-progress";
+import { LaunchProgressStages } from "@/components/launch/launch-progress-stages";
 
 /**
  * 全局悬浮启动按钮组件
@@ -61,6 +63,19 @@ export function FloatingLaunchButton() {
     };
   }, []);
 
+  // 拖动期间禁用全局文本选择，避免鼠标扫过页面文字时产生选中
+  useEffect(() => {
+    if (!isDragging) return;
+    const prevUserSelect = document.body.style.userSelect;
+    const prevWebkitUserSelect = document.body.style.webkitUserSelect;
+    document.body.style.userSelect = "none";
+    document.body.style.webkitUserSelect = "none";
+    return () => {
+      document.body.style.userSelect = prevUserSelect;
+      document.body.style.webkitUserSelect = prevWebkitUserSelect;
+    };
+  }, [isDragging]);
+
   const handleLaunch = () => {
     if (isLaunching || isRunning) {
       cancelLaunch();
@@ -84,6 +99,9 @@ export function FloatingLaunchButton() {
     if (isInteractiveChild) {
       return;
     }
+
+    // 阻止默认行为，避免鼠标按下后浏览器启动文本选择（拖动时会扫过页面文字）
+    e.preventDefault();
 
     pressStartPos.current = { x: e.clientX, y: e.clientY };
     pressStartTime.current = Date.now();
@@ -199,12 +217,22 @@ export function FloatingLaunchButton() {
       ) : (
         <div className="w-36 bg-card border shadow-lg rounded-lg overflow-hidden flex flex-col">
                 {/* 标题栏 - 点击收起（作为交互子元素，不触发长按/拖动） */}
-                <div 
+                <div
                   className="bg-muted px-2 py-1 text-xs font-medium truncate cursor-pointer select-none"
                   data-no-drag="true"
                   onClick={() => setIsMinimized(true)}
                 >
                   {displayName}
+                </div>
+
+                {/* 启动进度 */}
+                <div className="p-2 pt-1">
+                  <LaunchProgress />
+                </div>
+
+                {/* 详细启动阶段 (仅在展开时显示) */}
+                <div className="px-2 pb-1">
+                  <LaunchProgressStages />
                 </div>
 
                 {/* 启动按钮 */}
@@ -218,7 +246,7 @@ export function FloatingLaunchButton() {
                     {isLaunching ? (
                       <>
                         <Loader2 className="size-3 animate-spin" />
-                        {status === "preparing" ? "准备中" : "启动中"}
+                        {status === "preparing" ? "准备中" : "Launching"}
                       </>
                     ) : isRunning ? (
                       <>
