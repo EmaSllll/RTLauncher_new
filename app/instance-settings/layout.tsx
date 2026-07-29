@@ -30,6 +30,7 @@ export default function InstanceSettingsLayout({
             <Link
               key={item.href}
               href={item.href}
+              suppressHydrationWarning
               className={cn(
                 "px-3 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap",
                 pathname === item.href

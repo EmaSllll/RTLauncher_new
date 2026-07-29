@@ -1,6 +1,5 @@
 "use client"
 
-// 导航图标
 import {
   Home,
   Download,
@@ -11,7 +10,7 @@ import {
   Gamepad2,
 } from "lucide-react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
 import { buttonVariants } from "@/components/ui/button"
@@ -34,33 +33,128 @@ interface NavItem {
   isAvatar?: boolean
 }
 
-// 所有导航项定义
-const allNavItems: NavItem[] = [
-  { id: "home", icon: <Home className="size-4" />, label: "首页", href: "/" },
-  { id: "game-settings", icon: <Gamepad2 className="size-4" />, label: "游戏设置", href: "/game-settings" },
-  { id: "launch", icon: <Rocket className="size-4" />, label: "启动", href: "/launch" },
-  { id: "download", icon: <Download className="size-4" />, label: "下载", href: "/download" },
-  { id: "multiplayer", icon: <Globe className="size-4" />, label: "联机", href: "/multiplayer" },
-  { id: "tools", icon: <Wrench className="size-4" />, label: "工具", href: "/tools" },
-  { id: "settings", icon: <Settings className="size-4" />, label: "设置", href: "/settings" },
+let activeNavigation: {
+  transition: ViewTransition
+  controller: AbortController
+} | null = null
+
+function waitForPageContent(
+  main: HTMLElement,
+  previousText: string,
+  signal: AbortSignal
+) {
+  return new Promise<void>((resolve) => {
+    let settled = false
+    let settleTimer: number | undefined
+    let timeoutTimer: number | undefined
+
+    const finish = () => {
+      if (settled) return
+      settled = true
+      observer.disconnect()
+      window.clearTimeout(timeoutTimer)
+      window.clearTimeout(settleTimer)
+      signal.removeEventListener("abort", finish)
+      resolve()
+    }
+
+    const observer = new MutationObserver(() => {
+      if (main.innerText === previousText) return
+      if (settleTimer !== undefined) return
+
+      // 首批新内容出现后稍等几帧即开始交叉淡入，不再等待后续列表更新。
+      settleTimer = window.setTimeout(finish, 60)
+    })
+
+    observer.observe(main, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    })
+
+    if (signal.aborted) {
+      finish()
+      return
+    }
+
+    signal.addEventListener("abort", finish, { once: true })
+    timeoutTimer = window.setTimeout(finish, 700)
+  })
+}
+
+const topNavItems: NavItem[] = [
+  { icon: <Home className="size-4" />, label: "首页", href: "/" },
+  { icon: <Gamepad2 className="size-4" />, label: "游戏设置", href: "/game-settings" },
+  { icon: <Rocket className="size-4" />, label: "启动", href: "/launch" },
+  { icon: <Download className="size-4" />, label: "下载", href: "/download" },
+  { icon: <Globe className="size-4" />, label: "联机", href: "/multiplayer" },
+  { icon: <Wrench className="size-4" />, label: "工具", href: "/tools" },
 ]
 
-// 导航按钮
+const bottomNavItems: NavItem[] = [
+  { icon: <Settings className="size-4" />, label: "设置", href: "/settings" },
+]
+
 function NavButton({ item, isActive }: { item: NavItem; isActive: boolean }) {
+  const router = useRouter()
+
+  const handleNavigation = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return
+    }
+
+    if (isActive) {
+      event.preventDefault()
+      return
+    }
+
+    const startViewTransition = document.startViewTransition?.bind(document)
+    if (!startViewTransition) return
+
+    const main = document.querySelector<HTMLElement>("main")
+    if (!main) return
+
+    event.preventDefault()
+    const previousText = main.innerText
+
+    activeNavigation?.controller.abort()
+    activeNavigation?.transition.skipTransition()
+
+    const controller = new AbortController()
+    const transition = startViewTransition(async () => {
+      const contentReady = waitForPageContent(
+        main,
+        previousText,
+        controller.signal
+      )
+      router.push(item.href)
+      await contentReady
+    })
+
+    const navigation = { transition, controller }
+    activeNavigation = navigation
+
+    void transition.finished
+      .catch(() => undefined)
+      .finally(() => {
+        if (activeNavigation === navigation) activeNavigation = null
+      })
+  }
+
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <Link
           href={item.href}
-          aria-label={item.label}
-          aria-current={isActive ? "page" : undefined}
-          className={cn(
-            item.isAvatar
-              ? "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-              : buttonVariants({ variant: "ghost", size: "icon" }),
-            "relative overflow-hidden touch-manipulation",
-            !item.isAvatar && isActive && "text-accent-foreground"
-          )}
+          onClick={handleNavigation}
+          suppressHydrationWarning
         >
           {item.isAvatar ? (
             <span
@@ -92,12 +186,6 @@ function NavButton({ item, isActive }: { item: NavItem; isActive: boolean }) {
   )
 }
 
-function isNavItemActive(pathname: string, href: string) {
-  if (href === "/") return pathname === "/"
-  return pathname === href || pathname.startsWith(`${href}/`)
-}
-
-// 左侧边栏
 export function Sidebar({ className }: SidebarProps) {
   const pathname = usePathname()
   const { config, configLoaded } = useUIConfigContext()
