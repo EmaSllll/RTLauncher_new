@@ -88,7 +88,7 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
   const [tasks, setTasks] = useState<DownloadTask[]>([]);
   const unlistensRef = useRef<UnlistenFn[]>([]);
   const listenerSetupRef = useRef<Promise<void> | null>(null);
-  const listenerOwnerActiveRef = useRef(false);
+  const listenerOwnerActiveRef = useRef(true);
   const pendingQueueRef = useRef<QueueItem[]>([]);
   const isDownloadingRef = useRef(false);
   const localIdCounterRef = useRef(-1);
@@ -144,6 +144,7 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
         .then((unlistens) => {
           if (!listenerOwnerActiveRef.current) {
             unlistens.forEach((unlisten) => unlisten());
+            listenerSetupRef.current = null;
             return;
           }
           unlistensRef.current = unlistens;
