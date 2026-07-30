@@ -1,3 +1,5 @@
+// NBT compatibility helpers are shared with optional instance-management flows.
+#[allow(dead_code)]
 pub mod resource_checker;
 
 use serde::Serialize;
@@ -151,9 +153,6 @@ fn build_instance_data(instance_dir: &Path, minecraft_path: &Path) -> Option<Ins
         .unwrap_or("Unknown")
         .to_string();
 
-    // 确保实例目录中存在所有 Minecraft 标准子目录（mods/resourcepacks/shaderpacks/saves/datapacks/config）
-    let _ = ensure_instance_dirs(instance_dir);
-
     // 计算 mods 数量
     let mods_dir = instance_dir.join("mods");
     let mods_count = if mods_dir.is_dir() {
@@ -171,12 +170,31 @@ fn build_instance_data(instance_dir: &Path, minecraft_path: &Path) -> Option<Ins
             Ok(content) => {
                 match serde_json::from_str::<serde_json::Value>(&content) {
                     Ok(json) => {
-                        // 从 inheritsFrom 字段获取真实 MC 版本（Fabric/Forge 等情况）
+                        // 尝试从 inheritsFrom 字段获取真实 MC 版本（Fabric/Forge 等情况）
+                        // 如果没有 inheritsFrom（合并版 instance），则从 assetIndex.id 或 downloads.client 中提取
                         let raw_ver = json
                             .get("inheritsFrom")
                             .and_then(|v| v.as_str())
-                            .unwrap_or(&name)
-                            .to_string();
+                            .map(|s| s.to_string())
+                            .or_else(|| {
+                                // 从 assetIndex 的 id 中获取（通常与 MC 版本一致）
+                                json.get("assetIndex")
+                                    .and_then(|v| v.get("id"))
+                                    .and_then(|v| v.as_str())
+                                    .map(|s| s.to_string())
+                            })
+                            .or_else(|| {
+                                // 从 downloads.client.url 中匹配版本号
+                                json.get("downloads")
+                                    .and_then(|v| v.get("client"))
+                                    .and_then(|v| v.get("url"))
+                                    .and_then(|v| v.as_str())
+                                    .and_then(|url| {
+                                        let re = regex::Regex::new(r"/(\d+\.\d+(\.\d+)?(-pre\d+)?(-rc\d+)?(-snapshot)?)/").ok()?;
+                                        re.captures(url).and_then(|c| c.get(1)).map(|m| m.as_str().to_string())
+                                    })
+                            })
+                            .unwrap_or(name.clone());
                         // 进一步提取纯版本号（防止 inheritsFrom 也包含加载器信息）
                         let mc_ver = extract_minecraft_version(&raw_ver);
                         // 从 mainClass 推断加载器，但与文件夹名交叉验证

@@ -31,37 +31,64 @@ impl CacheResourceKind {
         ]
     }
 }
-pub fn cache_root_dir() -> Result<PathBuf, String> {
+/// Resolve the launcher cache base without creating it.
+///
+/// Read-only commands use this path so merely opening a resource page never
+/// mutates the filesystem (and therefore cannot trigger Tauri's dev watcher).
+fn cache_base_dir() -> Result<PathBuf, String> {
     #[cfg(target_os = "windows")]
-    let base_dir = {
+    {
         let exe_dir = std::env::current_exe()
             .map_err(|e| e.to_string())?
             .parent()
             .map(|d| d.to_path_buf())
             .unwrap_or_else(|| PathBuf::from("."));
-        exe_dir.join("minecraft")
-    };
+        return Ok(exe_dir.join("minecraft"));
+    }
     #[cfg(target_os = "macos")]
-    let base_dir = {
+    {
         let home = std::env::var("HOME").map_err(|e| e.to_string())?;
-        PathBuf::from(home)
-            .join("Library/Application Support/RTLauncher")
-    };
-    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-    let base_dir = PathBuf::from("./minecraft");
-    let cache_root = base_dir.join("cache");
+        return Ok(PathBuf::from(home).join("Library/Application Support/RTLauncher"));
+    }
+    // Runtime cache must not live below `src-tauri` during development: Tauri's
+    // file watcher treats cache writes as source changes and restarts the app.
+    #[cfg(target_os = "linux")]
+    {
+        return Ok(crate::app_paths::linux_cache_dir());
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        Ok(PathBuf::from("./minecraft"))
+    }
+}
+
+fn cache_root_path() -> Result<PathBuf, String> {
+    Ok(cache_base_dir()?.join("cache"))
+}
+
+fn cache_dir_path_for_kind(kind: CacheResourceKind) -> Result<PathBuf, String> {
+    Ok(cache_root_path()?.join(kind.dir_name()))
+}
+
+fn cache_dir_path_for_version(
+    kind: CacheResourceKind,
+    mc_version: &str,
+) -> Result<PathBuf, String> {
+    Ok(cache_dir_path_for_kind(kind)?.join(sanitize_version(mc_version)))
+}
+
+pub fn cache_root_dir() -> Result<PathBuf, String> {
+    let cache_root = cache_root_path()?;
     std::fs::create_dir_all(&cache_root).map_err(|e| e.to_string())?;
     Ok(cache_root)
 }
 pub fn get_cache_dir_for_kind(kind: CacheResourceKind) -> Result<PathBuf, String> {
-    let root = cache_root_dir()?;
-    let dir = root.join(kind.dir_name());
+    let dir = cache_dir_path_for_kind(kind)?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
 }
 pub fn get_cache_dir_for_version(kind: CacheResourceKind, mc_version: &str) -> Result<PathBuf, String> {
-    let kind_dir = get_cache_dir_for_kind(kind)?;
-    let version_dir = kind_dir.join(sanitize_version(mc_version));
+    let version_dir = cache_dir_path_for_version(kind, mc_version)?;
     std::fs::create_dir_all(&version_dir).map_err(|e| e.to_string())?;
     Ok(version_dir)
 }
@@ -90,9 +117,13 @@ impl ModLoaderKind {
         }
     }
 }
+
+fn mod_cache_dir_path(mc_version: &str, loader: &ModLoaderKind) -> Result<PathBuf, String> {
+    Ok(cache_dir_path_for_version(CacheResourceKind::Mod, mc_version)?.join(loader.dir_name()))
+}
+
 pub fn get_mod_cache_dir(mc_version: &str, loader: ModLoaderKind) -> Result<PathBuf, String> {
-    let version_dir = get_cache_dir_for_version(CacheResourceKind::Mod, mc_version)?;
-    let loader_dir = version_dir.join(loader.dir_name());
+    let loader_dir = mod_cache_dir_path(mc_version, &loader)?;
     std::fs::create_dir_all(&loader_dir).map_err(|e| e.to_string())?;
     Ok(loader_dir)
 }
@@ -160,19 +191,19 @@ pub fn parse_mod_loader(loader: &str) -> Result<ModLoaderKind, String> {
 }
 #[tauri::command]
 pub fn get_cache_root() -> Result<String, String> {
-    Ok(cache_root_dir()?.to_string_lossy().to_string())
+    Ok(cache_root_path()?.to_string_lossy().to_string())
 }
 #[tauri::command]
 pub fn get_cache_dir(kind: String) -> Result<String, String> {
     let resource_kind = parse_resource_kind(&kind)?;
-    Ok(get_cache_dir_for_kind(resource_kind)?
+    Ok(cache_dir_path_for_kind(resource_kind)?
         .to_string_lossy()
         .to_string())
 }
 #[tauri::command]
 pub fn get_cache_dir_by_version(kind: String, mc_version: String) -> Result<String, String> {
     let resource_kind = parse_resource_kind(&kind)?;
-    Ok(get_cache_dir_for_version(resource_kind, &mc_version)?
+    Ok(cache_dir_path_for_version(resource_kind, &mc_version)?
         .to_string_lossy()
         .to_string())
 }
@@ -190,7 +221,7 @@ pub struct CacheDirInfo {
 pub fn list_cache_dirs() -> Result<Vec<CacheDirInfo>, String> {
     let mut result = Vec::new();
     for kind in CacheResourceKind::all() {
-        let path = get_cache_dir_for_kind(*kind)?;
+        let path = cache_dir_path_for_kind(*kind)?;
         result.push(CacheDirInfo {
             kind: kind.dir_name().to_string(),
             dir_name: kind.dir_name().to_string(),
@@ -203,8 +234,8 @@ pub fn list_cache_dirs() -> Result<Vec<CacheDirInfo>, String> {
 pub fn list_cached_files(kind: String, mc_version: Option<String>) -> Result<Vec<String>, String> {
     let resource_kind = parse_resource_kind(&kind)?;
     let dir = match &mc_version {
-        Some(v) => get_cache_dir_for_version(resource_kind, v)?,
-        None => get_cache_dir_for_kind(resource_kind)?,
+        Some(v) => cache_dir_path_for_version(resource_kind, v)?,
+        None => cache_dir_path_for_kind(resource_kind)?,
     };
     let is_world_type = matches!(resource_kind, CacheResourceKind::World);
     let mut files = Vec::new();
@@ -234,14 +265,14 @@ pub fn list_cached_files(kind: String, mc_version: Option<String>) -> Result<Vec
 #[tauri::command]
 pub fn get_mod_cache_dir_cmd(mc_version: String, mod_loader: String) -> Result<String, String> {
     let loader = parse_mod_loader(&mod_loader)?;
-    Ok(get_mod_cache_dir(&mc_version, loader)?
+    Ok(mod_cache_dir_path(&mc_version, &loader)?
         .to_string_lossy()
         .to_string())
 }
 #[tauri::command]
 pub fn list_cached_mods(mc_version: String, mod_loader: String) -> Result<Vec<String>, String> {
     let loader = parse_mod_loader(&mod_loader)?;
-    let dir = get_mod_cache_dir(&mc_version, loader)?;
+    let dir = mod_cache_dir_path(&mc_version, &loader)?;
     let mut files = Vec::new();
     match std::fs::read_dir(&dir) {
         Ok(entries) => {
@@ -414,6 +445,39 @@ mod tests {
         assert_eq!(sanitize_version(""), "unknown");
         assert_eq!(sanitize_version("1.12/forge"), "1.12_forge");
     }
+
+    #[test]
+    fn test_listing_missing_cache_does_not_create_directories() {
+        let unique_version = format!(
+            "read-only-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("system time should be after the Unix epoch")
+                .as_nanos(),
+        );
+        let resource_dir =
+            cache_dir_path_for_version(CacheResourceKind::ResourcePack, &unique_version)
+                .expect("resource cache path should resolve");
+        let mod_dir = mod_cache_dir_path(&unique_version, &ModLoaderKind::Fabric)
+            .expect("mod cache path should resolve");
+
+        assert!(!resource_dir.exists());
+        assert!(!mod_dir.exists());
+        assert_eq!(
+            list_cached_files("resourcepack".to_string(), Some(unique_version.clone()))
+                .expect("listing a missing resource cache should succeed"),
+            Vec::<String>::new(),
+        );
+        assert_eq!(
+            list_cached_mods(unique_version, "fabric".to_string())
+                .expect("listing a missing mod cache should succeed"),
+            Vec::<String>::new(),
+        );
+        assert!(!resource_dir.exists());
+        assert!(!mod_dir.exists());
+    }
+
     #[test]
     fn test_cache_root_dir_can_be_created() {
         let dir = cache_root_dir();

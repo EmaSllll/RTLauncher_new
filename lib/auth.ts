@@ -50,7 +50,7 @@ export type DeviceCodeInfo = {
  * 会自动打开浏览器进行授权，登录成功后返回账户信息
  */
 export async function loginLittleSkin(): Promise<AccountInfo> {
-  return invoke<AccountInfo>("useMethod");
+  return safeInvoke<AccountInfo>("useMethod");
 }
 
 /**
@@ -63,7 +63,7 @@ export async function loginLittleSkinWithCredentials(
   username: string,
   password: string
 ): Promise<LittleSkinAccount[]> {
-  return invoke<LittleSkinAccount[]>("use_method_with_credentials", {
+  return safeInvoke<LittleSkinAccount[]>("use_method_with_credentials", {
     username,
     password,
   });
@@ -75,7 +75,7 @@ export async function loginLittleSkinWithCredentials(
  * @param url 认证服务器的 API 根地址
  */
 export async function verifyThirdPartyServer(url: string): Promise<string> {
-  return invoke<string>("thirdPartyLogin", { url });
+  return safeInvoke<string>("thirdPartyLogin", { url });
 }
 
 /**
@@ -87,7 +87,7 @@ export async function loginThirdParty(
   user: string,
   pwd: string
 ): Promise<ThirdPartyAccountList> {
-  return invoke<ThirdPartyAccountList>("getAccountList", { url, user, pwd });
+  return safeInvoke<ThirdPartyAccountList>("getAccountList", { url, user, pwd });
 }
 
 /**
@@ -97,16 +97,43 @@ export async function loginThirdParty(
  * @returns 皮肤本地路径
  */
 export async function getPlayerSkin(url: string, uuid: string): Promise<string> {
-  return invoke<string>("getPlayerSkin", { url, uuid });
+  return safeInvoke<string>("getPlayerSkin", { url, uuid });
 }
 
 /**
- * 获取玩家头像（基于本地皮肤文件生成）
- * @param uuid 玩家 UUID
- * @returns data URI （data:image/png;base64,...）
+ * 将 invoke 的错误转换为标准 Error（避免 [object Event] 形式的错误）
  */
-export async function getAvatarBase64(uuid: string): Promise<string> {
-  return invoke<string>("get_avatar_base64", { uuid });
+async function safeInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  try {
+    return await invoke<T>(cmd, args);
+  } catch (e) {
+    if (e instanceof Error) throw e;
+    // Tauri invoke 有时抛的不是 Error，而是 Event 或字符串，统一转为 Error
+    const msg = typeof e === "string"
+      ? e
+      : e && typeof (e as { message?: string }).message === "string"
+        ? (e as { message: string }).message
+        : Object.prototype.toString.call(e);
+    throw new Error(msg || `调用 ${cmd} 失败`);
+  }
+}
+
+/**
+ * 获取玩家皮肤 base64（本地存储在 RTL/config/skins/{uuid}.png）
+ * 用于前端 3D 皮肤展示
+ * @param uuid 玩家 UUID
+ * @returns data URI (data:image/png;base64,...)
+ */
+export async function getSkinBase64(uuid: string): Promise<string> {
+  return safeInvoke<string>("get_skin_base64", { uuid });
+}
+
+/**
+ * 重新下载 LittleSkin 皮肤（当本地皮肤不存在或显示失败时调用）
+ * @param uuid 玩家 UUID
+ */
+export async function redownloadLittleSkinSkin(uuid: string): Promise<void> {
+  return safeInvoke<void>("redownload_littleskin_skin", { uuid });
 }
 
 // ======================== 微软正版登录 ========================
@@ -116,7 +143,7 @@ export async function getAvatarBase64(uuid: string): Promise<string> {
  * 返回 user_code（展示给用户）和 verification_uri（让用户打开的网址）
  */
 export async function msRequestDeviceCode(): Promise<DeviceCodeInfo> {
-  return invoke<DeviceCodeInfo>("ms_request_device_code");
+  return safeInvoke<DeviceCodeInfo>("ms_request_device_code");
 }
 
 /**
@@ -129,8 +156,110 @@ export async function msPollAndLogin(
   deviceCode: string,
   interval: number
 ): Promise<AccountInfo> {
-  return invoke<AccountInfo>("ms_poll_and_login", {
+  return safeInvoke<AccountInfo>("ms_poll_and_login", {
     deviceCode,
     interval,
   });
+}
+
+/**
+ * 用户关闭登录对话框时调用：让后台的轮询循环中止
+ */
+export async function msCancelLogin(): Promise<void> {
+  return safeInvoke<void>("ms_cancel_login");
+}
+
+// ======================== 微软正版：皮肤/披风管理 ========================
+
+/** 单个皮肤信息 */
+export type MCSkinInfo = {
+  id: string;
+  state: string; // ACTIVE / INACTIVE
+  url: string;
+  variant: string; // classic / slim
+  alias: string | null;
+};
+
+/** 单个披风信息 */
+export type MCCapeInfo = {
+  id: string;
+  state: string; // ACTIVE / INACTIVE
+  url: string;
+  alias: string | null;
+};
+
+/** 完整皮肤/披风列表 */
+export type MCSkinCapeProfile = {
+  skins: MCSkinInfo[];
+  capes: MCCapeInfo[];
+};
+
+/**
+ * 获取当前微软账号的所有皮肤与披风列表（基于 Minecraft Services API）
+ * @param accessToken 微软登录得到的 access_token
+ */
+export async function msGetSkinsAndCapes(
+  accessToken: string
+): Promise<MCSkinCapeProfile> {
+  return safeInvoke<MCSkinCapeProfile>("ms_get_skins_and_capes", { accessToken });
+}
+
+/**
+ * 上传新皮肤（PNG base64 编码），上传后自动设为当前皮肤
+ * @param accessToken 微软登录得到的 access_token
+ * @param pngBase64 PNG 图像的 base64 编码（不带 data:image/png;base64, 前缀）
+ * @param variant "classic"（默认）或 "slim"（细胳膊）
+ */
+export async function msUploadSkin(
+  accessToken: string,
+  pngBase64: string,
+  variant: "classic" | "slim"
+): Promise<string> {
+  return safeInvoke<string>("ms_upload_skin", {
+    accessToken,
+    pngBase64,
+    variant,
+  });
+}
+
+/**
+ * 激活/切换到指定皮肤（从已有皮肤列表中选择）
+ * @param accessToken 微软登录得到的 access_token
+ * @param skinId 皮肤 ID
+ * @param variant "classic" 或 "slim"
+ */
+export async function msActivateSkin(
+  accessToken: string,
+  skinId: string,
+  variant: "classic" | "slim"
+): Promise<void> {
+  return safeInvoke<void>("ms_activate_skin", {
+    accessToken,
+    skinId,
+    variant,
+  });
+}
+
+/**
+ * 删除指定皮肤
+ * @param accessToken 微软登录得到的 access_token
+ * @param skinId 皮肤 ID
+ */
+export async function msDeleteSkin(
+  accessToken: string,
+  skinId: string
+): Promise<void> {
+  return safeInvoke<void>("ms_delete_skin", { accessToken, skinId });
+}
+
+/**
+ * 设置激活披风（capeId 为空字符串时取消激活当前披风）
+ * @param accessToken 微软登录得到的 access_token
+ * @param capeId 披风 ID（空字符串 = 取消激活）
+ */
+export async function msSetActiveCape(
+  accessToken: string,
+  capeId: string
+): Promise<void> {
+  return safeInvoke<void>("ms_set_active_cape", { accessToken, capeId });
 }

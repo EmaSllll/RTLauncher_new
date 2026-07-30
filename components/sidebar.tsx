@@ -1,6 +1,5 @@
 "use client"
 
-// 导航图标
 import {
   Home,
   Download,
@@ -11,51 +10,180 @@ import {
   Gamepad2,
 } from "lucide-react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { motion } from "framer-motion"
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "@/components/ui/avatar"
+import { buttonVariants } from "@/components/ui/button"
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import { useUIConfigContext } from "@/components/ui-config/ui-config-provider"
+import { useSettings, type AppLanguage } from "@/components/settings/settings-provider"
 
 interface SidebarProps {
   className?: string
 }
 
 interface NavItem {
+  id: string
   icon: React.ReactNode
   label: string
   href: string
   isAvatar?: boolean
 }
 
-// 顶部导航项
-const topNavItems: NavItem[] = [
-  { icon: <Home className="size-4" />, label: "首页", href: "/" },
-  { icon: <Gamepad2 className="size-4" />, label: "游戏设置", href: "/game-settings" },
-  { icon: <Rocket className="size-4" />, label: "启动", href: "/launch" },
-  { icon: <Download className="size-4" />, label: "下载", href: "/download" },
-  { icon: <Globe className="size-4" />, label: "联机", href: "/multiplayer" },
-  { icon: <Wrench className="size-4" />, label: "工具", href: "/tools" },
+let activeNavigation: {
+  transition: ViewTransition
+  controller: AbortController
+} | null = null
+
+function waitForPageContent(
+  main: HTMLElement,
+  previousText: string,
+  signal: AbortSignal
+) {
+  return new Promise<void>((resolve) => {
+    let settled = false
+    let settleTimer: number | undefined
+
+    const finish = () => {
+      if (settled) return
+      settled = true
+      observer.disconnect()
+      window.clearTimeout(timeoutTimer)
+      window.clearTimeout(settleTimer)
+      signal.removeEventListener("abort", finish)
+      resolve()
+    }
+
+    const observer = new MutationObserver(() => {
+      if (main.innerText === previousText) return
+      if (settleTimer !== undefined) return
+
+      // 首批新内容出现后稍等几帧即开始交叉淡入，不再等待后续列表更新。
+      settleTimer = window.setTimeout(finish, 60)
+    })
+
+    observer.observe(main, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    })
+
+    const timeoutTimer = window.setTimeout(finish, 700)
+
+    if (signal.aborted) {
+      finish()
+      return
+    }
+
+    signal.addEventListener("abort", finish, { once: true })
+  })
+}
+
+const NAV_ITEM_BASE: Omit<NavItem, "label">[] = [
+  { id: "home", icon: <Home className="size-4" />, href: "/" },
+  { id: "game-settings", icon: <Gamepad2 className="size-4" />, href: "/game-settings" },
+  { id: "launch", icon: <Rocket className="size-4" />, href: "/launch" },
+  { id: "download", icon: <Download className="size-4" />, href: "/download" },
+  { id: "multiplayer", icon: <Globe className="size-4" />, href: "/multiplayer" },
+  { id: "tools", icon: <Wrench className="size-4" />, href: "/tools" },
+  { id: "settings", icon: <Settings className="size-4" />, href: "/settings" },
 ]
 
-// 底部导航项（已移除设置和个人按钮）
-const bottomNavItems: NavItem[] = []
+const NAV_LABELS: Record<AppLanguage, Record<string, string>> = {
+  "zh-CN": {
+    home: "首页",
+    "game-settings": "游戏设置",
+    launch: "启动",
+    download: "下载",
+    multiplayer: "联机",
+    tools: "工具",
+    settings: "设置",
+  },
+  "en-US": {
+    home: "Home",
+    "game-settings": "Game Settings",
+    launch: "Launch",
+    download: "Downloads",
+    multiplayer: "Multiplayer",
+    tools: "Tools",
+    settings: "Settings",
+  },
+}
 
-// 导航按钮
 function NavButton({ item, isActive }: { item: NavItem; isActive: boolean }) {
+  const router = useRouter()
+
+  const handleNavigation = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (
+      event.defaultPrevented ||
+      event.button !== 0 ||
+      event.metaKey ||
+      event.ctrlKey ||
+      event.shiftKey ||
+      event.altKey
+    ) {
+      return
+    }
+
+    if (isActive) {
+      event.preventDefault()
+      return
+    }
+
+    const startViewTransition = document.startViewTransition?.bind(document)
+    if (!startViewTransition) return
+
+    const main = document.querySelector<HTMLElement>("main")
+    if (!main) return
+
+    event.preventDefault()
+    const previousText = main.innerText
+
+    activeNavigation?.controller.abort()
+    activeNavigation?.transition.skipTransition()
+
+    const controller = new AbortController()
+    const transition = startViewTransition(async () => {
+      const contentReady = waitForPageContent(
+        main,
+        previousText,
+        controller.signal
+      )
+      router.push(item.href)
+      await contentReady
+    })
+
+    const navigation = { transition, controller }
+    activeNavigation = navigation
+
+    void transition.finished
+      .catch(() => undefined)
+      .finally(() => {
+        if (activeNavigation === navigation) activeNavigation = null
+      })
+  }
+
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Link href={item.href}>
+        <Link
+          href={item.href}
+          onClick={handleNavigation}
+          suppressHydrationWarning
+          aria-label={item.label}
+          aria-current={isActive ? "page" : undefined}
+          className={cn(
+            item.isAvatar
+              ? "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              : buttonVariants({ variant: "ghost", size: "icon" }),
+            "relative overflow-hidden touch-manipulation",
+            !item.isAvatar && isActive && "text-accent-foreground"
+          )}
+        >
           {item.isAvatar ? (
             <span
               className={cn(
@@ -66,14 +194,7 @@ function NavButton({ item, isActive }: { item: NavItem; isActive: boolean }) {
               {item.icon}
             </span>
           ) : (
-            <Button
-              variant="ghost"
-              size="icon"
-              className={cn(
-                "relative overflow-hidden touch-manipulation",
-                isActive && "text-accent-foreground"
-              )}
-            >
+            <>
               {isActive && (
                 <motion.span
                   layoutId="active-nav-indicator"
@@ -82,7 +203,7 @@ function NavButton({ item, isActive }: { item: NavItem; isActive: boolean }) {
                 />
               )}
               <span className="relative z-10">{item.icon}</span>
-            </Button>
+            </>
           )}
         </Link>
       </TooltipTrigger>
@@ -93,17 +214,37 @@ function NavButton({ item, isActive }: { item: NavItem; isActive: boolean }) {
   )
 }
 
-// 左侧边栏
+function isNavItemActive(pathname: string, href: string) {
+  if (href === "/") return pathname === "/"
+  return pathname === href || pathname.startsWith(`${href}/`)
+}
+
 export function Sidebar({ className }: SidebarProps) {
   const pathname = usePathname()
+  const { config, configLoaded } = useUIConfigContext()
+  const { settings } = useSettings()
+  const allNavItems = NAV_ITEM_BASE.map((item) => ({
+    ...item,
+    label: NAV_LABELS[settings.general.language][item.id] ?? item.id,
+  }))
 
-  const isActive = (href: string) => {
-    if (href === "/") return pathname === "/"
-    return pathname.startsWith(href)
-  }
+  const isActive = (href: string) => isNavItemActive(pathname, href)
+
+  // 根据配置过滤可见的导航项
+  const visibleNavItems = configLoaded
+    ? allNavItems.filter(item => {
+        const tabConfig = config.sidebarTabs.find(tab => tab.id === item.id);
+        return tabConfig ? tabConfig.visible : true;
+      })
+    : allNavItems;
+
+  // 分离顶部和底部导航项
+  const topNavItems = visibleNavItems.filter(item => item.id !== "settings");
+  const bottomNavItems = visibleNavItems.filter(item => item.id === "settings");
 
   return (
     <aside
+      data-app-sidebar
       className={cn(
         "flex h-full w-14 flex-col border-r border-border bg-sidebar",
         className

@@ -2,10 +2,11 @@ use serde::Serialize;
 use sysinfo::System;
 use std::fs;
 use std::path::Path;
-use std::time::{Duration, SystemTime};
+use std::sync::{Mutex, Once, OnceLock};
+use std::time::{Duration, Instant, SystemTime};
 use base64::{self, Engine};
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub struct MemoryInfo {
     /// 系统物理总内存（MB）
     pub total_mb: u64,
@@ -31,6 +32,14 @@ pub fn read_file_base64(path: String) -> Result<String, String> {
 
 #[tauri::command]
 pub fn get_system_memory() -> MemoryInfo {
+    if let Ok(cache) = system_memory_cache().lock() {
+        if let Some(cached) = cache.as_ref() {
+            if cached.refreshed_at.elapsed() < SYSTEM_MEMORY_CACHE_TTL {
+                return cached.value.clone();
+            }
+        }
+    }
+
     let mut sys = System::new();
     sys.refresh_memory();
     let total_mb = sys.total_memory() / 1024 / 1024;
@@ -43,12 +52,20 @@ pub fn get_system_memory() -> MemoryInfo {
     let recommended_mb = raw_recommended
         .min(upper_bound)
         .max(512);
-    MemoryInfo {
+    let info = MemoryInfo {
         total_mb,
         used_mb,
         available_mb,
         recommended_mb,
+    };
+
+    if let Ok(mut cache) = system_memory_cache().lock() {
+        *cache = Some(CachedMemoryInfo {
+            value: info.clone(),
+            refreshed_at: Instant::now(),
+        });
     }
+    info
 }
 
 /// 写入文件
@@ -94,8 +111,8 @@ pub struct MemoryOptimizationReport {
 /// 实现思路：
 ///   - 调用平台专属的系统 API 收缩文件缓存 + 当前进程工作集
 ///   - 尝试释放 standby/cache（如权限不足则忽略）
-///   - 最后做一轮"内存抖动"：分配系统可用内存的一部分，touch 它，然后释放它，
-///     以迫使操作系统把 standby/cache 里的陈旧数据让出来给其他应用
+///   - 不再执行大块内存“抖动”：该操作会制造瞬时分配峰值和页面换入，
+///     与释放内存、保持界面流畅的目标相悖
 #[tauri::command]
 pub fn optimize_memory_usage() -> Result<MemoryOptimizationReport, String> {
     let start = std::time::Instant::now();
@@ -111,16 +128,6 @@ pub fn optimize_memory_usage() -> Result<MemoryOptimizationReport, String> {
     platform_trim_current_process(&mut methods);
     platform_drop_file_caches(&mut methods);
     platform_try_empty_system_caches(&mut methods);
-
-    // 3. 内存抖动：分配一块中等大小内存，强制页面提交/入页，随后释放
-    let jitter_bytes = platform_memory_jitter_size_bytes();
-    if jitter_bytes > 0 {
-        memory_jitter(jitter_bytes);
-        methods.push(format!(
-            "memory_jitter({}MB)",
-            jitter_bytes / 1024 / 1024
-        ));
-    }
 
     // 给系统一点时间来反映真实的可用内存
     std::thread::sleep(Duration::from_millis(80));
@@ -384,42 +391,6 @@ fn platform_try_empty_system_caches(methods: &mut Vec<String>) {
     }
 }
 
-/// 决定"内存抖动"分配多大一块（字节）
-/// 规则：取"可用内存的 1/8 或 128MB，取较小者"
-fn platform_memory_jitter_size_bytes() -> u64 {
-    let mut sys = System::new();
-    sys.refresh_memory();
-    let available_kb = sys.available_memory();
-    let eighth_bytes = available_kb.saturating_mul(1024) / 8;
-    let upper_bound: u64 = 128 * 1024 * 1024; // 128 MB 字节
-    let size = std::cmp::min(eighth_bytes, upper_bound);
-    // 至少 16MB 才值得做一次
-    if size < 16 * 1024 * 1024 {
-        0
-    } else {
-        size
-    }
-}
-
-/// 分配 size 字节内存、touch 每个 4KB 页一次、然后释放。
-fn memory_jitter(size: u64) {
-    // 用 Vec<u8> 的零初始化 + 写入，避免 reserve 后未提交的虚拟内存
-    let size = size as usize;
-    let mut v: Vec<u8> = vec![0u8; size];
-
-    // touch 每 4KB 页：让操作系统实际提交物理页
-    let page = 4096usize;
-    let mut i = 0usize;
-    while i < size {
-        v[i] = 1;
-        i += page;
-    }
-    v[size - 1] = 1;
-
-    // 立即释放
-    drop(v);
-}
-
 // 在非三大平台上，给 linker 一个空实现，避免编译失败
 #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 fn platform_trim_current_process(_methods: &mut Vec<String>) {}
@@ -554,4 +525,24 @@ pub fn ensure_launcher_profiles_on_startup() {
             }
         }
     }
+}
+
+/// 在首次真正启动游戏时再检查配置路径，避免应用打开时争用磁盘 I/O。
+pub fn schedule_launcher_profiles_check() {
+    static SCHEDULED: Once = Once::new();
+    SCHEDULED.call_once(|| {
+        std::thread::spawn(ensure_launcher_profiles_on_startup);
+    });
+}
+
+struct CachedMemoryInfo {
+    value: MemoryInfo,
+    refreshed_at: Instant,
+}
+
+const SYSTEM_MEMORY_CACHE_TTL: Duration = Duration::from_secs(10);
+
+fn system_memory_cache() -> &'static Mutex<Option<CachedMemoryInfo>> {
+    static CACHE: OnceLock<Mutex<Option<CachedMemoryInfo>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(None))
 }

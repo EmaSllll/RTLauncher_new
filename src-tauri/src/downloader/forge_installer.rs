@@ -390,10 +390,13 @@ pub async fn install_forge(
         mc_version: mc_version.to_string(),
         mc_version_id: mc_version.to_string(),
         library_mirrors: vec![
-            "https://maven.aliyun.com/repository/public/".to_string(),
-            "https://repo1.maven.org/maven2/".to_string(),
-            "https://libraries.minecraft.net/".to_string(),
+            "https://bmclapi2.bangbang93.com/maven/".to_string(),
             "https://files.minecraftforge.net/maven/".to_string(),
+            "https://libraries.minecraft.net/".to_string(),
+            "https://maven.aliyun.com/repository/public/".to_string(),
+            "https://repo.spongepowered.org/maven/".to_string(),
+            "https://maven.fabricmc.net/".to_string(),
+            "https://repo1.maven.org/maven2/".to_string(),
         ],
     };
     shared::install(&cfg, &mc_path, progress_tx, wait_for_original).await

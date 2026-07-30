@@ -2,6 +2,7 @@ use crate::downloader::neoforge_installer;
 use crate::downloader::mod_loader_installer_shared::pick_java_executable;
 use crate::downloader::original_dwl::process_version;
 use crate::downloader::dwPatch::get_minecraft_dir;
+use crate::downloader::shared_utils::{sanitize_instance_name, merge_version_jsons_to_instance};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -30,8 +31,6 @@ struct NeoForgeDownloadFinishedPayload {
 static NEOFORGE_TASK_COUNTER: AtomicU64 = AtomicU64::new(5000000);
 struct NeoForgeActiveTaskInfo {
     cancel: Arc<AtomicBool>,
-    mc_version: String,
-    neoforge_version: String,
 }
 fn neoforge_active_tasks() -> &'static Mutex<HashMap<u64, NeoForgeActiveTaskInfo>> {
     static INSTANCE: OnceLock<Mutex<HashMap<u64, NeoForgeActiveTaskInfo>>> = OnceLock::new();
@@ -57,6 +56,7 @@ pub async fn download_and_install_neoforge(
     app: AppHandle,
     mc_version: String,
     neoforge_version: String,
+    instance_name: Option<String>,
 ) -> Result<u64, String> {
     let task_id = NEOFORGE_TASK_COUNTER.fetch_add(1, Ordering::SeqCst);
     let minecraft_path = get_minecraft_dir()?;
@@ -70,8 +70,6 @@ pub async fn download_and_install_neoforge(
             task_id,
             NeoForgeActiveTaskInfo {
                 cancel: cancel.clone(),
-                mc_version: mc_version.clone(),
-                neoforge_version: neoforge_version.clone(),
             },
         );
     }
@@ -100,6 +98,7 @@ pub async fn download_and_install_neoforge(
     let neoforge_ver = neoforge_version.clone();
     let cancel_clone = cancel.clone();
     let minecraft_path_clone = minecraft_path.clone();
+    let instance_name_cloned = instance_name.clone();
     tokio::spawn(async move {
         let original_ready = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let original_ready_clone = original_ready.clone();
@@ -169,9 +168,31 @@ pub async fn download_and_install_neoforge(
             return;
         }
         match neoforge_result {
-            Ok(_) => {
+            Ok(loader_version) => {
                 let _ = tx.send(100.0).await;
                 println!("NeoForge 安装成功: {}", neoforge_ver);
+
+                if let Some(inst_name) = instance_name_cloned {
+                    let clean_name = sanitize_instance_name(&inst_name);
+                    println!("[NeoForge] 创建实例目录: {}", clean_name);
+                    let default_name = format!("{}-neoforge-{}", version, neoforge_ver);
+                    let final_name = if clean_name.trim().is_empty() {
+                        sanitize_instance_name(&default_name)
+                    } else {
+                        clean_name
+                    };
+                    match merge_version_jsons_to_instance(
+                        &final_name,
+                        &version,
+                        &loader_version,
+                        "neoforge",
+                        &minecraft_path_clone,
+                    ) {
+                        Ok(_) => println!("[NeoForge] 实例 JSON 合并完成: {}", final_name),
+                        Err(e) => println!("[NeoForge] 警告: 合并实例 JSON 失败: {}", e),
+                    }
+                }
+
                 let _ = app_finish.emit(
                     "neoforge-download-finished",
                     NeoForgeDownloadFinishedPayload {

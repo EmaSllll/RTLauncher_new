@@ -24,6 +24,7 @@ import {
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { LauncherPathsConfig } from "@/types";
+import { useI18n } from "@/components/i18n/use-i18n";
 
 interface MemoryInfo {
   totalMB: number;
@@ -64,6 +65,7 @@ function PathItem({
   onSelect: () => void;
   onRemove: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div
       className={`flex items-center gap-1.5 rounded-md px-2 py-1 cursor-pointer transition-colors text-xs group ${
@@ -86,7 +88,7 @@ function PathItem({
       )}
       {isDefault && (
         <span className="shrink-0 rounded px-1 py-0.5 text-[9px] font-medium bg-muted text-muted-foreground leading-none">
-          默认
+          {t({ "zh-CN": "默认", "en-US": "Default" })}
         </span>
       )}
       {canRemove && (
@@ -106,6 +108,7 @@ function PathItem({
  * 设置 Java 路径、内存、版本等启动参数
  */
 export function LaunchConfigCard() {
+  const { t } = useI18n();
   const { config, updateConfig } = useLaunchContext();
   const { selectedProfile } = useAccountContext();
   const { totalMB, usedMB, availableMB, recommendedMB } = useSystemMemory();
@@ -202,7 +205,7 @@ export function LaunchConfigCard() {
   const handleExportLaunchArgs = async () => {
     try {
       if (!selectedProfile) {
-        alert("请先选择账户");
+        alert(t({ "zh-CN": "请先选择账户", "en-US": "Select an account first" }));
         return;
       }
 
@@ -242,9 +245,9 @@ ${result}
 `;
 
       await invoke("write_file", { path: filePath, content: exportData });
-      alert("启动命令已导出成功！");
+      alert(t({ "zh-CN": "启动命令已导出成功！", "en-US": "Launch command exported." }));
     } catch (err) {
-      alert(`导出失败: ${err}`);
+      alert(`${t({ "zh-CN": "导出失败", "en-US": "Export failed" })}: ${err}`);
     }
   };
 
@@ -288,12 +291,12 @@ ${result}
   };
 
   return (
-    <Card size="sm">
+    <Card size="sm" className="flex flex-col min-h-0 flex-1">
       <CardHeader>
         <CardTitle className="flex items-center justify-between text-sm">
           <div className="flex items-center gap-2">
             <Package className="size-4 text-primary" />
-            启动配置
+            {t({ "zh-CN": "启动配置", "en-US": "Launch configuration" })}
           </div>
           <Button
             variant="ghost"
@@ -302,17 +305,17 @@ ${result}
             onClick={handleExportLaunchArgs}
           >
             <Download className="size-3" />
-            导出参数
+            {t({ "zh-CN": "导出参数", "en-US": "Export arguments" })}
           </Button>
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="flex-1 min-h-0 overflow-y-auto space-y-4">
         {/* 游戏目录 — 路径列表 */}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <Label className="text-xs text-muted-foreground">
               <HardDrive className="size-3" />
-              游戏目录
+              {t({ "zh-CN": "游戏目录", "en-US": "Game directory" })}
             </Label>
             <Button
               variant="ghost"
@@ -320,7 +323,7 @@ ${result}
               className="h-6 px-2 text-[10px] text-muted-foreground gap-1"
               onClick={() => openDialog("minecraft")}
             >
-              <Plus className="size-3" /> 添加
+              <Plus className="size-3" /> {t({ "zh-CN": "添加", "en-US": "Add" })}
             </Button>
           </div>
           {/* 默认路径始终显示 */}
@@ -362,7 +365,7 @@ ${result}
           {!pathsCfg.default_minecraft_path &&
             pathsCfg.minecraft_paths.length === 0 && (
               <p className="text-[10px] text-muted-foreground/60 px-1">
-                点击"添加"选择游戏目录
+                {t({ "zh-CN": "点击“添加”选择游戏目录", "en-US": "Click Add to select a game directory" })}
               </p>
             )}
         </div>
@@ -372,7 +375,7 @@ ${result}
           <div className="flex items-center justify-between">
             <Label className="text-xs text-muted-foreground">
               <Cpu className="size-3" />
-              Java 路径
+              {t({ "zh-CN": "Java 路径", "en-US": "Java path" })}
             </Label>
             <div className="flex gap-1">
               <Button
@@ -383,7 +386,7 @@ ${result}
                 disabled={scanning}
               >
                 <Search className={`size-3 ${scanning ? "animate-spin" : ""}`} />
-                {scanning ? "扫描中" : "扫描"}
+                {scanning ? t({ "zh-CN": "扫描中", "en-US": "Scanning" }) : t({ "zh-CN": "扫描", "en-US": "Scan" })}
               </Button>
               <Button
                 variant="ghost"
@@ -391,13 +394,13 @@ ${result}
                 className="h-6 px-2 text-[10px] text-muted-foreground gap-1"
                 onClick={() => openDialog("java")}
               >
-                <Plus className="size-3" /> 添加
+                <Plus className="size-3" /> {t({ "zh-CN": "添加", "en-US": "Add" })}
               </Button>
             </div>
           </div>
           {pathsCfg.java_paths.length === 0 ? (
             <p className="text-[10px] text-muted-foreground/60 px-1">
-              点击"扫描"自动搜索或"添加"手动选择 Java
+              {t({ "zh-CN": "点击“扫描”自动搜索或“添加”手动选择 Java", "en-US": "Click Scan to search automatically, or Add to choose Java manually" })}
             </p>
           ) : (
             [...new Set(pathsCfg.java_paths)].map((p) => {
@@ -432,12 +435,12 @@ ${result}
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">
             <Package className="size-3" />
-            Wrapper 路径
-            <span className="text-[10px] text-muted-foreground/60 ml-1">（可选）</span>
+            {t({ "zh-CN": "Wrapper 路径", "en-US": "Wrapper path" })}
+            <span className="text-[10px] text-muted-foreground/60 ml-1">{t({ "zh-CN": "（可选）", "en-US": "(optional)" })}</span>
           </Label>
           <div className="flex gap-2">
             <Input
-              placeholder="留空则直接启动，无需 Wrapper"
+              placeholder={t({ "zh-CN": "留空则直接启动，无需 Wrapper", "en-US": "Leave empty to launch directly without a wrapper" })}
               value={config.wrapperPath}
               onChange={(e) =>
                 updateConfig({ wrapperPath: e.target.value })
@@ -459,15 +462,15 @@ ${result}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <Label className="text-xs text-muted-foreground">
-              最大内存 (MB)
+              {t({ "zh-CN": "最大内存", "en-US": "Maximum memory" })} (MB)
             </Label>
             {totalMB > 0 && (
               <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                <span>系统总计 <span className="text-foreground font-medium">{totalMB >= 1024 ? `${(totalMB / 1024).toFixed(1)} GB` : `${totalMB} MB`}</span></span>
+                <span>{t({ "zh-CN": "系统总计", "en-US": "System total" })} <span className="text-foreground font-medium">{totalMB >= 1024 ? `${(totalMB / 1024).toFixed(1)} GB` : `${totalMB} MB`}</span></span>
                 {availableMB > 0 && (
                   <>
                     <span className="text-muted-foreground/40">·</span>
-                    <span>可用 <span className="text-foreground font-medium">{availableMB >= 1024 ? `${(availableMB / 1024).toFixed(1)} GB` : `${availableMB} MB`}</span></span>
+                    <span>{t({ "zh-CN": "可用", "en-US": "Available" })} <span className="text-foreground font-medium">{availableMB >= 1024 ? `${(availableMB / 1024).toFixed(1)} GB` : `${availableMB} MB`}</span></span>
                   </>
                 )}
               </div>
@@ -513,7 +516,7 @@ ${result}
                 }
               }}
             >
-              自动分配
+              {t({ "zh-CN": "自动分配", "en-US": "Auto allocate" })}
               {recommendedMB > 0 && (
                 <span className="text-[9px] text-muted-foreground/70">
                   {recommendedMB >= 1024 ? `${(recommendedMB / 1024).toFixed(1)}GB` : `${recommendedMB}MB`}
@@ -522,11 +525,11 @@ ${result}
             </Button>
           </div>
           <p className="text-[10px] text-muted-foreground">
-            建议分配可用内存的 50%–75%
+            {t({ "zh-CN": "建议分配可用内存的 50%–75%", "en-US": "Recommended: 50%–75% of available memory" })}
             {availableMB > 0 && (() => {
               return (
                 <span className="ml-1 text-muted-foreground/60">
-                  （{Math.round(availableMB * 0.5)}–{Math.round(availableMB * 0.75)} MB，推荐 {recommendedMB} MB）
+                  {t({ "zh-CN": `（${Math.round(availableMB * 0.5)}–${Math.round(availableMB * 0.75)} MB，推荐 ${recommendedMB} MB）`, "en-US": `(${Math.round(availableMB * 0.5)}–${Math.round(availableMB * 0.75)} MB; recommended ${recommendedMB} MB)` })}
                 </span>
               );
             })()}
@@ -535,7 +538,7 @@ ${result}
 
         {/* 版本名称 - 使用版本选择对话框（自动识别加载器） */}
         <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">游戏版本</Label>
+          <Label className="text-xs text-muted-foreground">{t({ "zh-CN": "游戏版本", "en-US": "Game version" })}</Label>
           <VersionSelectorDialog />
         </div>
 
@@ -543,12 +546,12 @@ ${result}
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">
             <Monitor className="size-3" />
-            游戏窗口尺寸
+            {t({ "zh-CN": "游戏窗口尺寸", "en-US": "Game window size" })}
           </Label>
           <div className="flex gap-2 items-center">
             <Input
               type="number"
-              placeholder="宽度"
+              placeholder={t({ "zh-CN": "宽度", "en-US": "Width" })}
               value={config.windowWidth}
               onChange={(e) => updateConfig({ windowWidth: e.target.value })}
               className="text-xs h-8 w-24 text-center"
@@ -557,7 +560,7 @@ ${result}
             <span className="text-xs text-muted-foreground">×</span>
             <Input
               type="number"
-              placeholder="高度"
+              placeholder={t({ "zh-CN": "高度", "en-US": "Height" })}
               value={config.windowHeight}
               onChange={(e) => updateConfig({ windowHeight: e.target.value })}
               className="text-xs h-8 w-24 text-center"
@@ -569,16 +572,16 @@ ${result}
         {/* 玩家身份（可折叠） */}
         <details className="group">
           <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors select-none">
-            高级：玩家身份设置
+            {t({ "zh-CN": "高级：玩家身份设置", "en-US": "Advanced: player identity" })}
           </summary>
           <div className="mt-3 space-y-3 border-l-2 border-border pl-3">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">
                 <User className="size-3" />
-                玩家名称
+                {t({ "zh-CN": "玩家名称", "en-US": "Player name" })}
               </Label>
               <Input
-                placeholder="留空则使用当前账户名"
+                placeholder={t({ "zh-CN": "留空则使用当前账户名", "en-US": "Leave empty to use the current account name" })}
                 value={config.playerName}
                 onChange={(e) =>
                   updateConfig({ playerName: e.target.value })
@@ -591,7 +594,7 @@ ${result}
                 UUID
               </Label>
               <Input
-                placeholder="留空则使用账户 ID"
+                placeholder={t({ "zh-CN": "留空则使用账户 ID", "en-US": "Leave empty to use the account ID" })}
                 value={config.uuid}
                 onChange={(e) =>
                   updateConfig({ uuid: e.target.value })
@@ -601,11 +604,11 @@ ${result}
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">
-                认证令牌 (accessToken)
+                {t({ "zh-CN": "认证令牌", "en-US": "Access token" })} (accessToken)
               </Label>
               <Input
                 type="password"
-                placeholder="可选"
+                placeholder={t({ "zh-CN": "可选", "en-US": "Optional" })}
                 value={config.authToken}
                 onChange={(e) =>
                   updateConfig({ authToken: e.target.value })
@@ -619,15 +622,15 @@ ${result}
         {/* 第三方验证（可折叠） */}
         <details className="group">
           <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors select-none">
-            高级：第三方验证设置
+            {t({ "zh-CN": "高级：第三方验证设置", "en-US": "Advanced: third-party authentication" })}
           </summary>
           <div className="mt-3 space-y-3 border-l-2 border-border pl-3">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">
-                Authlib Injector 路径
+                {t({ "zh-CN": "Authlib Injector 路径", "en-US": "Authlib Injector path" })}
               </Label>
               <Input
-                placeholder="authlib-injector.jar 路径"
+                placeholder={t({ "zh-CN": "authlib-injector.jar 路径", "en-US": "authlib-injector.jar path" })}
                 value={config.authlibInjectorPath}
                 onChange={(e) =>
                   updateConfig({ authlibInjectorPath: e.target.value })
@@ -650,10 +653,10 @@ ${result}
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">
-                预取数据 (Base64)
+                {t({ "zh-CN": "预取数据", "en-US": "Prefetched data" })} (Base64)
               </Label>
               <Input
-                placeholder="可选"
+                placeholder={t({ "zh-CN": "可选", "en-US": "Optional" })}
                 value={config.prefetchedData}
                 onChange={(e) =>
                   updateConfig({ prefetchedData: e.target.value })

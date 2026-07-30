@@ -1,5 +1,10 @@
+// These modules preserve the legacy command and protocol names consumed by the
+// frontend and third-party authentication services.
+#[allow(dead_code, non_snake_case)]
 pub mod littleskinLoader;
+#[allow(dead_code, non_snake_case)]
 pub mod yissadrail;
+#[allow(dead_code)]
 pub mod official;
 
 use serde::{Deserialize, Serialize};

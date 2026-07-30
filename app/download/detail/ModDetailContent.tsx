@@ -104,23 +104,23 @@ function formatDownloads(n?: number): string {
 }
 
 function translateProjectType(pt?: string): string {
-  if (!pt) return "未知";
+  if (!pt) return "Unknown";
   const lower = pt.toLowerCase();
   const map: Record<string, string> = {
-    mod: "模组",
-    "minecraft mod": "模组",
-    modpack: "整合包",
-    "mod pack": "整合包",
-    resourcepack: "资源包",
-    "resource pack": "资源包",
-    "texture pack": "资源包",
-    shader: "光影",
-    shaders: "光影",
-    "shader pack": "光影",
-    datapack: "数据包",
-    "data pack": "数据包",
-    world: "地图",
-    worlds: "地图",
+    mod: "Mod",
+    "minecraft mod": "Mod",
+    modpack: "Modpack",
+    "mod pack": "Modpack",
+    resourcepack: "Resource Pack",
+    "resource pack": "Resource Pack",
+    "texture pack": "Resource Pack",
+    shader: "Shader",
+    shaders: "Shader",
+    "shader pack": "Shader",
+    datapack: "Data Pack",
+    "data pack": "Data Pack",
+    world: "World",
+    worlds: "World",
   };
   return map[lower] ?? pt;
 }
@@ -131,48 +131,48 @@ function translateCategory(cat: string): string {
     "fabric": "Fabric",
     "neoforge": "NeoForge",
     "quilt": "Quilt",
-    "vanilla": "原版",
-    "utility": "工具",
-    "storage": "存储",
-    "decoration": "装饰",
-    "library": "前置",
-    "library / api": "前置 API",
-    "api and library": "前置 API",
-    "magic": "魔法",
-    "technology": "科技",
-    "tech": "科技",
-    "adventure": "冒险",
-    "adventure and rpg": "冒险 RPG",
+    "vanilla": "Vanilla",
+    "utility": "Utility",
+    "storage": "Storage",
+    "decoration": "Decoration",
+    "library": "Library",
+    "library / api": "Library API",
+    "api and library": "Library API",
+    "magic": "Magic",
+    "technology": "Technology",
+    "tech": "Tech",
+    "adventure": "Adventure",
+    "adventure and rpg": "Adventure RPG",
     "rpg": "RPG",
-    "world gen": "世界生成",
-    "world generation": "世界生成",
-    "dungeons and dimensions": "地牢与维度",
-    "dungeons": "地牢",
-    "dimensions": "维度",
-    "entities": "实体",
-    "mobs": "怪物",
-    "food": "食物",
-    "farming": "农业",
-    "energy": "能源",
-    "redstone": "红石",
-    "automation": "自动化",
-    "transport": "交通",
-    "buildcraft": "建筑",
-    "combat": "战斗",
-    "armor, tools, and weapons": "装备与工具",
-    "armor, tools & weapons": "装备与工具",
-    "performance": "性能",
-    "optimization": "优化",
-    "qol": "品质生活",
-    "quality of life": "品质生活",
-    "information": "信息",
-    "tweaks": "微调",
-    "cosmetic": "美化",
-    "environmental": "环境",
-    "biomes": "群系",
-    "structures": "结构",
-    "miscellaneous": "杂项",
-    "misc": "杂项",
+    "world gen": "World Gen",
+    "world generation": "World Generation",
+    "dungeons and dimensions": "Dungeons & Dimensions",
+    "dungeons": "Dungeons",
+    "dimensions": "Dimensions",
+    "entities": "Entities",
+    "mobs": "Mobs",
+    "food": "Food",
+    "farming": "Farming",
+    "energy": "Energy",
+    "redstone": "Redstone",
+    "automation": "Automation",
+    "transport": "Transport",
+    "buildcraft": "Building",
+    "combat": "Combat",
+    "armor, tools, and weapons": "Armor, Tools & Weapons",
+    "armor, tools & weapons": "Armor, Tools & Weapons",
+    "performance": "Performance",
+    "optimization": "Optimization",
+    "qol": "QoL",
+    "quality of life": "Quality of Life",
+    "information": "Information",
+    "tweaks": "Tweaks",
+    "cosmetic": "Cosmetic",
+    "environmental": "Environmental",
+    "biomes": "Biomes",
+    "structures": "Structures",
+    "miscellaneous": "Miscellaneous",
+    "misc": "Misc",
   };
   const lower = cat.toLowerCase();
   return map[lower] ?? cat;
@@ -186,19 +186,19 @@ function formatDateShort(iso?: string): string {
     const now = Date.now();
     const diffMs = now - d.getTime();
     const day = 24 * 60 * 60 * 1000;
-    if (diffMs < day) return "今日";
-    if (diffMs < 7 * day) return Math.round(diffMs / day) + " 天前";
-    if (diffMs < 30 * day) return Math.round(diffMs / (7 * day)) + " 周前";
-    if (diffMs < 365 * day) return Math.round(diffMs / (30 * day)) + " 个月前";
-    return Math.round(diffMs / (365 * day)) + " 年前";
+    if (diffMs < day) return "Today";
+    if (diffMs < 7 * day) return Math.round(diffMs / day) + " days ago";
+    if (diffMs < 30 * day) return Math.round(diffMs / (7 * day)) + " weeks ago";
+    if (diffMs < 365 * day) return Math.round(diffMs / (30 * day)) + " months ago";
+    return Math.round(diffMs / (365 * day)) + " years ago";
   } catch {
     return "";
   }
 }
 
 function isReleaseVersion(tags: string[]): boolean {
-  const releaseKeywords = ["正式版", "release", "Release", "RELEASE", "稳定版", "正式"];
-  const betaKeywords = ["beta", "Beta", "测试", "alpha", "Alpha", "快照", "snapshot", "SNAPSHOT", "实验", "Experimental", "experimental", "dev", "DEV", "Dev"];
+  const releaseKeywords = ["release", "Release", "RELEASE", "stable", "Stable", "final", "Final"];
+  const betaKeywords = ["beta", "Beta", "test", "alpha", "Alpha", "snapshot", "Snapshot", "SNAPSHOT", "experimental", "Experimental", "dev", "DEV", "Dev"];
 
   for (const tag of tags) {
     const lowerTag = tag.toLowerCase();
@@ -253,40 +253,40 @@ function extractLoaderInfo(tags: string[]) {
     }
   }
 
-  if (!loaderLabel) loaderLabel = "通用";
+  if (!loaderLabel) loaderLabel = "Universal";
 
   let serverLabel = "";
   if (isServer && isClient) {
-    serverLabel = "服务端 + 客户端";
+    serverLabel = "Server + Client";
   } else if (isServer) {
-    serverLabel = "服务端";
+    serverLabel = "Server";
   } else if (isClient) {
-    serverLabel = "客户端";
+    serverLabel = "Client";
   }
 
   return { hasForge, hasFabric, hasNeoForge, hasQuilt, hasLiteLoader, hasOrnithe, loaderLabel, serverLabel };
 }
 
 function extractVersionLabel(url: string, tags: string[]): string {
-  // 排除纯 MC 版本号格式：如 1.21, 1.21.1, 1.20.4 等
+  // Exclude pure MC version formats: e.g., 1.21, 1.21.1, 1.20.4, etc.
   const isMcVersion = (s: string): boolean => {
     const trimmed = s.trim();
-    // 纯数字点分格式：1.x 或 1.x.x
+    // Pure numeric dot format: 1.x or 1.x.x
     return /^\d+\.\d+(\.\d+)?$/.test(trimmed);
   };
 
-  // 1) 优先从 tags 找真正的模组版本号（不是纯 MC 版本号，且带版本特征）
+  // 1) First find real mod version number from tags (not pure MC version, with version characteristics)
   for (const tag of tags) {
     const clean = cleanFileName(tag);
     if (!clean || clean.length > 40) continue;
-    // 接受：v1.2.3 / 2.0.1+mc1.21 / 模组名-1.2.3 等
-    // 拒绝：纯 MC 版本号（如 1.21, 1.20.4）
+    // Accept: v1.2.3 / 2.0.1+mc1.21 / modname-1.2.3, etc.
+    // Reject: pure MC version (e.g., 1.21, 1.20.4)
     if (/v?\d+\.\d+/.test(clean) && !isMcVersion(clean)) {
       return clean;
     }
   }
 
-  // 2) 从 URL 文件名提取
+  // 2) Extract from URL filename
   try {
     const parts = url.split("/");
     const fileName = parts[parts.length - 1].split("?")[0];
@@ -300,7 +300,7 @@ function extractVersionLabel(url: string, tags: string[]): string {
     // ignore
   }
 
-  // 3) 最后兜底：从 tags 里找第一个非纯 MC 版本的数字标签
+  // 3) Fallback: find first non-pure MC version numeric tag from tags
   for (const tag of tags) {
     const clean = cleanFileName(tag);
     if (!clean) continue;
@@ -309,7 +309,7 @@ function extractVersionLabel(url: string, tags: string[]): string {
     }
   }
 
-  return "未知版本";
+  return "Unknown Version";
 }
 
 function cleanTags(tags: string[], mcVersion: string, loaderLabel: string, serverLabel: string): string[] {
@@ -318,7 +318,7 @@ function cleanTags(tags: string[], mcVersion: string, loaderLabel: string, serve
   skip.add("java");
   const loaders = ["forge", "fabric", "neoforge", "neo", "quilt", loaderLabel.toLowerCase()];
   for (const l of loaders) skip.add(l);
-  const releases = ["release", "beta", "alpha", "snapshot", "正式版", "测试版", "正式", "稳定版", "实验", "实验性"];
+  const releases = ["release", "beta", "alpha", "snapshot", "stable", "experimental"];
   for (const r of releases) skip.add(r);
   skip.add("server");
   skip.add("client");
@@ -416,7 +416,7 @@ export default function ModDetailContent({ modId }: { modId: string }) {
     try {
       setLiveError(null);
 
-      // 并行查询 Modrinth 和 CurseForge 以获取项目完整信息
+      // Query Modrinth and CurseForge in parallel to get complete project information
       const mrPromise = fetch(
         `https://api.modrinth.com/v2/project/${encodeURIComponent(modId)}`,
         { headers: { 'User-Agent': 'RTLauncher', 'x-modrinth-api-version': 'v2' } }
@@ -473,8 +473,8 @@ export default function ModDetailContent({ modId }: { modId: string }) {
         mrLoaders = Array.isArray(mrData.loaders) ? mrData.loaders : [];
         mrProjectType = mrData.project_type || 'mod';
 
-        // Modrinth 把 datapack / world 的 project_type 也标记为 "mod"。
-        // 需要通过 loaders / categories 进一步判断类型。
+        // Modrinth marks datapack / world project_type as "mod".
+        // Need to further determine type through loaders / categories.
         const loadersLower = mrLoaders.map((l) => (l || '').toLowerCase());
         const categoriesLower = mrCategories.map((c) => (c || '').toLowerCase());
 
@@ -490,14 +490,14 @@ export default function ModDetailContent({ modId }: { modId: string }) {
           categoriesLower.includes('world') ||
           categoriesLower.includes('map')
         ) {
-          // 存档/地图类型（通过 categories 中的 "world", "map" 标签判断）
+          // Save/Map type (determined by "world", "map" tags in categories)
           mrProjectType = 'world';
         } else if (
           categoriesLower.includes('modpack') ||
           categoriesLower.includes('mod pack') ||
           categoriesLower.includes('modpacks')
         ) {
-          // 整合包（通过 categories 中的 "modpack" 标签判断）
+          // Modpack (determined by "modpack" tag in categories)
           mrProjectType = 'modpack';
         }
       }
@@ -540,13 +540,13 @@ export default function ModDetailContent({ modId }: { modId: string }) {
       const author = mrAuthor || cfAuthor;
       const updated = mrUpdated || cfUpdated;
       const categories = mrCategories.length > 0 ? mrCategories : [];
-      // 项目类型选择逻辑：
-      // 1. 如果 Modrinth 的 project_type 不是 "mod"（明确是 resourcepack/shader/modpack），优先使用它
-      // 2. 否则如果 CurseForge 有 classId，使用 classId 推断的类型
-      // 3. 否则使用 Modrinth 的 project_type
-      // 4. 最后 fallback 到 "mod"
-      // 这样做的原因：Modrinth 把 datapack/world 的 project_type 也标记为 "mod"，
-      // 需要通过 CurseForge 的 classId 或 loaders/categories 来进一步识别
+      // Project type selection logic:
+      // 1. If Modrinth's project_type is not "mod" (clearly resourcepack/shader/modpack), prioritize it
+      // 2. Otherwise if CurseForge has classId, use type inferred from classId
+      // 3. Otherwise use Modrinth's project_type
+      // 4. Finally fallback to "mod"
+      // Reason: Modrinth marks datapack/world project_type as "mod",
+      // need to further identify through CurseForge's classId or loaders/categories
       let projectType: string = 'mod';
       const cfProjectType = cfClassId ? classIdToProjectType(cfClassId) : undefined;
       if (mrProjectType && mrProjectType !== 'mod') {
@@ -561,7 +561,7 @@ export default function ModDetailContent({ modId }: { modId: string }) {
         mrOk && cfOk ? 'both' : mrOk ? 'modrinth' : cfOk ? 'curseforge' : 'both';
 
       const modrinthUrl = mrOk ? `https://modrinth.com/${projectType}/${modId}` : undefined;
-      // 根据 projectType 推断正确的 CurseForge URL 路径
+      // Infer correct CurseForge URL path based on projectType
       const cfPath = (() => {
         const pt = projectType.toLowerCase();
         if (pt.includes("modpack")) return "modpacks";
@@ -598,9 +598,9 @@ export default function ModDetailContent({ modId }: { modId: string }) {
         classId: cfId,
       });
     } catch (err) {
-      console.error('获取项目在线信息失败:', err);
+      console.error('Failed to get project online information:', err);
       setLiveError(String(err));
-      // 失败后至少保留基本 URL 信息
+      // At least keep basic URL information after failure
       setLiveInfo({
         slug: modId,
         title: modId,
@@ -691,7 +691,7 @@ export default function ModDetailContent({ modId }: { modId: string }) {
               }
             }
           } catch (err) {
-            console.warn("解析 " + result.source + " 文件数据失败", err);
+            console.warn("Failed to parse " + result.source + " file data", err);
           }
         }
 
@@ -703,10 +703,10 @@ export default function ModDetailContent({ modId }: { modId: string }) {
             setExpandedVersions(new Set([firstKey]));
           }
         } else {
-          throw new Error("所有数据来源均未返回有效文件");
+          throw new Error("All data sources returned no valid files");
         }
       } catch (error) {
-        console.error("获取模组文件失败:", error);
+        console.error("Failed to get mod files:", error);
         setFilesError(String(error));
       } finally {
         setLoadingFiles(false);
@@ -738,11 +738,11 @@ export default function ModDetailContent({ modId }: { modId: string }) {
     const modName = liveInfo?.title || liveInfo?.slug || modId;
     const modSlug = liveInfo?.slug || modId;
 
-    // 从文件信息推断 mod loader（统一按 tags 解析，不看文件后缀）
-    // 优先级：1. UI 小标题 loaderLabel（如 "Ornithe"、"NeoForge"）
-    //        2. 退回到 hasXxx 标记推断
-    let modLoader = "通用";
-    if (file.loaderLabel && file.loaderLabel !== "通用") {
+    // Infer mod loader from file information (unified parsing by tags, not file extension)
+    // Priority: 1. UI subtitle loaderLabel (e.g., "Ornithe", "NeoForge")
+    //           2. Fallback to hasXxx flag inference
+    let modLoader = "universal";
+    if (file.loaderLabel && file.loaderLabel !== "Universal") {
       modLoader = file.loaderLabel;
     } else {
       if (file.hasNeoForge) modLoader = "neoforge";
@@ -753,7 +753,7 @@ export default function ModDetailContent({ modId }: { modId: string }) {
       else if (file.hasForge) modLoader = "forge";
     }
 
-    // 根据项目类型确定资源 kind（影响缓存目录）
+    // Determine resource kind based on project type (affects cache directory)
     // - mod / minecraft mod -> "mod"
     // - resourcepack / texture pack -> "resourcepack"
     // - shader -> "shaderpack"
@@ -775,11 +775,11 @@ export default function ModDetailContent({ modId }: { modId: string }) {
     }
 
     try {
-      // 先占位下载中状态（在 taskId 返回之前显示加载）
+      // First occupy downloading status (show loading before taskId returns)
       setDownloadingUrlToTaskId(prev => {
         const next = new Map(prev);
         if (!next.has(file.url)) {
-          next.set(file.url, -1);  // -1 表示正在等待后端返回 taskId
+          next.set(file.url, -1);  // -1 means waiting for backend to return taskId
         }
         return next;
       });
@@ -793,14 +793,14 @@ export default function ModDetailContent({ modId }: { modId: string }) {
         file.url
       );
 
-      // 更新为真实的 taskId
+      // Update to real taskId
       setDownloadingUrlToTaskId(prev => {
         const next = new Map(prev);
         next.set(file.url, taskId);
         return next;
       });
     } catch (err) {
-      console.error("下载失败:", err);
+      console.error("Download failed:", err);
       setDownloadingUrlToTaskId(prev => {
         const next = new Map(prev);
         next.delete(file.url);
@@ -813,7 +813,7 @@ export default function ModDetailContent({ modId }: { modId: string }) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
         <Loader2 className="size-8 animate-spin" />
-        <p className="text-sm">正在加载项目信息...</p>
+        <p className="text-sm">Loading project information...</p>
       </div>
     );
   }
@@ -827,7 +827,7 @@ export default function ModDetailContent({ modId }: { modId: string }) {
     <div className="flex h-full flex-col p-4">
       <Button variant="ghost" size="sm" className="w-fit mb-4" onClick={() => router.push("/download")}>
         <ArrowLeft className="mr-2 size-4" />
-        返回搜索
+        Back to Search
       </Button>
 
       <div className="flex-1 min-h-0 flex flex-col gap-4 overflow-y-auto">
@@ -876,27 +876,27 @@ export default function ModDetailContent({ modId }: { modId: string }) {
 
                 {dataSource && (
                   <Badge variant="outline" className="text-xs">
-                    文件来自 {dataSource}
+                    Files from {dataSource}
                   </Badge>
                 )}
 
                 <Badge variant="outline" className="text-xs">
-                  {totalFiles} MC 版本 · {totalVersions} 文件
+                  {totalFiles} MC versions · {totalVersions} files
                 </Badge>
               </div>
 
               <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground mt-3">
                 {liveInfo?.downloads != null && (
-                  <span>⬇ 总下载 {formatDownloads(liveInfo.downloads)}</span>
+                  <span>⬇ Total downloads {formatDownloads(liveInfo.downloads)}</span>
                 )}
                 {liveInfo?.author && (
-                  <span>作者: <span className="text-foreground font-medium">{liveInfo.author}</span></span>
+                  <span>Author: <span className="text-foreground font-medium">{liveInfo.author}</span></span>
                 )}
                 {liveInfo?.updated && (
-                  <span>更新于 {formatDateShort(liveInfo.updated)}</span>
+                  <span>Updated {formatDateShort(liveInfo.updated)}</span>
                 )}
                 {liveInfo?.projectType && (
-                  <span>类型: {translateProjectType(liveInfo.projectType)}</span>
+                  <span>Type: {translateProjectType(liveInfo.projectType)}</span>
                 )}
               </div>
 
@@ -910,23 +910,23 @@ export default function ModDetailContent({ modId }: { modId: string }) {
                 {liveInfo?.modrinthUrl && (
                   <Button variant="outline" size="sm" onClick={() => openExternalUrl(liveInfo.modrinthUrl!)}>
                     <ExternalLink className="mr-1.5 size-3.5" />
-                    在 Modrinth 上查看
+                    View on Modrinth
                   </Button>
                 )}
                 {liveInfo?.curseforgeUrl && (
                   <Button variant="outline" size="sm" onClick={() => openExternalUrl(liveInfo.curseforgeUrl!)}>
                     <ExternalLink className="mr-1.5 size-3.5" />
-                    在 CurseForge 上查看
+                    View on CurseForge
                   </Button>
                 )}
                 {liveInfo?.mcmodUrl && (
                   <Button variant="outline" size="sm" onClick={() => openExternalUrl(liveInfo.mcmodUrl!)}>
                     <ExternalLink className="mr-1.5 size-3.5" />
-                    在 MC百科 上查看
+                    View on MCMod
                   </Button>
                 )}
                 {liveError && (
-                  <span className="text-[11px] text-destructive">在线信息加载失败: {liveError}</span>
+                  <span className="text-[11px] text-destructive">Failed to load online information: {liveError}</span>
                 )}
               </div>
             </div>
@@ -938,7 +938,7 @@ export default function ModDetailContent({ modId }: { modId: string }) {
             {loadingFiles && (
               <div className="flex items-center justify-center gap-2 text-muted-foreground py-4">
                 <Loader2 className="size-4 animate-spin" />
-                <span className="text-sm">正在获取文件列表...</span>
+                <span className="text-sm">Loading file list...</span>
               </div>
             )}
 
@@ -957,9 +957,9 @@ export default function ModDetailContent({ modId }: { modId: string }) {
                       <div className="flex flex-col">
                         <span className="font-semibold text-base">MC {mcVersion}</span>
                         <span className="text-xs text-muted-foreground mt-0.5">
-                          {files.length} 个文件
-                          {releaseCount > 0 && (<span className="ml-2">· {releaseCount} 个正式版</span>)}
-                          {nonReleaseCount > 0 && (<span className="ml-2">· {nonReleaseCount} 个测试版</span>)}
+                          {files.length} files
+                          {releaseCount > 0 && (<span className="ml-2">· {releaseCount} release(s)</span>)}
+                          {nonReleaseCount > 0 && (<span className="ml-2">· {nonReleaseCount} beta(s)</span>)}
                         </span>
                       </div>
                     </div>
@@ -986,22 +986,22 @@ export default function ModDetailContent({ modId }: { modId: string }) {
                             <div key={index} className="flex items-center gap-3 px-4 py-3 hover:bg-accent/20 transition-colors">
                               <div className="flex items-center gap-2 shrink-0 w-16 justify-center">
                                 {file.isRelease ? (
-                                  <Shield className="size-7 text-emerald-500" aria-label="正式版" />
+                                  <Shield className="size-7 text-emerald-500" aria-label="Release" />
                                 ) : (
-                                  <FlaskConical className="size-7 text-amber-500" aria-label="测试版" />
+                                  <FlaskConical className="size-7 text-amber-500" aria-label="Beta" />
                                 )}
                               </div>
 
                               <div className="flex-1 min-w-0">
                                 <div className="text-sm font-semibold truncate">
                                   {file.versionLabel}
-                                  {file.loaderLabel === "通用" && (
-                                    <span className="text-muted-foreground/70 ml-1" aria-label="加载器未识别">:</span>
+                                  {file.loaderLabel === "Universal" && (
+                                    <span className="text-muted-foreground/70 ml-1" aria-label="Loader not recognized">:</span>
                                   )}
                                 </div>
                                 <div className="flex flex-wrap items-center gap-1.5 mt-1">
                                   <Badge variant={file.isRelease ? "secondary" : "outline"} className="text-[10px] h-4">{file.loaderLabel}</Badge>
-                                  <Badge variant={file.isRelease ? "default" : "outline"} className={"text-[10px] h-4 " + (file.isRelease ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30" : "text-amber-600 dark:text-amber-400 border-amber-500/30")}>{file.isRelease ? "正式版" : "测试版"}</Badge>
+                                  <Badge variant={file.isRelease ? "default" : "outline"} className={"text-[10px] h-4 " + (file.isRelease ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30" : "text-amber-600 dark:text-amber-400 border-amber-500/30")}>{file.isRelease ? "Release" : "Beta"}</Badge>
                                   {file.serverLabel && (
                                     <Badge variant="outline" className="text-[10px] h-4 text-sky-600 dark:text-sky-400 border-sky-500/30">{file.serverLabel}</Badge>
                                   )}
@@ -1012,10 +1012,10 @@ export default function ModDetailContent({ modId }: { modId: string }) {
                               </div>
 
                               <Button size="sm" variant={status === "success" ? "secondary" : status === "error" ? "destructive" : "default"} disabled={status === "downloading" || status === "success"} onClick={() => handleDownload(file, mcVersion)} className="shrink-0">
-                                {status === "downloading" && (<><Loader2 className="mr-1.5 size-3.5 animate-spin" /> 下载中</>)}
-                                {status === "success" && (<><CheckCircle2 className="mr-1.5 size-3.5" /> 已下载</>)}
-                                {status === "error" && (<><XCircle className="mr-1.5 size-3.5" /> 重试</>)}
-                                {status === "idle" && (<><Download className="mr-1.5 size-3.5" /> 下载</>)}
+                                {status === "downloading" && (<><Loader2 className="mr-1.5 size-3.5 animate-spin" /> Downloading</>)}
+                                {status === "success" && (<><CheckCircle2 className="mr-1.5 size-3.5" /> Downloaded</>)}
+                                {status === "error" && (<><XCircle className="mr-1.5 size-3.5" /> Retry</>)}
+                                {status === "idle" && (<><Download className="mr-1.5 size-3.5" /> Download</>)}
                               </Button>
                             </div>
                           );
@@ -1034,23 +1034,23 @@ export default function ModDetailContent({ modId }: { modId: string }) {
                 <div className="size-10 rounded-full bg-destructive/10 flex items-center justify-center">
                   <span className="text-destructive text-lg">!</span>
                 </div>
-                <p className="text-sm font-medium text-foreground">无法连接到数据源</p>
+                <p className="text-sm font-medium text-foreground">Cannot connect to data source</p>
                 <p className="text-xs text-muted-foreground text-center max-w-sm leading-relaxed">
-                  获取文件列表时发生网络错误。海外数据源访问时可能出现连接中断、超时等问题。
+                  Network error occurred while fetching file list. Connection interruptions or timeouts may occur when accessing overseas data sources.
                 </p>
                 <div className="mt-2 max-w-md w-full p-3 rounded-lg bg-muted/50 text-xs font-mono break-all text-muted-foreground">{filesError}</div>
                 <div className="flex flex-wrap gap-2 mt-2">
-                  <Button variant="default" size="sm" onClick={loadModData}>重试</Button>
+                  <Button variant="default" size="sm" onClick={loadModData}>Retry</Button>
                   {liveInfo?.modrinthUrl && (
                     <Button variant="outline" size="sm" onClick={() => openExternalUrl(liveInfo.modrinthUrl!)}>
                       <ExternalLink className="mr-1.5 size-3.5" />
-                      在 Modrinth 上查看
+                      View on Modrinth
                     </Button>
                   )}
                   {liveInfo?.curseforgeUrl && (
                     <Button variant="outline" size="sm" onClick={() => openExternalUrl(liveInfo.curseforgeUrl!)}>
                       <ExternalLink className="mr-1.5 size-3.5" />
-                      在 CurseForge 上查看
+                      View on CurseForge
                     </Button>
                   )}
                 </div>
@@ -1058,9 +1058,9 @@ export default function ModDetailContent({ modId }: { modId: string }) {
             ) : (
               <>
                 <Package className="size-10 opacity-40" />
-                <p className="text-sm">暂无可用的模组文件</p>
-                <p className="text-xs text-muted-foreground">请检查模组slug是否正确，或稍后重试</p>
-                <Button variant="outline" size="sm" className="mt-2" onClick={loadModData}>重新加载</Button>
+                <p className="text-sm">No mod files available</p>
+                <p className="text-xs text-muted-foreground">Please check if the mod slug is correct, or try again later</p>
+                <Button variant="outline" size="sm" className="mt-2" onClick={loadModData}>Reload</Button>
               </>
             )}
           </div>

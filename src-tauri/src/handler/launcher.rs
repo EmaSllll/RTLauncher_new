@@ -224,20 +224,20 @@ struct LogFile {
     id: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct Arguments {
     jvm: Option<Vec<JvmArgument>>,
     game: Option<Vec<serde_json::Value>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(untagged)]
 enum JvmArgument {
     String(String),
     Object { rules: Vec<Rule>, value: serde_json::Value },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct Rule {
     #[serde(rename = "action")]
     action: String,
@@ -245,7 +245,7 @@ struct Rule {
     os: Option<OsRule>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct OsRule {
     name: Option<String>,
     arch: Option<String>,
@@ -638,92 +638,134 @@ fn build_jvm_arguments_inner(
                             }
                             println!("load_game_params已添加: {:?}", load_game_params);
                         } else {
-                            println!("未找到minecraftArguments字段，检查arguments字段...");
+                            // ===== 参照 HMCL：统一处理 arguments =====
                             if let Some(args_obj) = root.get("arguments") {
-                                println!("找到arguments对象");
-                                println!("arguments对象的所有键: {:?}", args_obj.as_object().map(|o| o.keys().collect::<Vec<_>>()));
-                                let mut game_vals = Vec::new();
-                                let mut jvm_vals = Vec::new();
+                                let library_dir_str = normalize(&minecraft_path_buf.join("libraries"));
+                                let classpath_sep = if cfg!(windows) { ";" } else { ":" };
 
+                                // 处理 arguments.game
                                 if let Some(game_arr) = args_obj.get("game").and_then(|v| v.as_array()) {
-                                    println!("处理arguments.game数组，长度: {}", game_arr.len());
                                     for el in game_arr {
                                         if let Some(s) = el.as_str() {
-                                            let trimmed = s.trim();
-                                            game_vals.push(trimmed.to_string());
-                                            load_game_params.push(trimmed.to_string());
+                                            load_game_params.push(s.trim().to_string());
+                                        } else if let Some(obj) = el.as_object() {
+                                            // 处理带 rules 的对象
+                                            let rules_match = match obj.get("rules").and_then(|r| r.as_array()) {
+                                                Some(rules) => {
+                                                    let mut allowed = false;
+                                                    for rule in rules {
+                                                        if let Some(action) = rule.get("action").and_then(|a| a.as_str()) {
+                                                            let os_match = match rule.get("os").and_then(|o| o.as_object()) {
+                                                                Some(os) => match os.get("name").and_then(|n| n.as_str()) {
+                                                                    Some("windows") => cfg!(windows),
+                                                                    Some("osx") => cfg!(target_os = "macos"),
+                                                                    Some("linux") => cfg!(target_os = "linux"),
+                                                                    _ => true,
+                                                                },
+                                                                None => true,
+                                                            };
+                                                            if action == "allow" && os_match {
+                                                                allowed = true;
+                                                            } else if action == "disallow" && os_match {
+                                                                allowed = false;
+                                                            }
+                                                        }
+                                                    }
+                                                    allowed
+                                                },
+                                                None => true,
+                                            };
+                                            if rules_match {
+                                                if let Some(val) = obj.get("value") {
+                                                    if let Some(s) = val.as_str() {
+                                                        load_game_params.push(s.trim().to_string());
+                                                    } else if let Some(arr) = val.as_array() {
+                                                        for item in arr {
+                                                            if let Some(s) = item.as_str() {
+                                                                load_game_params.push(s.trim().to_string());
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
-                                    println!("load_game_params已添加: {:?}", load_game_params);
-                                } else {
-                                    println!("未找到arguments.game数组");
                                 }
 
+                                // 处理 arguments.jvm（关键：包含 -p、-cp、--add-opens 等）
                                 if let Some(jvm_arr) = args_obj.get("jvm").and_then(|v| v.as_array()) {
-                                    println!("处理arguments.jvm数组，长度: {}", jvm_arr.len());
-                                    println!("arguments.jvm数组的前5个元素: {:?}", jvm_arr.iter().take(5).collect::<Vec<_>>());
-                                    let mut i = 0;
-                                    while i < jvm_arr.len() {
-                                    println!("处理jvm数组第{}个元素: {:?}", i, jvm_arr[i]);
-                                    if let Some(s) = jvm_arr[i].as_str() {
-                                        let trimmed = s.trim();
-                                        println!("  提取到字符串: {}", trimmed);
-
-                                        // 检查是否是"-p"参数
-                                        if trimmed == "-p" && i + 1 < jvm_arr.len() {
-                                            // 获取"-p"参数后的值
-                                            if let Some(p_value) = jvm_arr[i + 1].as_str() {
-                                                println!("  检测到-p参数，值为: {}", p_value);
-                                                let library_dir = minecraft_path_buf.join("libraries");
-                                                let library_dir_str = normalize(&library_dir);
-
-                                                // 替换占位符
-                                                let replaced = p_value
-                                                    .replace("${classpath_separator}", ";")
-                                                    .replace("${library_directory}", &library_dir_str)
-                                                    .replace("neoforge-,${version_name}.jar", &loadName);
-
-                                                jvm_vals.push(trimmed.to_string());
-                                                jvm_vals.push(replaced.clone());
-                                                load_jvm_params.push(trimmed.to_string());
-                                                load_jvm_params.push(replaced);
-
-                                                // 跳过下一个元素，因为我们已经处理了
-                                                i += 2;
-                                                continue;
-                                            }
+                                    for el in jvm_arr {
+                                        fn apply_placeholder(
+                                            s: &str,
+                                            classpath_sep: &str,
+                                            library_dir_str: &str,
+                                            version_name: &str,
+                                        ) -> String {
+                                            let mut replaced = s.to_string();
+                                            replaced = replaced.replace("${classpath_separator}", classpath_sep);
+                                            replaced = replaced.replace("${library_directory}", library_dir_str);
+                                            replaced = replaced.replace("${version_name}", version_name);
+                                            replaced.trim().to_string()
                                         }
 
-                                        // 检查是否是带值的参数（如-Dkey=value或--key=value）
-                                        let param_with_value = if trimmed.contains('=') {
-                                            // 对于带等号的参数，替换${library_directory}占位符
-                                            let library_dir = minecraft_path_buf.join("libraries");
-                                            let library_dir_str = normalize(&library_dir);
-                                            let mut replaced = trimmed.replace("${library_directory}", &library_dir_str);
-
-                                            // 特判：当检测到特定的-DignoreList参数时，替换其中的"neoforge-,${version_name}"为loadName
-                                            if trimmed.starts_with("-DignoreList=securejarhandler,asm,asm-commons,asm-tree,asm-util,asm-analysis,bootstraplauncher,JarJarFileSystems,events-1.0.2.jar,core-1.0.2.jar,language-java,language-lowcode,language-minecraft,client-extra,neoforge-,${version_name}.jar") {
-                                                replaced = replaced.replace("neoforge-,${version_name}", &loadName);
-                                            } else {
-                                                // 其他情况，替换neoforge-,${version_name}.jar为loadName
-                                                replaced = replaced.replace("neoforge-,${version_name}.jar", &loadName);
+                                        let collect_str = |s: &str,
+                                                           out: &mut Vec<String>,
+                                                           classpath_sep: &str,
+                                                           library_dir_str: &str,
+                                                           version_name: &str| {
+                                            let replaced = apply_placeholder(s, classpath_sep, library_dir_str, version_name);
+                                            if !replaced.is_empty() {
+                                                out.push(replaced);
                                             }
-                                            replaced
-                                        } else {
-                                            trimmed.to_string()
                                         };
 
-                                        println!("  最终参数值: {}", param_with_value);
-                                        jvm_vals.push(param_with_value.clone());
-                                        load_jvm_params.push(param_with_value);
-                                    }
-                                    i += 1;
-                                }
-                            }
+                                        fn check_rules(obj: &serde_json::Map<String, serde_json::Value>) -> bool {
+                                            match obj.get("rules").and_then(|r| r.as_array()) {
+                                                Some(rules) => {
+                                                    let mut allowed = false;
+                                                    for rule in rules {
+                                                        if let Some(action) = rule.get("action").and_then(|a| a.as_str()) {
+                                                            let os_match = match rule.get("os").and_then(|o| o.as_object()) {
+                                                                Some(os) => match os.get("name").and_then(|n| n.as_str()) {
+                                                                    Some("windows") => cfg!(windows),
+                                                                    Some("osx") => cfg!(target_os = "macos"),
+                                                                    Some("linux") => cfg!(target_os = "linux"),
+                                                                    _ => true,
+                                                                },
+                                                                None => true,
+                                                            };
+                                                            if action == "allow" && os_match {
+                                                                allowed = true;
+                                                            } else if action == "disallow" && os_match {
+                                                                allowed = false;
+                                                            }
+                                                        }
+                                                    }
+                                                    allowed
+                                                },
+                                                None => true,
+                                            }
+                                        }
 
-                            println!("arguments.game: {:?}", game_vals);
-                            println!("arguments.jvm: {:?}", jvm_vals);
-                            println!("load_jvm_params最终值: {:?}", load_jvm_params);
+                                        if let Some(s) = el.as_str() {
+                                            collect_str(s, &mut load_jvm_params, classpath_sep, &library_dir_str, &version_name);
+                                        } else if let Some(obj) = el.as_object() {
+                                            if check_rules(obj) {
+                                                if let Some(val) = obj.get("value") {
+                                                    if let Some(s) = val.as_str() {
+                                                        collect_str(s, &mut load_jvm_params, classpath_sep, &library_dir_str, &version_name);
+                                                    } else if let Some(arr) = val.as_array() {
+                                                        for item in arr {
+                                                            if let Some(s) = item.as_str() {
+                                                                collect_str(s, &mut load_jvm_params, classpath_sep, &library_dir_str, &version_name);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             } else {
                                 println!("未找到arguments字段");
                             }
@@ -1028,6 +1070,47 @@ fn build_jvm_arguments_inner(
                 }
             }
         }
+
+        // ===== 关键修复：合并 parent 的 arguments（参照 HMCL）=====
+    // Forge/NeoForge 的 -p (--module-path)、-cp、--add-opens 等关键参数
+    // 都定义在 parent 的 arguments.jvm 中。必须以 parent 的参数为基础进行合并。
+    match (&version_json.arguments, &parent_json.arguments) {
+        (None, Some(_)) => {
+            // 当前版本没有 arguments，直接使用 parent 的
+            version_json.arguments = parent_json.arguments;
+        }
+        (Some(_), Some(_)) => {
+            // ===== 修复：两边都有 arguments 时，以 parent 的 jvm 参数为主 =====
+            // 因为 Forge/NeoForge 的 -p、-cp 等关键模块路径参数定义在 parent (Forge) JSON 中，
+            // 当前版本（子版本/整合包版本）的 jvm 参数通常为空或不重要。
+            // 如果 parent 有 jvm 参数，就用 parent 的；只有 parent 没有时才用当前的。
+            let parent_has_jvm = parent_json.arguments.as_ref().and_then(|a| a.jvm.as_ref()).is_some();
+            if parent_has_jvm {
+                if let Some(cur_args) = version_json.arguments.as_mut() {
+                    cur_args.jvm = parent_json.arguments.as_ref().and_then(|a| a.jvm.clone());
+                }
+            }
+            // game 参数同理
+            let parent_has_game = parent_json.arguments.as_ref().and_then(|a| a.game.as_ref()).is_some();
+            if parent_has_game {
+                if let Some(cur_args) = version_json.arguments.as_mut() {
+                    cur_args.game = parent_json.arguments.as_ref().and_then(|a| a.game.clone());
+                }
+            }
+        }
+        _ => {}
+    }
+    // 老版本 format 兼容：如果 parent 使用 minecraft_arguments 而不是 arguments.game
+    if version_json.minecraft_arguments.is_none() && parent_json.minecraft_arguments.is_some() {
+        version_json.minecraft_arguments = parent_json.minecraft_arguments;
+    }
+
+        // 如果 parent 的 mainClass 是 bootstraplauncher（Forge 1.17+），使用 parent 的 mainClass
+        // 因为当前版本的 mainClass 可能还是 net.minecraft.client.main.Main
+        if version_json.main_class.to_lowercase().contains("minecraft")
+            && !parent_json.main_class.to_lowercase().contains("minecraft") {
+            version_json.main_class = parent_json.main_class;
+        }
     }
 
     if loadType != "0" && load_main_class.is_some() {
@@ -1322,20 +1405,237 @@ fn build_jvm_arguments_inner(
         class_path_entries.push(vanilla_jar);
     }
 
+    // ===== 预构建 class_path（用于 ${classpath} 占位符替换）=====
+    // 必须在 jvm_args_from_version 之前构建，因为 jvm_args_from_version 的 replace_placeholders
+    // 会使用这个变量。
+    let cp_sep_for_replace = if is_windows { ";" } else { ":" };
+    let class_path: String = class_path_entries.join(cp_sep_for_replace);
+
     let mut args: Vec<String> = vec![
         "-Xmn768m".to_string(),
         format!("-Xmx{}m", max_memory),
     ];
 
-    let extra_before_cp: Vec<String> = if !load_jvm_params.is_empty() {
-        println!("load_jvm_params不为空，创建extra_before_cp");
-        load_jvm_params.iter().map(|p| clean_param_spaces(p)).collect()
+    // ===== 参照 HMCL：修正 load_jvm_params 中的 neoforge/forge jar 路径 =====
+    // Forge JSON 中的 -p 参数可能包含 "neoforge-${version_name}.jar" 这样的引用，
+    // 这些需要被替换为完整的 jar 文件路径，否则 module-path 不正确
+    let mut neoforge_jar = String::new();
+    let mut forge_jar = String::new();
+    if !loadName.is_empty() && loadType != "0" {
+        let library_dir = minecraft_path_buf.join("libraries");
+        // 尝试从 libraries 目录找到 neoforge/forge 的 jar
+        // 典型路径: libraries/net/neoforged/neoforge/{version}/neoforge-{version}.jar
+        // 典型路径: libraries/net/minecraftforge/forge/{version}/forge-{version}.jar
+        for lib in &version_json.libraries {
+            if lib.name.contains("neoforge") || lib.name.contains(":forge:") {
+                let parts: Vec<&str> = lib.name.split(':').collect();
+                if parts.len() >= 3 {
+                    let group = parts[0].replace('.', "/");
+                    let artifact = parts[1];
+                    let version = parts[2];
+                    let jar_name = format!("{}-{}.jar", artifact, version);
+                    let jar_path = library_dir.join(&group).join(artifact).join(version).join(&jar_name);
+                    let jar_path_str = format_path(jar_path);
+                    if lib.name.contains("neoforge") && neoforge_jar.is_empty() {
+                        neoforge_jar = jar_path_str.clone();
+                    }
+                    if lib.name.contains(":forge:") && forge_jar.is_empty() {
+                        forge_jar = jar_path_str.clone();
+                    }
+                }
+            }
+        }
+        // 如果 libraries 里找不到，尝试在 versions/{loadName} 目录查找
+        if neoforge_jar.is_empty() && forge_jar.is_empty() {
+            let load_dir = minecraft_path_buf.join("versions").join(&loadName);
+            if let Ok(entries) = std::fs::read_dir(&load_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().and_then(|e| e.to_str()) == Some("jar") {
+                        let fname = path.file_name().and_then(|f| f.to_str()).unwrap_or("");
+                        if fname.contains("neoforge") {
+                            neoforge_jar = format_path(path);
+                        } else if fname.contains("forge") && forge_jar.is_empty() {
+                            forge_jar = format_path(path);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 对 load_jvm_params 中的每个参数进行 neoforge/forge jar 路径修正
+    let mut load_jvm_params_fixed: Vec<String> = Vec::new();
+    for p in &load_jvm_params {
+        let mut fixed = p.clone();
+        // 替换 neoforge-${version_name}.jar 样式的引用
+        if !neoforge_jar.is_empty() {
+            // 例如: ".../neoforge-${version_name}.jar" 或 "neoforge-${version_name}"
+            fixed = fixed.replace("neoforge-${version_name}.jar", &neoforge_jar);
+            fixed = fixed.replace("neoforge-${version_name}", &neoforge_jar);
+            // 其他可能的形式
+            if fixed.contains("neoforge") && fixed.contains(".jar") && !std::path::Path::new(&fixed).exists() {
+                // 如果参数看起来是 jar 路径但不存在，尝试替换为 neoforge jar
+                if fixed.contains(&version_name) {
+                    fixed = neoforge_jar.clone();
+                }
+            }
+        }
+        if !forge_jar.is_empty() {
+            fixed = fixed.replace("forge-${version_name}.jar", &forge_jar);
+            fixed = fixed.replace("forge-${version_name}", &forge_jar);
+        }
+        load_jvm_params_fixed.push(fixed);
+    }
+
+    let extra_before_cp: Vec<String> = if !load_jvm_params_fixed.is_empty() {
+        load_jvm_params_fixed.iter().map(|p| clean_param_spaces(p)).collect()
     } else {
-        println!("load_jvm_params为空，extra_before_cp为空");
         Vec::new()
     };
 
     let extra_after_cp: Vec<String> = load_game_params;
+
+    // ===== 关键修复：处理 version_json.arguments.jvm 中的参数（参照 HMCL）=====
+    // Forge/NeoForge 自己的配置文件中会指定 -p (--module-path)、-cp、--add-opens 等参数
+    // -p 参数包含模块化 JAR (bootstraplauncher, securejarhandler 等)
+    // 这些参数是 Forge 精心设计的，必须完整保留并正确加入到启动命令中
+    let mut jvm_args_from_version: Vec<String> = Vec::new();
+    if let Some(arguments) = &version_json.arguments {
+        if let Some(jvm_args) = &arguments.jvm {
+            let library_dir = format_path(minecraft_path_buf.join("libraries"));
+            let classpath_sep = if is_windows { ";" } else { ":" };
+
+            // 构建 neoforge/forge loader jar 的正确路径
+            // 典型的 neoforge jar 路径: libraries/net/neoforged/neoforge/{version}/neoforge-{version}.jar
+            // 典型的 forge jar 路径: libraries/net/minecraftforge/forge/{version}/forge-{version}.jar
+            let mut neoforge_jar_path = String::new();
+            let mut forge_jar_path = String::new();
+            // 在 libraries 列表中查找 neoforge/forge 的 artifact 路径（不论 loadType/loadName）
+            for lib in &version_json.libraries {
+                if lib.name.contains("neoforge") || lib.name.contains(":forge:") {
+                    if let Some(artifact) = &lib.downloads.artifact {
+                        let jar_path = format_path(minecraft_path_buf.join("libraries").join(&artifact.path));
+                        if lib.name.contains("neoforge") && neoforge_jar_path.is_empty() {
+                            neoforge_jar_path = jar_path.clone();
+                        }
+                        if lib.name.contains(":forge:") && forge_jar_path.is_empty() {
+                            forge_jar_path = jar_path.clone();
+                        }
+                    } else {
+                        // 没有 downloads.artifact，根据 name 构建路径
+                        let parts: Vec<&str> = lib.name.split(':').collect();
+                        if parts.len() >= 3 {
+                            let group_path = parts[0].replace('.', "/");
+                            let artifact_name = parts[1];
+                            let artifact_version = parts[2];
+                            let jar_name = format!("{}-{}.jar", artifact_name, artifact_version);
+                            let rel_path = format!("{}/{}/{}/{}", group_path, artifact_name, artifact_version, jar_name);
+                            let jar_path = format_path(minecraft_path_buf.join("libraries").join(&rel_path));
+                            if lib.name.contains("neoforge") && neoforge_jar_path.is_empty() {
+                                neoforge_jar_path = jar_path.clone();
+                            }
+                            if lib.name.contains(":forge:") && forge_jar_path.is_empty() {
+                                forge_jar_path = jar_path.clone();
+                            }
+                        }
+                    }
+                }
+            }
+            // 如果 libraries 里找不到，还可以在 versions/{loadName}/libraries 里找（NeoForge 安装器布局）
+            if (neoforge_jar_path.is_empty() && forge_jar_path.is_empty()) && !loadName.is_empty() {
+                let load_lib_dir = minecraft_path_buf.join("versions").join(&loadName).join("libraries");
+                if let Ok(entries) = std::fs::read_dir(&load_lib_dir) {
+                    for entry in entries.flatten() {
+                        if let Some(fname) = entry.path().file_name().and_then(|f| f.to_str()) {
+                            if fname.contains("neoforge") && fname.ends_with(".jar") && neoforge_jar_path.is_empty() {
+                                neoforge_jar_path = format_path(entry.path());
+                            } else if fname.contains("forge") && fname.ends_with(".jar") && forge_jar_path.is_empty() {
+                                forge_jar_path = format_path(entry.path());
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 占位符替换函数（参照 HMCL）
+            let replace_placeholders = |s: &str| -> String {
+                let mut result = s.to_string();
+                result = result.replace("${classpath_separator}", classpath_sep);
+                result = result.replace("${library_directory}", &library_dir);
+                result = result.replace("${version_name}", &version_name);
+
+                // ===== 关键修复：替换 ${classpath} 占位符 =====
+                // Forge/NeoForge 在 -cp 参数的 value 里用 ${classpath} 来引用整个 classpath
+                // 必须替换成我们构建的 class_path（即所有 libraries 的路径拼接）
+                result = result.replace("${classpath}", &class_path);
+
+                // 处理 neoforge/forge jar 的特殊替换
+                // Forge JSON 中可能包含类似 "neoforge-${version_name}.jar" 的引用
+                // 需要替换为完整路径
+                if !neoforge_jar_path.is_empty() {
+                    // 查找类似 ".../neoforge-${version_name}.jar" 的模式并替换
+                    if result.contains("neoforge-${version_name}.jar") {
+                        result = result.replace("neoforge-${version_name}.jar", &neoforge_jar_path);
+                    } else if result.contains("neoforge-${version_name}") {
+                        result = result.replace("neoforge-${version_name}", &neoforge_jar_path);
+                    }
+                    // 也可能是 neoforge-X.Y.Z.jar 这种相对路径形式
+                    if result.contains("neoforge") && result.contains(".jar") && !result.contains(&library_dir) && !result.contains('/') && !result.contains('\\') {
+                        // 看起来像个简单文件名，把它替换为完整路径
+                        result = neoforge_jar_path.clone();
+                    }
+                }
+                if !forge_jar_path.is_empty() {
+                    if result.contains("forge-${version_name}.jar") {
+                        result = result.replace("forge-${version_name}.jar", &forge_jar_path);
+                    } else if result.contains("forge-${version_name}") {
+                        result = result.replace("forge-${version_name}", &forge_jar_path);
+                    }
+                    if result.contains("forge") && result.contains(".jar") && !result.contains(&library_dir) && !result.contains('/') && !result.contains('\\') {
+                        // 简单文件名 -> 完整路径
+                        result = forge_jar_path.clone();
+                    }
+                }
+
+                result
+            };
+
+            for arg in jvm_args {
+                match arg {
+                    JvmArgument::String(s) => {
+                        let replaced = replace_placeholders(s);
+                        if !replaced.trim().is_empty() {
+                            jvm_args_from_version.push(replaced.trim().to_string());
+                        }
+                    }
+                    JvmArgument::Object { rules, value } => {
+                        if check_rules(rules, &os_info) {
+                            match value {
+                                serde_json::Value::String(s) => {
+                                    let replaced = replace_placeholders(s);
+                                    if !replaced.trim().is_empty() {
+                                        jvm_args_from_version.push(replaced.trim().to_string());
+                                    }
+                                }
+                                serde_json::Value::Array(arr) => {
+                                    for item in arr {
+                                        if let Some(s) = item.as_str() {
+                                            let replaced = replace_placeholders(s);
+                                            if !replaced.trim().is_empty() {
+                                                jvm_args_from_version.push(replaced.trim().to_string());
+                                            }
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     if is_macos {
         args.push("-XstartOnFirstThread".to_string());
@@ -1356,8 +1656,31 @@ fn build_jvm_arguments_inner(
         "-Djdk.lang.Process.allowAmbiguousCommands=true".to_string(),
         "-Dfml.ignoreInvalidMinecraftCertificates=True".to_string(),
         "-Dfml.ignorePatchDiscrepancies=True".to_string(),
+        // 标准的Java模块访问权限（适用于Java 9+）
+        // 只针对 ALL-UNNAMED 开放权限，因为 Forge 会自己创建 ModuleLayer
+        // 我们不需要让 Java 原生模块系统介入，否则会导致模块冲突
+        "--add-opens=java.base/java.lang=ALL-UNNAMED".to_string(),
+        "--add-opens=java.base/java.lang.invoke=ALL-UNNAMED".to_string(),
+        "--add-opens=java.base/java.lang.reflect=ALL-UNNAMED".to_string(),
+        "--add-opens=java.base/java.net=ALL-UNNAMED".to_string(),
+        "--add-opens=java.base/java.nio=ALL-UNNAMED".to_string(),
+        "--add-opens=java.base/java.util=ALL-UNNAMED".to_string(),
+        "--add-opens=java.base/java.util.concurrent=ALL-UNNAMED".to_string(),
+        "--add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED".to_string(),
+        "--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED".to_string(),
+        "--add-opens=java.base/sun.nio.ch=ALL-UNNAMED".to_string(),
+        "--add-opens=java.base/sun.security.util=ALL-UNNAMED".to_string(),
+        "--add-opens=java.base/sun.security.x509=ALL-UNNAMED".to_string(),
+        "--add-opens=java.base/sun.net.www.protocol.jar=ALL-UNNAMED".to_string(),
+        "--add-exports=java.base/sun.nio.ch=ALL-UNNAMED".to_string(),
+        "--add-exports=java.base/jdk.internal.misc=ALL-UNNAMED".to_string(),
+        "--add-exports=java.base/sun.security.util=ALL-UNNAMED".to_string(),
+        "--add-exports=java.desktop/sun.awt=ALL-UNNAMED".to_string(),
+        "--add-exports=java.desktop/sun.java2d=ALL-UNNAMED".to_string(),
+        // 不添加针对具名模块的 --add-opens 和 --add-reads
+        // 因为这些模块在 Java 启动时还不存在，Forge 会自己创建 ModuleLayer
     ]);
-
+    
     if let Some(logging) = &version_json.logging {
         if let Some(client) = &logging.client {
             // 先在当前版本目录找日志文件，找不到则尝试父版本目录
@@ -1440,16 +1763,107 @@ fn build_jvm_arguments_inner(
         }
     }
 
-    if !authlib_injector_path.is_empty() && !yggdrasil_api.is_empty() {
-        args.push(format!("-javaagent:{}={}", authlib_injector_path, yggdrasil_api));
+    // 处理 authlib-injector + Yggdrasil 第三方验证（LittleSkin 等）
+    let effective_authlib_path = if !yggdrasil_api.is_empty() && authlib_injector_path.is_empty() {
+        // 用户配置了第三方验证服务器，但没有指定 authlib-injector 路径
+        // 自动下载/查找 authlib-injector
+        eprintln!("[Launcher] 检测到 Yggdrasil API: {}, 自动获取 authlib-injector...", yggdrasil_api);
+        let downloaded = crate::auth::yissadrail::get_or_download_authlib_injector();
+        if downloaded.is_empty() {
+            eprintln!("[Launcher] 警告: 无法获取 authlib-injector，游戏内皮肤可能无法显示");
+        } else {
+            eprintln!("[Launcher] 使用 authlib-injector: {}", downloaded);
+        }
+        downloaded
+    } else {
+        authlib_injector_path.to_string()
+    };
+
+    if !effective_authlib_path.is_empty() && !yggdrasil_api.is_empty() {
+        args.push(format!("-javaagent:{}={}", effective_authlib_path, yggdrasil_api));
+        // 对于 LittleSkin 等皮肤站，添加 no-verify 选项避免部分 SSL 问题
+        args.push("-Dauthlibinjector.noVerify=true".to_string());
+        args.push("-Dauthlibinjector.mojangNamespace=default".to_string());
     }
 
     if !prefetched_data.is_empty() {
         args.push(format!("-Dauthlibinjector.yggdrasil.prefetched={}", prefetched_data));
     }
 
-    // 先处理extra_before_cp中的参数，确保所有以-开头的参数在-cp之前
-    // 不进行去重检查，确保load中jvm和game里面的所有参数都被加入总启动参数中
+    // ===== 关键修复：先加入 version_json.arguments.jvm 中的参数（参照 HMCL）=====
+    // Forge 自己指定的 -p (--module-path) 和 -cp 参数必须被正确加入
+    // 处理 -p 和 -cp 等带空格分隔值的参数
+    // 同时去重：避免 extra_before_cp 和 jvm_args_from_version 的参数重复（尤其 `-p`/`-cp`）
+    {
+        // 先收集已在 extra_before_cp 中的参数键，避免重复
+        let mut existing_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
+        {
+            let mut ei = 0;
+            while ei < extra_before_cp.len() {
+                let p = &extra_before_cp[ei];
+                let has_value = p.starts_with('-')
+                    && ei + 1 < extra_before_cp.len()
+                    && !extra_before_cp[ei + 1].starts_with('-');
+                if p.starts_with('-') {
+                    // 记录 key（如 -p, -cp, --module-path 等）
+                    existing_keys.insert(p.clone());
+                }
+                if has_value {
+                    ei += 2;
+                } else {
+                    ei += 1;
+                }
+            }
+        }
+
+        // 然后添加 jvm_args_from_version 中的参数（跳过已在 extra_before_cp 中的 key）
+        let mut i = 0;
+        while i < jvm_args_from_version.len() {
+            let p = &jvm_args_from_version[i];
+            let has_value = p.starts_with('-')
+                && i + 1 < jvm_args_from_version.len()
+                && !jvm_args_from_version[i + 1].starts_with('-');
+
+            // 去重：如果 key 已存在于 extra_before_cp 中，跳过
+            // 但 -p/--module-path、-cp/--class-path 是关键参数，始终优先使用 jvm_args_from_version 中的
+            let is_module_or_class_path_key =
+                p == "-p" || p == "--module-path" || p == "-cp" || p == "--class-path";
+            if !is_module_or_class_path_key && existing_keys.contains(p) {
+                if has_value {
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+                continue;
+            }
+
+            args.push(p.clone());
+            if has_value {
+                // 对于 -p/--module-path，额外检查其中引用的 JAR 是否存在
+                let value = &jvm_args_from_version[i + 1];
+                if is_module_or_class_path_key {
+                    println!("[HMCL 模式] 使用 Forge 参数: {} 值长度: {}", p, value.len());
+                    // 对于 -p，打印其中的每个路径用于调试
+                    if p == "-p" || p == "--module-path" {
+                        for piece in value.split(|c| c == ';' || c == ':') {
+                            if !piece.trim().is_empty() {
+                                let path_buf = PathBuf::from(piece.trim());
+                                let exists = path_buf.exists();
+                                println!("  module-path 项: {} (存在: {})", piece.trim(), exists);
+                            }
+                        }
+                    }
+                }
+                args.push(value.clone());
+                i += 2;
+            } else {
+                i += 1;
+            }
+        }
+    }
+
+    // 再处理 extra_before_cp 中的参数（跳过 -p/-cp，因为上面已经从 jvm_args_from_version 加了）
+    // 确保所有以 - 开头的参数在 -cp 之前
     println!("处理extra_before_cp，长度: {}", extra_before_cp.len());
     {
         let mut ei = 0;
@@ -1459,23 +1873,69 @@ fn build_jvm_arguments_inner(
                 && ei + 1 < extra_before_cp.len()
                 && !extra_before_cp[ei + 1].starts_with('-');
 
-            // 直接添加参数，不进行去重检查
-            args.push(p.clone());
-            if has_value {
-                args.push(extra_before_cp[ei + 1].clone());
-                ei += 2;
+            // 跳过 -p/--module-path/-cp，已经从 jvm_args_from_version 中添加
+            let is_module_or_class_path_key =
+                p == "-p" || p == "--module-path" || p == "-cp" || p == "--class-path";
+            if !is_module_or_class_path_key {
+                args.push(p.clone());
+                if has_value {
+                    args.push(extra_before_cp[ei + 1].clone());
+                    ei += 2;
+                } else {
+                    ei += 1;
+                }
             } else {
-                ei += 1;
+                if has_value {
+                    ei += 2;
+                } else {
+                    ei += 1;
+                }
             }
         }
     }
 
     // 将 Wrapper JAR 也加入 classpath（不能用 -jar，否则 Java 会忽略 -cp）
 
-    let sep = if is_windows { ";" } else { ":" };
-    let class_path = class_path_entries.join(sep);
-    args.push("-cp".to_string());
-    args.push(class_path);
+    // 注意：class_path 在处理 jvm_args_from_version 之前已经构建好（用于 ${classpath} 替换）
+    // 检查 Forge 是否已经指定了 -cp 参数
+    // 如果 Forge 已经指定了 -cp，我们就不要重复添加自己的 classpath
+    let forge_has_cp = args.iter().any(|a| a == "-cp" || a == "--class-path");
+    let forge_has_module_path = args.iter().any(|a| a == "-p" || a == "--module-path");
+    
+    if uses_module_system {
+        // 对于使用模块系统的 Forge（如 1.17+）
+        // 优先使用 Forge 自己在 arguments.jvm 中指定的 -p 和 -cp 参数
+        // 如果 Forge 没有指定 -cp，则使用我们自己构建的 classpath
+        
+        if !forge_has_cp {
+            // Forge 没有指定 -cp，使用我们自己构建的 classpath
+            args.push("-cp".to_string());
+            args.push(class_path.clone());
+            println!("[HMCL 模式] 检测到 Forge 模块系统，使用自定义 classpath");
+            println!("  库总数量: {}", class_path_entries.len());
+        } else {
+            println!("[HMCL 模式] 检测到 Forge 模块系统，使用 Forge 指定的参数启动");
+            println!("  Forge 已提供 -p: {}, Forge 已提供 -cp: {}", forge_has_module_path, forge_has_cp);
+        }
+
+        // ===== 关键修复：确保 Java 内部 API 对 unnamed module 开放 =====
+        // BootstrapLauncher 在启动时需要用 MethodHandles.lookup() 来访问一些内部字段
+        // 如果这些模块没有对 unnamed module 开放，就会报 InaccessibleObjectException
+        //
+        // 我们已经在上面的固定参数列表添加了大量 --add-opens，这里再确认一下
+        // 关键的 module/package 组合（Forge/NeoForge 实际运行需要的）。
+        //
+        // 如果 Forge 的 arguments.jvm 已经提供了自己的 --add-opens，它们会在
+        // jvm_args_from_version 中被加入。但有些老版本的 Forge JSON 没有完整
+        // 覆盖所有需要的 package，所以我们在上面的「标准 Java 模块访问权限」中
+        // 加了一份兜底。
+    } else {
+        // 对于不使用模块系统的版本，仅使用传统的 classpath 方式
+        if !forge_has_cp {
+            args.push("-cp".to_string());
+            args.push(class_path.clone());
+        }
+    }
 
     if !wrapper_path.is_empty() {
         let wrapper_abs = format_path(PathBuf::from(wrapper_path));
@@ -1661,6 +2121,9 @@ pub fn launch_game(
     window_width: &str,
     window_height: &str
 ) -> Result<String, String> {
+    // launcher_profiles 仅在真正启动游戏时才有价值，后台处理以保持启动响应。
+    crate::handler::system::schedule_launcher_profiles_check();
+
     // 先构建参数
     let arg_string = build_jvm_arguments_inner(
         app.clone(),

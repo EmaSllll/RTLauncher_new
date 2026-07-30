@@ -1,9 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { LoaderVersionList } from "@/components/download/loader-version-list";
 import { ArrowLeft, Loader2, Download } from "lucide-react";
 import { slideInFromRight, fadeIn } from "@/lib/motion";
@@ -16,10 +23,16 @@ interface FabricApiDetailProps {
   onBack: () => void;
 }
 
+const FABRIC_LOADER_DEFAULT = "0.15.11";
+
 export function FabricApiDetail({ mcVersion, onBack }: FabricApiDetailProps) {
   const [apiVersions, setApiVersions] = useState<LoaderVersion[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedApiVersion, setSelectedApiVersion] = useState<LoaderVersion | null>(null);
+  const [showNameDialog, setShowNameDialog] = useState(false);
+  const [pendingApi, setPendingApi] = useState<LoaderVersion | null>(null);
+  const [instanceNameInput, setInstanceNameInput] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
   const { startFabricDownload } = useDownloadManager();
 
   useEffect(() => {
@@ -47,17 +60,37 @@ export function FabricApiDetail({ mcVersion, onBack }: FabricApiDetailProps) {
     fetchApiVersions();
   }, [mcVersion]);
 
-  const handleInstall = async (apiVersion: LoaderVersion) => {
+  const defaultName = (apiVer: string) => `${mcVersion}-Fabric-${FABRIC_LOADER_DEFAULT}-API-${apiVer}`;
+
+  const confirmDownload = async () => {
+    if (!pendingApi) return;
+    const name = instanceNameInput.trim();
+    const instanceName = name.length > 0 ? name : defaultName(pendingApi.version);
+
+    setShowNameDialog(false);
+    const api = pendingApi;
+    setPendingApi(null);
+
     try {
-      // 使用Fabric Loader的最新版本下载Fabric API
-      const taskId = await startFabricDownload(mcVersion, "0.15.11", apiVersion.version);
+      const taskId = await startFabricDownload(mcVersion, FABRIC_LOADER_DEFAULT, api.version, instanceName);
       console.log(`Fabric API 下载任务已启动，任务ID: ${taskId}`);
     } catch (err) {
       console.error("下载并安装Fabric API失败:", err);
     }
   };
 
+  const handleInstall = async (apiVersion: LoaderVersion) => {
+    setPendingApi(apiVersion);
+    setInstanceNameInput(defaultName(apiVersion.version));
+    setShowNameDialog(true);
+    setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 50);
+  };
+
   return (
+    <>
     <div className="flex h-full flex-col gap-4">
       {/* 返回按钮 + 版本信息头 */}
       <div className="flex items-center gap-3 shrink-0">
@@ -122,5 +155,45 @@ export function FabricApiDetail({ mcVersion, onBack }: FabricApiDetailProps) {
         </AnimatePresence>
       </div>
     </div>
+
+    <Dialog open={showNameDialog} onOpenChange={setShowNameDialog}>
+      <DialogContent className="!max-w-lg p-0">
+        <DialogHeader>
+          <DialogTitle>实例名称</DialogTitle>
+        </DialogHeader>
+        <div className="p-5 space-y-4">
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              请为这个实例命名，未填写则使用默认名称：
+              <code className="mx-1 px-1.5 py-0.5 rounded bg-muted text-xs">
+                {pendingApi ? defaultName(pendingApi.version) : ""}
+              </code>
+            </p>
+            <Input
+              ref={inputRef}
+              placeholder={pendingApi ? defaultName(pendingApi.version) : ""}
+              value={instanceNameInput}
+              onChange={(e) => setInstanceNameInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") confirmDownload();
+              }}
+            />
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowNameDialog(false);
+                setPendingApi(null);
+              }}
+            >
+              取消
+            </Button>
+            <Button onClick={confirmDownload}>开始下载</Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }

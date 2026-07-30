@@ -1,5 +1,6 @@
 use crate::downloader::original_dwl::process_version;
-use serde::{Deserialize, Serialize};
+use crate::handler::config::get_launcher_paths_config;
+use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -33,68 +34,37 @@ struct DownloadFinishedPayload {
 pub fn default_minecraft_dir() -> PathBuf {
     #[cfg(target_os = "macos")]
     {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        return PathBuf::from(format!("{}/Library/Application Support/minecraft", home));
+        return std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .map(|home| home.join("Library").join("Application Support").join("minecraft"))
+            .unwrap_or_else(|| std::env::temp_dir().join("RTLauncher").join("minecraft"));
     }
     #[cfg(target_os = "linux")]
     {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        return PathBuf::from(format!("{}/.minecraft", home));
+        return crate::app_paths::linux_minecraft_dir();
     }
     #[cfg(target_os = "windows")]
     {
-        if let Ok(appdata) = std::env::var("APPDATA") {
-            return PathBuf::from(appdata).join(".minecraft");
-        }
-        let exe_dir = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-            .unwrap_or_else(|| PathBuf::from("."));
-        return exe_dir.join(".minecraft");
+        return std::env::var_os("APPDATA")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .map(|appdata| appdata.join(".minecraft"))
+            .unwrap_or_else(|| std::env::temp_dir().join("RTLauncher").join("minecraft"));
     }
-}
-
-/// 获取 launcher.json 的配置路径
-fn launcher_config_path() -> PathBuf {
-    #[cfg(target_os = "macos")]
-    let dir = {
-        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        PathBuf::from(format!("{}/Library/Application Support/RTLauncher/config", home))
-    };
-    #[cfg(not(target_os = "macos"))]
-    let dir = PathBuf::from("./RTL/config");
-
-    let _ = std::fs::create_dir_all(&dir);
-    dir.join("launcher.json")
-}
-
-/// 从 launcher.json 读取 selected_minecraft_path
-fn read_selected_minecraft_path_from_config() -> Option<String> {
-    let path = launcher_config_path();
-    if !path.exists() {
-        return None;
-    }
-    let text = std::fs::read_to_string(&path).ok()?;
-    #[derive(Deserialize)]
-    struct Cfg {
-        selected_minecraft_path: Option<String>,
-    }
-    let cfg: Cfg = serde_json::from_str(&text).ok()?;
-    cfg.selected_minecraft_path.filter(|s| !s.is_empty())
 }
 
 /// 获取当前游戏目录。
 /// 优先级：launcher.json -> selected_minecraft_path > 平台默认路径
 pub fn get_minecraft_dir() -> Result<PathBuf, String> {
-    // 优先使用用户在启动页选择的路径（持久化到 launcher.json）
-    if let Some(selected) = read_selected_minecraft_path_from_config() {
-        return Ok(PathBuf::from(selected));
+    let config = get_launcher_paths_config();
+    if !config.selected_minecraft_path.trim().is_empty() {
+        return Ok(PathBuf::from(config.selected_minecraft_path));
     }
-    // 回退到平台默认路径
     Ok(default_minecraft_dir())
 }
 #[tauri::command]
-pub async fn download_patcher(app: AppHandle, mcVersion: String) -> Result<u64, String> {
+pub async fn download_patcher(app: AppHandle, mcVersion: String, instance_name: Option<String>) -> Result<u64, String> {
     let task_id = TASK_COUNTER.fetch_add(1, Ordering::SeqCst);
     let minecraft_path = get_minecraft_dir()?;
     std::fs::create_dir_all(&minecraft_path).map_err(|e| format!("创建目录失败: {}", e))?;
@@ -117,15 +87,17 @@ pub async fn download_patcher(app: AppHandle, mcVersion: String) -> Result<u64, 
     let app_finish = app.clone();
     let version = mcVersion.clone();
     let cancel_clone = cancel.clone();
+    let minecraft_path_cloned = minecraft_path.clone();
+    let instance_name_cloned = instance_name.clone();
     tokio::spawn(async move {
-        let result = process_version(&version, &minecraft_path, tx, cancel_clone.clone()).await;
+        let result = process_version(&version, &minecraft_path_cloned, tx, cancel_clone.clone()).await;
         {
             let mut tasks = active_tasks().lock().unwrap();
             tasks.remove(&task_id);
         }
         let was_cancelled = cancel_clone.load(Ordering::SeqCst);
         if was_cancelled {
-            let version_dir = minecraft_path.join("versions").join(&version);
+            let version_dir = minecraft_path_cloned.join("versions").join(&version);
             let _ = std::fs::remove_dir_all(&version_dir);
             let _ = app_finish.emit("download-finished", DownloadFinishedPayload {
                 task_id,
@@ -136,6 +108,43 @@ pub async fn download_patcher(app: AppHandle, mcVersion: String) -> Result<u64, 
         } else {
             match result {
                 Ok(warnings) => {
+                    // 如果有自定义实例名，则创建单独的实例目录（复制原版json）
+                    if let Some(inst_name) = instance_name_cloned {
+                        let clean_name = super::shared_utils::sanitize_instance_name(&inst_name);
+                        println!("[Vanilla] 创建实例目录: {}", clean_name);
+                        let final_name = if clean_name.trim().is_empty() {
+                            version.clone()
+                        } else {
+                            clean_name
+                        };
+                        if final_name != version {
+                            let versions_dir = minecraft_path_cloned.join("versions");
+                            let src_dir = versions_dir.join(&version);
+                            let dst_dir = versions_dir.join(&final_name);
+                            if src_dir.exists() && !dst_dir.exists() {
+                                let _ = std::fs::create_dir_all(&dst_dir);
+                                // 复制 version.json 和 jar
+                                for ext in ["json", "jar"] {
+                                    let src_file = src_dir.join(format!("{}.{}", version, ext));
+                                    let dst_file = dst_dir.join(format!("{}.{}", final_name, ext));
+                                    if src_file.exists() {
+                                        let _ = std::fs::copy(&src_file, &dst_file);
+                                    }
+                                }
+                                // 修改复制的 version.json 中的 id 字段
+                                let dst_json = dst_dir.join(format!("{}.json", final_name));
+                                if let Ok(content) = std::fs::read_to_string(&dst_json) {
+                                    if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) {
+                                        json["id"] = serde_json::Value::String(final_name.clone());
+                                        if let Ok(new_content) = serde_json::to_string_pretty(&json) {
+                                            let _ = std::fs::write(&dst_json, new_content);
+                                            println!("[Vanilla] 实例创建完成: {}", final_name);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                     let failed_count = warnings.len();
                     let _ = app_finish.emit("download-finished", DownloadFinishedPayload {
                         task_id,

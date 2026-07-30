@@ -1,4 +1,7 @@
 mod auth;
+// Platform-specific paths expose a few helpers used by packaging integrations.
+#[allow(dead_code)]
+mod app_paths;
 mod handler;
 mod downloader;
 mod mutiplayer;
@@ -8,8 +11,7 @@ use handler::config::{get_launcher_paths_config, save_launcher_paths_config, get
 use handler::launcher::build_jvm_arguments;
 use handler::launcher::kill_game_process;
 use handler::launcher::launch_game;
-use handler::skinloader::get_avatar_base64;
-use handler::system::{get_system_memory, write_file, optimize_memory_usage, ensure_launcher_profiles_on_startup, open_external, read_file_base64};
+use handler::system::{get_system_memory, write_file, optimize_memory_usage, open_external, read_file_base64};
 use handler::java_downloader::{get_java_versions, download_java_runtime};
 use handler::optifine_handler::{get_optifine_versions, get_optifine_version_names, install_optifine, download_and_install_optifine, cancel_optifine_download};
 use handler::fabric_handler::{get_fabric_loader_versions, get_fabric_api_versions, download_and_install_fabric, cancel_fabric_download};
@@ -41,9 +43,9 @@ use downloader::version_fetcher::classify_minecraft_versions;
 use downloader::decompression::extract_library_paths;
 use auth::littleskinLoader::{useMethod, use_method_with_credentials};
 use auth::yissadrail::{thirdPartyLogin, getAccountList, getPlayerSkin};
-use auth::official::{ms_request_device_code, ms_poll_and_login};
+use auth::official::{ms_request_device_code, ms_poll_and_login, ms_cancel_login, get_skin_base64, redownload_littleskin_skin, ms_get_skins_and_capes, ms_upload_skin, ms_activate_skin, ms_delete_skin, ms_set_active_cape};
 use mutiplayer::{mp_check_openp2p, mp_install_openp2p, mp_start_openp2p_host, mp_start_openp2p_join, mp_encode_room_info, mp_stop_openp2p, mp_is_openp2p_running, mp_poll_log, mp_get_openp2p_dir, mp_get_openp2p_path, ensure_openp2p_stopped};
-use version_management::{vm_scan_instances, vm_find_resource_packs, vm_parse_level_dat, vm_modify_game_rule, vm_list_dir, vm_ensure_instance_dirs, vm_delete_file, vm_rename_file, vm_delete_cached_file};
+use version_management::{vm_scan_instances, vm_find_resource_packs, vm_parse_level_dat, vm_modify_game_rule, vm_list_dir, vm_ensure_instance_dirs, vm_delete_file, vm_rename_file, vm_write_file_base64, vm_delete_cached_file};
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
@@ -63,8 +65,12 @@ const NS_WINDOW_STYLE_MASK_FULL_SIZE_CONTENT_VIEW: u64 = 1 << 15;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // 固定 16 工作线程：下载/解压并发任务多，默认 CPU 核数的线程池吞吐不够
-    std::env::set_var("TOKIO_WORKER_THREADS", "16");
+    // 给 WebView、磁盘 I/O 和前台交互留下 CPU，避免低配设备在启动时争用。
+    let cpu_count = std::thread::available_parallelism()
+        .map(|count| count.get())
+        .unwrap_or(4);
+    let worker_threads = (cpu_count + 1).saturating_div(2).max(4);
+    std::env::set_var("TOKIO_WORKER_THREADS", worker_threads.to_string());
 
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -82,7 +88,14 @@ pub fn run() {
             getPlayerSkin,
             ms_request_device_code,
             ms_poll_and_login,
-            get_avatar_base64,
+            ms_cancel_login,
+            get_skin_base64,
+            redownload_littleskin_skin,
+            ms_get_skins_and_capes,
+            ms_upload_skin,
+            ms_activate_skin,
+            ms_delete_skin,
+            ms_set_active_cape,
             mp_check_openp2p,
             mp_install_openp2p,
             mp_start_openp2p_host,
@@ -101,6 +114,7 @@ pub fn run() {
             vm_ensure_instance_dirs,
             vm_delete_file,
             vm_rename_file,
+            vm_write_file_base64,
             vm_delete_cached_file,
             get_system_memory,
             optimize_memory_usage,
@@ -179,12 +193,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            // 启动时异步检查 & 生成各 minecraft 路径下的 launcher_profiles.json
-            // （不阻塞 UI，不与用户交互）
-            std::thread::spawn(move || {
-                ensure_launcher_profiles_on_startup();
-            });
-
             #[cfg(not(target_os = "macos"))]
             app.handle().plugin(tauri_plugin_single_instance::init(|app: &tauri::AppHandle, _args, _cwd| {
                 if let Some(window) = app.get_webview_window("main") {

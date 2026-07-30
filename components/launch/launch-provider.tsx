@@ -11,7 +11,10 @@ import React, {
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useAccountContext } from "@/components/accounts/account-provider";
-import type { LaunchConfig, LaunchLogEntry, LaunchStatus } from "@/types";
+import { isTauriRuntime } from "@/lib/tauri-runtime";
+import { log4jParser } from "@/components/launch/log4j-progress-parser";
+import { useI18n } from "@/components/i18n/use-i18n";
+import type { LaunchConfig, LaunchLogEntry, LaunchProgress, LaunchStatus } from "@/types";
 
 /** 默认启动配置 */
 const DEFAULT_LAUNCH_CONFIG: LaunchConfig = {
@@ -55,6 +58,8 @@ interface LaunchContextValue {
   lastLaunchTime: string | null;
   /** 配置是否已加载完成 */
   configLoaded: boolean;
+  /** 启动进度 */
+  progress: LaunchProgress | null;
 }
 
 const LaunchContext = createContext<LaunchContextValue | null>(null);
@@ -68,47 +73,48 @@ export function useLaunchContext() {
 }
 
 export function LaunchProvider({ children }: { children: React.ReactNode }) {
+  const { t } = useI18n();
   const [config, setConfig] = useState<LaunchConfig>(DEFAULT_LAUNCH_CONFIG);
   const [configLoaded, setConfigLoaded] = useState(false);
-
-  
-  // 客户端挂载后从 localStorage 恢复配置，再用 Tauri config 覆盖路径字段
-  useEffect(() => {
-    let cancelled = false;
-    const init = async () => {
-      let base: Partial<LaunchConfig> = {};
-      try {
-        const saved = localStorage.getItem("rtl-launch-config");
-        if (saved) base = JSON.parse(saved);
-        const savedTime = localStorage.getItem("rtl-last-launch-time");
-        if (savedTime) setLastLaunchTime(savedTime);
-      } catch { /* ignore */ }
-
-      // 从 Tauri config 目录加载选中路径，优先级高于 localStorage
-      try {
-        const pathsCfg = await invoke<{
-          selected_java_path: string;
-          selected_minecraft_path: string;
-        }>("get_launcher_paths_config");
-        if (pathsCfg.selected_java_path) base.javaPath = pathsCfg.selected_java_path;
-        if (pathsCfg.selected_minecraft_path) base.minecraftPath = pathsCfg.selected_minecraft_path;
-      } catch { /* 不可用时保留 localStorage 值 */ }
-
-      if (!cancelled) {
-        setConfig((prev) => ({ ...prev, ...base }));
-        setConfigLoaded(true);
-      }
-    };
-    init();
-    return () => { cancelled = true; };
-  }, []);
-
   const [status, setStatus] = useState<LaunchStatus>("idle");
   const [logs, setLogs] = useState<LaunchLogEntry[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [lastCommandArgs, setLastCommandArgs] = useState<string | null>(null);
   const [lastLaunchTime, setLastLaunchTime] = useState<string | null>(null);
+  const [progress, setProgress] = useState<LaunchProgress | null>(null);
   const logIdRef = useRef(0);
+
+
+  // 本地配置先恢复，使首屏不必等待原生 I/O；原生路径查询完成后再无缝合并。
+  useEffect(() => {
+    let cancelled = false;
+    let savedConfig: Partial<LaunchConfig> = {};
+    try {
+      const saved = localStorage.getItem("rtl-launch-config");
+      if (saved) savedConfig = JSON.parse(saved);
+      const savedTime = localStorage.getItem("rtl-last-launch-time");
+      if (savedTime) setLastLaunchTime(savedTime);
+    } catch { /* ignore */ }
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setConfig((prev) => ({ ...prev, ...savedConfig }));
+      setConfigLoaded(true);
+    });
+    void invoke<{
+      selected_java_path: string;
+      selected_minecraft_path: string;
+    }>("get_launcher_paths_config")
+      .then((pathsCfg) => {
+        if (cancelled) return;
+        setConfig((prev) => ({
+          ...prev,
+          ...(pathsCfg.selected_java_path ? { javaPath: pathsCfg.selected_java_path } : {}),
+          ...(pathsCfg.selected_minecraft_path ? { minecraftPath: pathsCfg.selected_minecraft_path } : {}),
+        }));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const { selectedProfile } = useAccountContext();
 
@@ -150,11 +156,29 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
 
   // 监听游戏日志事件（来自 Minecraft log4j stdout/stderr）
   useEffect(() => {
+    if (!isTauriRuntime()) return;
+
     let unlisten: (() => void) | null = null;
     listen<{ level: string; message: string }>("game-log", (event) => {
       const { level, message } = event.payload;
       const logLevel: "error" | "info" | "warn" =
         level === "error" || level === "warn" ? level : "info";
+
+      // 使用 log4j 解析器分析日志并更新进度
+      if (status === "launching" || status === "preparing") {
+        const parsedProgress = log4jParser.parseLog(message);
+        if (parsedProgress.stage) {
+          const allStages = log4jParser.getAllStages();
+          const currentStageIndex = allStages.findIndex(s => s.id === parsedProgress.stage?.id);
+          setProgress({
+            currentStep: currentStageIndex + 1,
+            totalSteps: allStages.length,
+            currentStage: parsedProgress.stage.name,
+            percentage: parsedProgress.progress,
+          });
+        }
+      }
+
       setLogs((prev) => {
         const next = [
           ...prev,
@@ -169,45 +193,67 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
       });
     }).then((fn) => { unlisten = fn; });
     return () => { unlisten?.(); };
-  }, []);
+  }, [status]);
 
   // 监听游戏进程退出事件
   useEffect(() => {
+    if (!isTauriRuntime()) return;
+
     let unlisten: (() => void) | null = null;
     listen<number>("game-exited", (event) => {
       const exitCode = event.payload;
-      const timeStr = new Date().toLocaleString("zh-CN");
+      const timeStr = new Date().toLocaleString();
       setLastLaunchTime(timeStr);
       try { localStorage.setItem("rtl-last-launch-time", timeStr); } catch { /* ignore */ }
       setStatus("idle");
+      setProgress(null); // 清理进度状态
+      log4jParser.reset(); // 重置日志解析器
       setLogs((prev) => [
         ...prev,
         {
           id: ++logIdRef.current,
           timestamp: new Date().toLocaleTimeString(),
           level: exitCode === 0 ? "info" : "warn",
-          message: `游戏已退出，退出码: ${exitCode}`,
+          message: t({ "zh-CN": `游戏已退出，退出码: ${exitCode}`, "en-US": `Game exited with code: ${exitCode}` }),
         },
       ]);
     }).then((fn) => { unlisten = fn; });
     return () => { unlisten?.(); };
-  }, []);
+  }, [t]);
 
   // 监听游戏完全启动事件（JVM 启动完成、资源加载完成）
   useEffect(() => {
+    if (!isTauriRuntime()) return;
+
     let unlisten: (() => void) | null = null;
     listen<number>("game-fully-started", (event) => {
       const pid = event.payload;
       setStatus("running");
+      setProgress(null);
       setLogs((prev) => [
         ...prev,
         {
           id: ++logIdRef.current,
           timestamp: new Date().toLocaleTimeString(),
           level: "info",
-          message: `游戏已完全启动 (PID ${pid})，停止 JVM 追踪`,
+          message: t({ "zh-CN": `游戏已完全启动 (PID ${pid})，停止 JVM 追踪`, "en-US": `Game fully started (PID ${pid}); stopped JVM tracking` }),
         },
       ]);
+    }).then((fn) => { unlisten = fn; });
+    return () => { unlisten?.(); };
+  }, [t]);
+
+  // 监听启动进度事件
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    listen<{ current_step: number; total_steps: number; current_stage: string; percentage: number }>("launch-progress", (event) => {
+      const { current_step, total_steps, current_stage, percentage } = event.payload;
+      setProgress({
+        currentStep: current_step,
+        totalSteps: total_steps,
+        currentStage: current_stage,
+        percentage: percentage,
+      });
     }).then((fn) => { unlisten = fn; });
     return () => { unlisten?.(); };
   }, []);
@@ -229,6 +275,7 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
           },
         ]);
         setStatus("idle");
+        setProgress(null);
       } catch (e) {
         setErrorMessage(e instanceof Error ? e.message : String(e));
       }
@@ -242,34 +289,36 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
 
       // 校验必要参数
       if (!merged.minecraftPath) {
-        setErrorMessage("请设置 Minecraft 游戏目录");
+        setErrorMessage(t({ "zh-CN": "请设置 Minecraft 游戏目录", "en-US": "Set the Minecraft game directory" }));
         return;
       }
       if (!merged.javaPath) {
-        setErrorMessage("请设置 Java 路径");
+        setErrorMessage(t({ "zh-CN": "请设置 Java 路径", "en-US": "Set a Java path" }));
         return;
       }
       if (!merged.versionName) {
-        setErrorMessage("请选择游戏版本");
+        setErrorMessage(t({ "zh-CN": "请选择游戏版本", "en-US": "Select a game version" }));
         return;
       }
       if (!selectedProfile) {
-        setErrorMessage("请先选择一个玩家账户");
+        setErrorMessage(t({ "zh-CN": "请先选择一个玩家账户", "en-US": "Select a player account first" }));
         return;
       }
 
       setErrorMessage(null);
+      setProgress(null);
+      log4jParser.reset(); // 重置日志解析器
       setStatus("preparing");
-      addLog("info", "正在准备启动参数...");
+      addLog("info", t({ "zh-CN": "正在准备启动参数...", "en-US": "Preparing launch arguments..." }));
 
       try {
         setStatus("launching");
-        addLog("info", `启动版本: ${merged.versionName}`);
-        addLog("info", `玩家: ${selectedProfile.name}`);
-        addLog("info", `最大内存: ${merged.maxMemory}MB`);
+        addLog("info", t({ "zh-CN": `启动版本: ${merged.versionName}`, "en-US": `Launch version: ${merged.versionName}` }));
+        addLog("info", t({ "zh-CN": `玩家: ${selectedProfile.name}`, "en-US": `Player: ${selectedProfile.name}` }));
+        addLog("info", t({ "zh-CN": `最大内存: ${merged.maxMemory}MB`, "en-US": `Maximum memory: ${merged.maxMemory}MB` }));
 
         if (merged.loadType !== "0") {
-          addLog("info", `加载器: ${merged.loadName}`);
+          addLog("info", t({ "zh-CN": `加载器: ${merged.loadName}`, "en-US": `Loader: ${merged.loadName}` }));
         }
 
         const result = await invoke<string>("launch_game", {
@@ -292,15 +341,15 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
 
         setLastCommandArgs(result);
         setStatus("running");
-        addLog("info", "游戏已启动！");
+        addLog("info", t({ "zh-CN": "游戏已启动！", "en-US": "Game launched!" }));
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         setStatus("error");
         setErrorMessage(msg);
-        addLog("error", `启动失败: ${msg}`);
+        addLog("error", `${t({ "zh-CN": "启动失败", "en-US": "Launch failed" })}: ${msg}`);
       }
     },
-    [config, selectedProfile, addLog]
+    [config, selectedProfile, addLog, t]
   );
 
   return (
@@ -317,6 +366,7 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
         lastCommandArgs,
         lastLaunchTime,
         configLoaded,
+        progress,
       }}
     >
       {children}

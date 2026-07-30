@@ -1,48 +1,75 @@
-use tauri::command;
-use std::path::{PathBuf, Path};
-use std::process::{Command, Child, Stdio};
-use std::sync::Mutex;
 use std::env;
-
 use std::fs;
+use std::io::{BufRead, BufReader, Read, Seek};
+#[cfg(target_os = "windows")]
+use std::io::Error;
+use std::path::{Path, PathBuf};
+use std::process::{Child, Command, Stdio};
+use std::sync::Mutex;
 use std::thread;
-use std::io::{BufRead, BufReader, Error};
+use tauri::command;
+
 const OPENP2P_BIN: &str = if cfg!(target_os = "windows") {
     "openp2p.exe"
 } else {
     "openp2p"
 };
 static OPENP2P_PROCESS: Mutex<Option<Child>> = Mutex::new(None);
+static OPENP2P_START_LOCK: Mutex<()> = Mutex::new(());
 static LOG_BUFFER: Mutex<Vec<u8>> = Mutex::new(Vec::new());
-static RUNAS_MODE: Mutex<bool> = Mutex::new(false);
-fn set_runas_mode(on: bool) {
-    if let Ok(mut guard) = RUNAS_MODE.lock() {
-        *guard = on;
+static OPENP2P_TXT_OFFSET: Mutex<u64> = Mutex::new(0);
+static OPENP2P_LOG_OFFSET: Mutex<u64> = Mutex::new(0);
+fn legacy_bridge_dir() -> Option<PathBuf> {
+    env::current_exe()
+        .ok()?
+        .parent()
+        .map(|parent| parent.join("RTL").join("bridge"))
+}
+
+fn preferred_bridge_dir() -> PathBuf {
+    #[cfg(target_os = "windows")]
+    {
+        return env::var_os("LOCALAPPDATA")
+            .or_else(|| env::var_os("APPDATA"))
+            .map(PathBuf::from)
+            .map(|base| base.join("RTLauncher").join("bridge"))
+            .unwrap_or_else(|| env::temp_dir().join("RTLauncher").join("bridge"));
     }
-}
-fn is_runas_mode() -> bool {
-    RUNAS_MODE.lock().map(|g| *g).unwrap_or(false)
-}
-fn get_bridge_dir() -> Result<PathBuf, String> {
+
     #[cfg(target_os = "macos")]
     {
-        let home = env::var("HOME")
-            .map_err(|_| "无法获取 HOME 环境变量".to_string())?;
-        Ok(PathBuf::from(home)
-            .join("Library")
-            .join("Application Support")
-            .join("RTLauncher")
-            .join("bridge"))
+        return env::var_os("HOME")
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+            .map(|home| {
+                home.join("Library")
+                    .join("Application Support")
+                    .join("RTLauncher")
+                    .join("bridge")
+            })
+            .unwrap_or_else(|| env::temp_dir().join("RTLauncher").join("bridge"));
     }
-    #[cfg(not(target_os = "macos"))]
+
+    #[cfg(target_os = "linux")]
     {
-        let exe_dir = env::current_exe()
-            .map_err(|e| format!("无法获取当前可执行文件路径: {}", e))?
-            .parent()
-            .ok_or_else(|| "无法获取可执行文件父目录".to_string())?
-            .to_path_buf();
-        Ok(exe_dir.join("RTL").join("bridge"))
+        return crate::app_paths::linux_data_dir().join("bridge");
     }
+}
+
+fn get_bridge_dir() -> Result<PathBuf, String> {
+    let preferred = preferred_bridge_dir();
+    let preferred_binary = preferred.join(OPENP2P_BIN);
+    if preferred_binary.is_file() {
+        return Ok(preferred);
+    }
+
+    // 兼容旧版放在可执行文件旁边的目录；新安装使用各系统的用户可写数据目录。
+    if let Some(legacy) = legacy_bridge_dir() {
+        if legacy.join(OPENP2P_BIN).is_file() {
+            return Ok(legacy);
+        }
+    }
+    Ok(preferred)
 }
 fn get_openp2p_path() -> Result<PathBuf, String> {
     Ok(get_bridge_dir()?.join(OPENP2P_BIN))
@@ -75,68 +102,118 @@ fn append_log_str(text: &str) {
 fn openp2p_log_file(working_dir: &Path) -> PathBuf {
     working_dir.join("log").join("openp2p.txt")
 }
+fn openp2p_legacy_log_file(working_dir: &Path) -> PathBuf {
+    working_dir.join("log").join("openp2p.log")
+}
 fn clear_openp2p_log_files(working_dir: &Path) {
-    let log_file = openp2p_log_file(working_dir);
-    if !log_file.parent().map(|p| p.exists()).unwrap_or(false) {
-        if let Err(e) = fs::create_dir_all(log_file.parent().unwrap()) {
-            append_log_str(&format!(
-                "[RTLauncher] ⚠ 创建日志目录失败: {}\n",
-                e
-            ));
-            return;
-        }
+    let log_dir = working_dir.join("log");
+    if let Err(e) = fs::create_dir_all(&log_dir) {
+        append_log_str(&format!("[RTLauncher] ⚠ 创建日志目录失败: {}\n", e));
+        return;
     }
-    let _ = std::fs::File::create(&log_file);
+
+    for log_file in [
+        openp2p_log_file(working_dir),
+        openp2p_legacy_log_file(working_dir),
+    ] {
+        let _ = std::fs::File::create(log_file);
+    }
+
+    if let Ok(mut offset) = OPENP2P_TXT_OFFSET.lock() {
+        *offset = 0;
+    }
+    if let Ok(mut offset) = OPENP2P_LOG_OFFSET.lock() {
+        *offset = 0;
+    }
 }
-fn start_log_file_tailing(working_dir: PathBuf) {
-    use std::sync::Arc;
-    let offset = Arc::new(Mutex::new(0u64));
-    let log_path = openp2p_log_file(&working_dir);
-    thread::spawn(move || {
-        loop {
-            thread::sleep(std::time::Duration::from_millis(1000));
-            if !log_path.exists() {
-                continue;
-            }
-            match fs::metadata(&log_path) {
-                Ok(meta) => {
-                    let file_size = meta.len();
-                    let mut cur_offset = match offset.lock() {
-                        Ok(g) => *g,
-                        Err(_) => continue,
-                    };
-                    if file_size < cur_offset {
-                        cur_offset = 0;
-                        if let Ok(mut g) = offset.lock() {
-                            *g = 0;
-                        }
-                    }
-                    if file_size > cur_offset {
-                        use std::io::Seek;
-                        use std::io::Read;
-                        if let Ok(mut file) = std::fs::File::open(&log_path) {
-                            if file.seek(std::io::SeekFrom::Start(cur_offset)).is_ok() {
-                                let mut reader = file.take(file_size - cur_offset);
-                                let mut buffer = Vec::new();
-                                if reader.read_to_end(&mut buffer).is_ok() && !buffer.is_empty() {
-                                    append_log(&buffer);
-                                    if !buffer.ends_with(b"\n") {
-                                        append_log_str("\n");
-                                    }
-                                    if let Ok(mut g) = offset.lock() {
-                                        *g = cur_offset + buffer.len() as u64;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Err(_) => continue,
-            }
+
+fn read_log_increment(path: &Path, offset: &Mutex<u64>) -> Vec<u8> {
+    let file_size = match fs::metadata(path) {
+        Ok(metadata) => metadata.len(),
+        Err(_) => return Vec::new(),
+    };
+    let mut offset_guard = match offset.lock() {
+        Ok(guard) => guard,
+        Err(_) => return Vec::new(),
+    };
+
+    if file_size < *offset_guard {
+        *offset_guard = 0;
+    }
+    if file_size == *offset_guard {
+        return Vec::new();
+    }
+
+    let mut file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        Err(_) => return Vec::new(),
+    };
+    if file.seek(std::io::SeekFrom::Start(*offset_guard)).is_err() {
+        return Vec::new();
+    }
+
+    let mut buffer = Vec::new();
+    if file
+        .take(file_size - *offset_guard)
+        .read_to_end(&mut buffer)
+        .is_err()
+    {
+        return Vec::new();
+    }
+
+    *offset_guard = file_size;
+    buffer
+}
+
+fn has_openp2p_system_process() -> bool {
+    let system = sysinfo::System::new_all();
+    system.processes().values().any(|process| {
+        let name = process.name().to_string_lossy();
+        name.eq_ignore_ascii_case("openp2p") || name.eq_ignore_ascii_case("openp2p.exe")
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn quote_windows_argument(argument: &str) -> String {
+    if !argument.is_empty()
+        && !argument
+            .chars()
+            .any(|character| character.is_whitespace() || character == '"')
+    {
+        return argument.to_string();
+    }
+
+    let mut quoted = String::from("\"");
+    let mut backslashes = 0usize;
+    for character in argument.chars() {
+        if character == '\\' {
+            backslashes += 1;
+            continue;
         }
-    });
+        if character == '"' {
+            quoted.push_str(&"\\".repeat(backslashes * 2 + 1));
+            quoted.push('"');
+        } else {
+            quoted.push_str(&"\\".repeat(backslashes));
+            quoted.push(character);
+        }
+        backslashes = 0;
+    }
+    quoted.push_str(&"\\".repeat(backslashes * 2));
+    quoted.push('"');
+    quoted
 }
+
 fn start_openp2p_with_args(args: &[&str]) -> Result<String, String> {
+    // 序列化启动请求，并在真正创建进程前检查系统中已有的 OpenP2P。
+    // OpenP2P 默认占用同一个 PublicIPPort；重复启动会导致新实例持续报端口冲突。
+    let _start_guard = OPENP2P_START_LOCK
+        .lock()
+        .map_err(|_| "OpenP2P 启动流程锁异常".to_string())?;
+    if mp_is_openp2p_running() {
+        return Err("OpenP2P 已在后台运行，请先停止当前联机后再启动".to_string());
+    }
+
     let openp2p_path = get_openp2p_path()?;
     if !openp2p_path.exists() {
         return Err(format!(
@@ -165,12 +242,12 @@ fn start_openp2p_with_args(args: &[&str]) -> Result<String, String> {
     #[cfg(target_os = "windows")]
     let mut cmd = {
         use std::os::windows::process::CommandExt;
-        let mut c = Command::new(&path_str);
-        c.creation_flags(0x08000000); 
+        let mut c = Command::new(&openp2p_path);
+        c.creation_flags(0x08000000);
         c
     };
     #[cfg(not(target_os = "windows"))]
-    let mut cmd = Command::new(&path_str);
+    let mut cmd = Command::new(&openp2p_path);
     cmd.current_dir(&working_dir);
     for arg in args {
         cmd.arg(arg);
@@ -209,7 +286,6 @@ fn start_openp2p_with_args(args: &[&str]) -> Result<String, String> {
                     }
                 });
             }
-            start_log_file_tailing(working_dir.clone());
             {
                 let mut guard = OPENP2P_PROCESS
                     .lock()
@@ -240,7 +316,11 @@ fn start_openp2p_with_args(args: &[&str]) -> Result<String, String> {
                         .encode_wide()
                         .chain(std::iter::once(0))
                         .collect();
-                    let args_str = args.join(" ");
+                    let args_str = args
+                        .iter()
+                        .map(|argument| quote_windows_argument(argument))
+                        .collect::<Vec<_>>()
+                        .join(" ");
                     let args_wide: Vec<u16> = OsStr::new(&args_str)
                         .encode_wide()
                         .chain(std::iter::once(0))
@@ -274,7 +354,6 @@ fn start_openp2p_with_args(args: &[&str]) -> Result<String, String> {
                         append_log_str(&err_msg);
                         return Err(err_msg);
                     }
-                    start_log_file_tailing(working_dir.clone());
                     append_log_str("[RTLauncher] ✅ openp2p 已以管理员权限启动\n");
                     append_log_str("[RTLauncher]   正在等待 openp2p 生成日志文件...\n");
                     append_log_str("[RTLauncher]   (如果长时间无输出，请检查 openp2p.exe 是否被杀毒软件拦截)\n\n");
@@ -282,9 +361,8 @@ fn start_openp2p_with_args(args: &[&str]) -> Result<String, String> {
                         let mut guard = OPENP2P_PROCESS
                             .lock()
                             .map_err(|_| "无法锁定进程句柄".to_string())?;
-                        *guard = None; 
+                        *guard = None;
                     }
-                    set_runas_mode(true);
                     Ok(path_str)
                 }
                 #[cfg(not(target_os = "windows"))]
@@ -303,10 +381,13 @@ fn start_openp2p_with_args(args: &[&str]) -> Result<String, String> {
                      [RTLauncher]   可执行文件路径: {}\n\
                      [RTLauncher]   工作目录: {}\n\
                      [RTLauncher]   请确认:\n\
-                     [RTLauncher]   1. openp2p.exe 存在且路径正确\n\
-                     [RTLauncher]   2. 当前用户有权限执行该文件（可能需要以管理员身份运行 RTLauncher）\n\
-                     [RTLauncher]   3. 文件没有被杀毒软件拦截\n",
-                    e, path_str, working_dir.display()
+                     [RTLauncher]   1. {} 存在且与当前操作系统及 CPU 架构匹配\n\
+                     [RTLauncher]   2. 当前用户具备该文件的执行权限\n\
+                     [RTLauncher]   3. 文件未被系统安全工具拦截\n",
+                    e,
+                    path_str,
+                    working_dir.display(),
+                    OPENP2P_BIN
                 );
                 append_log_str(&err_msg);
                 Err(err_msg)
@@ -384,138 +465,128 @@ pub fn mp_start_openp2p_join(encoded_value: String, player_name: String) -> Resu
     ];
     start_openp2p_with_args(&args)
 }
-fn kill_all_openp2p_processes() {
+fn kill_all_openp2p_processes() -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
-        use winapi::um::winbase::CREATE_NO_WINDOW;
-        const MAX_ATTEMPTS: u64 = 8;
-        for attempt in 0..MAX_ATTEMPTS {
-            let _ = Command::new("taskkill")
-                .args(["/F", "/T", "/IM", "openp2p.exe"])
-                .creation_flags(CREATE_NO_WINDOW)
-                .output();
-            let _ = Command::new("taskkill")
-                .args(["/F", "/T", "/IM", "openp2p"])
-                .creation_flags(CREATE_NO_WINDOW)
-                .output();
-            let _ = Command::new("wmic")
-                .args(["process", "where", "name='openp2p.exe'", "delete"])
-                .creation_flags(CREATE_NO_WINDOW)
-                .output();
-            let _ = Command::new("wmic")
-                .args(["process", "where", "name='openp2p'", "delete"])
-                .creation_flags(CREATE_NO_WINDOW)
-                .output();
-            if let Ok(output) = Command::new("tasklist")
-                .args(["/FO", "CSV", "/NH"])
-                .creation_flags(CREATE_NO_WINDOW)
-                .output()
-            {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                for line in stdout.lines() {
-                    let lower = line.to_lowercase();
-                    if lower.contains("openp2p") {
-                        let parts: Vec<&str> = line.split("\",\"").collect();
-                        if parts.len() >= 2 {
-                            if let Ok(pid) = parts[1].parse::<u32>() {
-                                let _ = Command::new("taskkill")
-                                    .args(["/F", "/PID", &pid.to_string()])
-                                    .creation_flags(CREATE_NO_WINDOW)
-                                    .output();
-                                let _ = Command::new("taskkill")
-                                    .args(["/F", "/T", "/PID", &pid.to_string()])
-                                    .creation_flags(CREATE_NO_WINDOW)
-                                    .output();
-                            }
-                        }
-                    }
+        use std::ffi::OsStr;
+        use std::os::windows::ffi::OsStrExt;
+        use std::ptr;
+        use winapi::um::shellapi::ShellExecuteW;
+
+        if !has_openp2p_system_process() {
+            return Ok(());
+        }
+
+        // 这台机器上的 taskkill/tasklist 会返回“分页文件太小”，因此绕开这两个命令，
+        // 使用管理员 PowerShell 的 Process API 重复结束守护/工作进程。
+        let working_dir = get_openp2p_dir()?;
+        let stop_script = working_dir.join(".rtlauncher-stop-openp2p.ps1");
+        let script = r#"$ErrorActionPreference = 'SilentlyContinue'
+for ($i = 0; $i -lt 20; $i++) {
+  Get-Process -Name openp2p -ErrorAction SilentlyContinue | Stop-Process -Force
+  Start-Sleep -Milliseconds 250
+}
+"#;
+        fs::write(&stop_script, script)
+            .map_err(|e| format!("写入 OpenP2P 停止脚本失败: {}", e))?;
+
+        let windows_dir = env::var_os("WINDIR")
+            .unwrap_or_else(|| OsStr::new("C:\\Windows").to_os_string());
+        let powershell_path = PathBuf::from(windows_dir)
+            .join("System32")
+            .join("WindowsPowerShell")
+            .join("v1.0")
+            .join("powershell.exe");
+        let powershell_wide: Vec<u16> = powershell_path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let runas_wide: Vec<u16> = OsStr::new("runas")
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let powershell_args = format!(
+            "-NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File \"{}\"",
+            stop_script.display()
+        );
+        let args_wide: Vec<u16> = OsStr::new(&powershell_args)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        append_log_str("[RTLauncher] 请求管理员权限，通过进程 API 结束 OpenP2P...\n");
+        let work_dir_wide: Vec<u16> = working_dir
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let result = unsafe {
+            ShellExecuteW(
+                ptr::null_mut(),
+                runas_wide.as_ptr(),
+                powershell_wide.as_ptr(),
+                args_wide.as_ptr(),
+                work_dir_wide.as_ptr(),
+                winapi::um::winuser::SW_HIDE,
+            )
+        };
+        if (result as isize) <= 32 {
+            let _ = fs::remove_file(&stop_script);
+            return Err(format!(
+                "管理员终止请求未执行（ShellExecute 返回 {}）",
+                result as isize
+            ));
+        }
+
+        // 停止逻辑运行在 blocking 线程中，等待期间不占用 Tauri 界面线程。
+        let mut consecutive_missing = 0;
+        for _ in 0..150 {
+            thread::sleep(std::time::Duration::from_millis(200));
+            if !has_openp2p_system_process() {
+                consecutive_missing += 1;
+                if consecutive_missing >= 3 {
+                    let _ = fs::remove_file(&stop_script);
+                    return Ok(());
                 }
-            }
-            thread::sleep(std::time::Duration::from_millis(150 + attempt * 50));
-            if let Ok(output) = Command::new("tasklist")
-                .args(["/FO", "CSV", "/NH"])
-                .creation_flags(CREATE_NO_WINDOW)
-                .output()
-            {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                if !stdout.to_lowercase().contains("openp2p") {
-                    return;
-                }
+            } else {
+                consecutive_missing = 0;
             }
         }
-        let _ = Command::new("cmd")
-            .args(["/C", "taskkill /F /T /IM openp2p.exe & taskkill /F /T /IM openp2p & wmic process where name=\"openp2p.exe\" delete"])
-            .creation_flags(CREATE_NO_WINDOW)
-            .output();
+        let _ = fs::remove_file(&stop_script);
+        return Err("OpenP2P 进程仍在运行，请确认管理员提示后重试".to_string());
     }
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
     {
-        const MAX_ATTEMPTS: u64 = 6;
-        for attempt in 0..MAX_ATTEMPTS {
-            let _ = Command::new("killall").args(["-9", "openp2p"]).output();
-            let _ = Command::new("pkill").args(["-9", "-f", "openp2p"]).output();
-            if let Ok(output) = Command::new("sh")
-                .args(["-c", "ps aux | grep -i openp2p | grep -v grep"])
-                .output()
-            {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                for line in stdout.lines() {
-                    let parts: Vec<&str> = line.split_whitespace().collect();
-                    if parts.len() >= 2 {
-                        if let Ok(pid) = parts[1].parse::<i32>() {
-                            let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
-                        }
-                    }
+        use sysinfo::Signal;
+
+        // Linux 与 macOS 共用 sysinfo 进程 API，避免依赖 killall/pkill/grep 等外部命令。
+        // 前几轮先发送 TERM，仍存活时再发送 KILL。
+        for attempt in 0..12 {
+            let system = sysinfo::System::new_all();
+            let mut found = false;
+            for process in system.processes().values().filter(|process| {
+                let name = process.name().to_string_lossy();
+                name.eq_ignore_ascii_case("openp2p")
+                    || name.eq_ignore_ascii_case("openp2p.exe")
+            }) {
+                found = true;
+                if attempt < 4 {
+                    let _ = process.kill_with(Signal::Term);
+                } else {
+                    let _ = process.kill();
                 }
             }
-            thread::sleep(std::time::Duration::from_millis((150 + attempt * 50).into()));
-            if let Ok(output) = Command::new("sh")
-                .args(["-c", "pgrep -l openp2p || true"])
-                .output()
-            {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                if stdout.trim().is_empty() {
-                    return;
-                }
+            if !found {
+                return Ok(());
             }
+            thread::sleep(std::time::Duration::from_millis(250));
         }
-    }
-    #[cfg(target_os = "macos")]
-    {
-        const MAX_ATTEMPTS: u32 = 6;
-        for attempt in 0..MAX_ATTEMPTS {
-            let _ = Command::new("killall").args(["-9", "openp2p"]).output();
-            let _ = Command::new("pkill").args(["-9", "-f", "openp2p"]).output();
-            if let Ok(output) = Command::new("sh")
-                .args(["-c", "ps aux | grep -i openp2p | grep -v grep"])
-                .output()
-            {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                for line in stdout.lines() {
-                    let parts: Vec<&str> = line.split_whitespace().collect();
-                    if parts.len() >= 2 {
-                        if let Ok(pid) = parts[1].parse::<i32>() {
-                            let _ = Command::new("kill").args(["-9", &pid.to_string()]).output();
-                        }
-                    }
-                }
-            }
-            thread::sleep(std::time::Duration::from_millis((150 + attempt * 50).into()));
-            if let Ok(output) = Command::new("sh")
-                .args(["-c", "pgrep openp2p || true"])
-                .output()
-            {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                if stdout.trim().is_empty() {
-                    return;
-                }
-            }
-        }
+
+        Err("OpenP2P 进程仍在运行，请检查当前用户的进程权限".to_string())
     }
 }
 #[command]
-pub fn mp_stop_openp2p() -> Result<(), String> {
+pub async fn mp_stop_openp2p() -> Result<(), String> {
     let working_dir = get_openp2p_dir().ok();
     append_log_str("[RTLauncher] 正在停止 openp2p 进程（含保护线程）...\n");
     {
@@ -526,75 +597,64 @@ pub fn mp_stop_openp2p() -> Result<(), String> {
             *guard = None;
         }
     }
-    kill_all_openp2p_processes();
-    thread::sleep(std::time::Duration::from_millis(300));
+    tauri::async_runtime::spawn_blocking(kill_all_openp2p_processes)
+        .await
+        .map_err(|e| format!("OpenP2P 停止任务异常: {}", e))??;
     if let Some(dir) = &working_dir {
         clear_openp2p_log_files(dir);
     }
-    set_runas_mode(false);
     append_log_str("[RTLauncher] ✅ openp2p 进程（含所有保护线程）已终止\n");
     Ok(())
 }
 #[command]
 pub fn mp_is_openp2p_running() -> bool {
-    if is_runas_mode() {
-        #[cfg(target_os = "windows")]
-        {
-            use std::os::windows::process::CommandExt;
-            use winapi::um::winbase::CREATE_NO_WINDOW;
-            match Command::new("tasklist")
-                .args(["/FI", "IMAGENAME eq openp2p.exe", "/NH"])
-                .creation_flags(CREATE_NO_WINDOW)
-                .output()
-            {
-                Ok(output) => {
-                    let stdout = String::from_utf8_lossy(&output.stdout);
-                    return stdout.contains("openp2p.exe");
+    if let Ok(mut guard) = OPENP2P_PROCESS.lock() {
+        if let Some(child) = guard.as_mut() {
+            match child.try_wait() {
+                Ok(None) => return true,
+                Ok(Some(_)) => {
+                    // `openp2p -d` 的父进程会在拉起后台工作进程后正常退出。
+                    // 清除旧句柄，继续通过系统进程列表检查真正的工作进程。
+                    *guard = None;
                 }
-                Err(_) => return false,
+                Err(e) => {
+                    append_log_str(&format!("[RTLauncher] 检查进程句柄失败: {}\n", e));
+                }
             }
-        }
-        #[cfg(not(target_os = "windows"))]
-        {
-            return false;
         }
     }
-    let mut guard = match OPENP2P_PROCESS.lock() {
-        Ok(g) => g,
-        Err(_) => return false,
-    };
-    if let Some(child) = guard.as_mut() {
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                append_log_str(&format!(
-                    "[RTLauncher] ⚠ openp2p 进程已退出 (状态: {})\n",
-                    status
-                ));
-                *guard = None;
-                false
-            }
-            Ok(None) => true,
-            Err(e) => {
-                append_log_str(&format!("[RTLauncher] 检查进程状态失败: {}\n", e));
-                false
-            }
-        }
-    } else {
-        false
-    }
+
+    has_openp2p_system_process()
 }
 #[command]
 pub fn mp_poll_log() -> String {
-    let mut guard = match LOG_BUFFER.lock() {
-        Ok(g) => g,
-        Err(_) => return String::new(),
+    let mut content = if let Ok(mut guard) = LOG_BUFFER.lock() {
+        std::mem::take(&mut *guard)
+    } else {
+        Vec::new()
     };
-    if guard.is_empty() {
-        return String::new();
+
+    if let Ok(working_dir) = get_openp2p_dir() {
+        for chunk in [
+            read_log_increment(
+                &openp2p_log_file(&working_dir),
+                &OPENP2P_TXT_OFFSET,
+            ),
+            read_log_increment(
+                &openp2p_legacy_log_file(&working_dir),
+                &OPENP2P_LOG_OFFSET,
+            ),
+        ] {
+            if !chunk.is_empty() {
+                if !content.is_empty() && !content.ends_with(b"\n") {
+                    content.push(b'\n');
+                }
+                content.extend_from_slice(&chunk);
+            }
+        }
     }
-    let content = String::from_utf8_lossy(&guard).to_string();
-    guard.clear();
-    content
+
+    String::from_utf8_lossy(&content).to_string()
 }
 #[command]
 pub fn mp_get_openp2p_dir() -> String {
@@ -617,6 +677,56 @@ pub fn ensure_openp2p_stopped() {
             *guard = None;
         }
     }
-    kill_all_openp2p_processes();
-    set_runas_mode(false);
+    let _ = kill_all_openp2p_processes();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::read_log_increment;
+    #[cfg(target_os = "windows")]
+    use super::quote_windows_argument;
+    use std::fs::{self, OpenOptions};
+    use std::io::Write;
+    use std::sync::Mutex;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn log_reader_returns_only_new_bytes_and_handles_truncation() {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "rtlauncher-openp2p-log-{}-{}.txt",
+            std::process::id(),
+            unique
+        ));
+        let offset = Mutex::new(0u64);
+
+        fs::write(&path, b"first\n").expect("write initial log");
+        assert_eq!(read_log_increment(&path, &offset), b"first\n");
+        assert!(read_log_increment(&path, &offset).is_empty());
+
+        OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .expect("open log for append")
+            .write_all(b"second\n")
+            .expect("append log");
+        assert_eq!(read_log_increment(&path, &offset), b"second\n");
+
+        fs::write(&path, b"new\n").expect("truncate and rewrite log");
+        assert_eq!(read_log_increment(&path, &offset), b"new\n");
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_arguments_preserve_spaces_quotes_and_trailing_backslashes() {
+        assert_eq!(quote_windows_argument("plain"), "plain");
+        assert_eq!(quote_windows_argument("two words"), "\"two words\"");
+        assert_eq!(quote_windows_argument("a\"b"), "\"a\\\"b\"");
+        assert_eq!(quote_windows_argument("C:\\room path\\"), "\"C:\\room path\\\\\"");
+    }
 }

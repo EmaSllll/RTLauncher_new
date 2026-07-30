@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { InstanceData } from "@/types";
 import { useLaunchContext } from "./launch-provider";
+import { useI18n } from "@/components/i18n/use-i18n";
 
 interface VersionSidebarProps {
   className?: string;
@@ -25,17 +26,15 @@ interface VersionSidebarProps {
  * 显示已安装的游戏版本列表，支持切换版本
  */
 export function VersionSidebar({ className }: VersionSidebarProps) {
+  const { t } = useI18n();
   const { config, updateConfig } = useLaunchContext();
   const [instances, setInstances] = useState<InstanceData[]>([]);
   const [loading, setLoading] = useState(true);
   const [isExpanded, setIsExpanded] = useState(true);
 
-  // 加载已安装的游戏版本
-  useEffect(() => {
-    loadInstances();
-  }, [config.minecraftPath]);
-
-  const loadInstances = async () => {
+  // 加载已安装的游戏版本。版本安装在 .minecraft/versions 下，而不是
+  // 一个独立的 instances 目录；路径不一致会导致侧边栏始终显示为空。
+  const loadInstances = useCallback(async () => {
     if (!config.minecraftPath) {
       setInstances([]);
       setLoading(false);
@@ -44,8 +43,7 @@ export function VersionSidebar({ className }: VersionSidebarProps) {
 
     try {
       setLoading(true);
-      // vm_scan_instances 需要的是 instances 目录路径
-      const instancesPath = `${config.minecraftPath}/instances`;
+      const instancesPath = `${config.minecraftPath}/versions`;
       const result = await invoke<InstanceData[]>("vm_scan_instances", {
         instancesPath,
       });
@@ -56,7 +54,15 @@ export function VersionSidebar({ className }: VersionSidebarProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [config.minecraftPath]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadInstances();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [loadInstances]);
 
   const handleSelectVersion = (instance: InstanceData) => {
     // 更新启动配置中的版本信息
@@ -87,7 +93,7 @@ export function VersionSidebar({ className }: VersionSidebarProps) {
               className="flex items-center gap-2"
             >
               <PackageOpen className="size-4 text-primary" />
-              <span className="text-sm font-medium">游戏版本</span>
+              <span className="text-sm font-medium">{t({ "zh-CN": "游戏版本", "en-US": "Game versions" })}</span>
             </motion.div>
           )}
         </AnimatePresence>
@@ -120,17 +126,18 @@ export function VersionSidebar({ className }: VersionSidebarProps) {
               {isExpanded && (
                 <>
                   <p className="text-xs text-muted-foreground mb-1">
-                    暂无已安装版本
+                    {t({ "zh-CN": "暂无已安装版本", "en-US": "No installed versions" })}
                   </p>
                   <p className="text-[10px] text-muted-foreground/60">
-                    前往下载页面安装游戏
+                    {t({ "zh-CN": "前往下载页面安装游戏", "en-US": "Install a game version from Downloads" })}
                   </p>
                 </>
               )}
             </div>
           ) : (
             instances.map((instance) => {
-              const isSelected = config.versionName === instance.name;
+              const isSelected =
+                config.loadName === instance.name || config.versionName === instance.name;
 
               return (
                 <motion.button
@@ -202,7 +209,7 @@ export function VersionSidebar({ className }: VersionSidebarProps) {
             onClick={loadInstances}
           >
             <Plus className="size-3" />
-            刷新列表
+            {t({ "zh-CN": "刷新列表", "en-US": "Refresh list" })}
           </Button>
         </div>
       )}

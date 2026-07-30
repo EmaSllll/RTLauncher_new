@@ -8,7 +8,9 @@ import {
   loginThirdParty,
   msRequestDeviceCode,
   msPollAndLogin,
-  getAvatarBase64,
+  msCancelLogin,
+  getSkinBase64,
+  redownloadLittleSkinSkin,
   type LittleSkinAccount,
   type ThirdPartyAccountList,
   type DeviceCodeInfo,
@@ -21,6 +23,8 @@ type AccountContextType = {
   selectedProfile: Account | null;
   selectProfile: (acc: Account) => void;
   removeProfile: (id: string) => void;
+  /** 更新单个账户信息（例如刷新皮肤URL） */
+  updateProfile: (id: string, patch: Partial<Account>) => void;
   /** LittleSkin OAuth 登录 */
   loginWithLittleSkin: () => Promise<void>;
   /** LittleSkin 账号密码登录（PCL2 风格，无需浏览器），返回玩家列表 */
@@ -46,6 +50,8 @@ type AccountContextType = {
   ) => void;
   /** 微软正版登录 —— 返回 DeviceCodeInfo 后由前端展示，后台继续轮询 */
   loginWithMicrosoft: () => Promise<DeviceCodeInfo>;
+  /** 取消微软正版登录（用户关闭对话框时调用） */
+  cancelMicrosoftLogin: () => void;
   loginState: LoginState;
   loginError: string | null;
 };
@@ -82,14 +88,43 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
   const [selectedProfile, setSelectedProfile] = useState<Account | null>(null);
   const [loginState, setLoginState] = useState<LoginState>("idle");
   const [loginError, setLoginError] = useState<string | null>(null);
+  // 微软登录的"取消标志"：每次调用 loginWithMicrosoft 时递增，
+  // 如果用户在途中调用 cancelMicrosoftLogin，这个计数器会递增，
+  // 使得后续的 .then/.catch 回调不更新状态（避免关闭对话框后仍显示"登录中"）
+  const msLoginVersionRef = React.useRef<number>(0);
 
   // 客户端挂载后从 localStorage 恢复数据，避免 SSR hydration 不匹配
+  // 同时刷新 LittleSkin 账户的皮肤，确保显示最新的皮肤
   useEffect(() => {
     const all = loadProfiles();
     const id = loadSelectedId();
     const selected = all.find((p) => p.id === id) ?? all[0] ?? null;
     setProfiles(all);
     setSelectedProfile(selected);
+
+    // 挂载后异步刷新所有 LittleSkin 账户的皮肤
+    // 确保用户在 LittleSkin 网站更换皮肤后，重新打开启动器能看到最新皮肤
+    all.forEach((profile) => {
+      if (profile.authType === "littleskin" && profile.uuid) {
+        const pid = profile.id;
+        const puuid = profile.uuid;
+        (async () => {
+          try {
+            // 先尝试重新下载皮肤（用户可能在网站上换了皮肤）
+            await redownloadLittleSkinSkin(puuid);
+            // 下载成功后，读取并更新皮肤显示
+            const skinSrc = await getSkinBase64(puuid);
+            setProfiles((prev) =>
+              prev.map((p) =>
+                p.id === pid ? { ...p, skinUrl: skinSrc } : p
+              )
+            );
+          } catch {
+            // 刷新失败不影响，保持原来的皮肤（如果有的话）
+          }
+        })();
+      }
+    });
   }, []);
 
   // 持久化
@@ -127,6 +162,20 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
     [selectedProfile]
   );
 
+  const updateProfile = useCallback(
+    (id: string, patch: Partial<Account>) => {
+      setProfiles((prev) => {
+        const updated = prev.map((p) => (p.id === id ? { ...p, ...patch } : p));
+        // 如果更新的是当前选中的账户，也同步更新 selectedProfile
+        if (selectedProfile?.id === id) {
+          setSelectedProfile((curr) => (curr ? { ...curr, ...patch } : curr));
+        }
+        return updated;
+      });
+    },
+    [selectedProfile]
+  );
+
   // ---- LittleSkin 账号密码登录（PCL2 风格，无需浏览器）----
   const loginWithLittleSkinCredentials = useCallback(
     async (username: string, password: string) => {
@@ -154,6 +203,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       authType: "littleskin",
       status: "LittleSkin 登录",
       accessToken: account.access_token,
+      yggdrasilUrl: "https://littleskin.cn/api/yggdrasil",
       skinUrl: account.skin_url ?? undefined,
     };
     setProfiles((prev) => {
@@ -161,6 +211,32 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       return [...filtered, newAccount];
     });
     setSelectedProfile(newAccount);
+    // 异步获取皮肤 base64（皮肤已经下载到本地）
+    if (account.skin_url) {
+      const accountId = `ls-${account.uuid}`;
+      const skinUrlKey = account.skin_url;
+      const accountUuid = account.uuid;
+      // 使用 IIFE 包裹，避免 .catch(async fn) 反模式
+      (async () => {
+        try {
+          const skinSrc = await getSkinBase64(skinUrlKey);
+          setProfiles((prev) =>
+            prev.map((p) => (p.id === accountId ? { ...p, skinUrl: skinSrc } : p))
+          );
+        } catch {
+          // 第一次失败：尝试重新下载皮肤
+          try {
+            await redownloadLittleSkinSkin(accountUuid);
+            const skinSrc = await getSkinBase64(skinUrlKey);
+            setProfiles((prev) =>
+              prev.map((p) => (p.id === accountId ? { ...p, skinUrl: skinSrc } : p))
+            );
+          } catch {
+            // 重新下载也失败，静默忽略
+          }
+        }
+      })();
+    }
   }, []);
 
   // ---- LittleSkin OAuth 登录 ----
@@ -176,16 +252,41 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
         authType: "littleskin",
         status: "LittleSkin 登录",
         accessToken: info.access_token,
+        yggdrasilUrl: "https://littleskin.cn/api/yggdrasil",
         skinUrl: info.skin_url ?? undefined,
       };
       setProfiles((prev) => {
-        // 去重：同 uuid 替换
         const filtered = prev.filter(
           (p) => !(p.uuid === info.uuid && p.authType === "littleskin")
         );
         return [...filtered, newAccount];
       });
       setSelectedProfile(newAccount);
+      // 异步获取皮肤 base64
+      if (info.skin_url) {
+        const accountId = `ls-${info.uuid}`;
+        const skinUrlKey = info.skin_url;
+        const accountUuid = info.uuid;
+        (async () => {
+          try {
+            const skinSrc = await getSkinBase64(skinUrlKey);
+            setProfiles((prev) =>
+              prev.map((p) => (p.id === accountId ? { ...p, skinUrl: skinSrc } : p))
+            );
+          } catch {
+            // 第一次失败：尝试重新下载皮肤
+            try {
+              await redownloadLittleSkinSkin(accountUuid);
+              const skinSrc = await getSkinBase64(skinUrlKey);
+              setProfiles((prev) =>
+                prev.map((p) => (p.id === accountId ? { ...p, skinUrl: skinSrc } : p))
+              );
+            } catch {
+              // 重新下载也失败，静默忽略
+            }
+          }
+        })();
+      }
       setLoginState("idle");
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -236,13 +337,13 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
         return [...filtered, newAccount];
       });
       setSelectedProfile(newAccount);
-      // 异步生成头像
+      // 异步下载并获取皮肤 base64
       if (profile.id) {
-        getAvatarBase64(profile.id)
-          .then((avatarSrc) => {
+        getSkinBase64(profile.id)
+          .then((skinSrc) => {
             setProfiles((prev) =>
               prev.map((p) =>
-                p.id === `tp-${profile.id}` ? { ...p, skinUrl: avatarSrc } : p
+                p.id === `tp-${profile.id}` ? { ...p, skinUrl: skinSrc } : p
               )
             );
           })
@@ -285,6 +386,8 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
 
   // ---- 微软正版登录 ----
   const loginWithMicrosoft = useCallback(async (): Promise<DeviceCodeInfo> => {
+    // 每次重新开始微软登录时递增版本号
+    const currentVersion = ++msLoginVersionRef.current;
     setLoginState("loading");
     setLoginError(null);
     try {
@@ -294,14 +397,19 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       // 第二步：后台轮询 (不阻塞 UI, 异步等后端返回)
       msPollAndLogin(codeInfo.device_code, codeInfo.interval)
         .then(async (info) => {
-          let avatarSrc: string | null = info.skin_url ?? null;
-          if (!avatarSrc && info.uuid) {
+          // 如果在等待期间用户已取消（版本号不同），忽略这次结果
+          if (msLoginVersionRef.current !== currentVersion) return;
+          // info.skin_url 现在是 uuid（本地皮肤文件标识）
+          let avatarSrc: string | null = null;
+          if (info.uuid) {
             try {
-              avatarSrc = await getAvatarBase64(info.uuid);
+              avatarSrc = await getSkinBase64(info.uuid);
             } catch {
-              // 头像生成失败不影响登录
+              // 皮肤获取失败不影响登录
             }
           }
+          // 再次检查取消状态（皮肤获取可能需要时间）
+          if (msLoginVersionRef.current !== currentVersion) return;
           const newAccount: Account = {
             id: `ms-${info.uuid}`,
             name: info.name,
@@ -309,7 +417,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
             authType: "microsoft",
             status: AUTH_TYPE_LABELS.microsoft,
             accessToken: info.access_token,
-            skinUrl: avatarSrc,
+            skinUrl: avatarSrc ?? undefined,
           };
           setProfiles((prev) => {
             const filtered = prev.filter(
@@ -321,7 +429,15 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
           setLoginState("idle");
         })
         .catch((e: unknown) => {
+          // 用户主动取消时不更新状态（不显示错误）
+          if (msLoginVersionRef.current !== currentVersion) return;
           const msg = e instanceof Error ? e.message : String(e);
+          // "已取消登录" 是用户主动操作，不设为 error 状态
+          if (msg.includes("已取消登录")) {
+            setLoginState("idle");
+            setLoginError(null);
+            return;
+          }
           setLoginError(msg);
           setLoginState("error");
         });
@@ -329,11 +445,26 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
       // 立即返回设备代码给 UI 展示
       return codeInfo;
     } catch (e: unknown) {
+      // 如果用户在第一步（获取 device_code）时就已取消，不设置 error 状态
+      if (msLoginVersionRef.current !== currentVersion) throw e;
       const msg = e instanceof Error ? e.message : String(e);
       setLoginError(msg);
       setLoginState("error");
       throw e;
     }
+  }, []);
+
+  // ---- 取消微软正版登录（用户关闭对话框时调用）----
+  const cancelMicrosoftLogin = useCallback(() => {
+    // 递增版本号：让之前的 then/catch 回调识别到"已被取消"
+    msLoginVersionRef.current++;
+    // 设置状态恢复为 idle，不再显示"登录中"
+    setLoginState("idle");
+    setLoginError(null);
+    // 通知后端：停止轮询循环
+    msCancelLogin().catch(() => {
+      // 静默失败
+    });
   }, []);
 
   return (
@@ -343,6 +474,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
         selectedProfile,
         selectProfile,
         removeProfile,
+        updateProfile,
         loginWithLittleSkin,
         loginWithLittleSkinCredentials,
         addLittleSkinAccount,
@@ -350,6 +482,7 @@ export function AccountProvider({ children }: { children: React.ReactNode }) {
         addOfflineAccount,
         addThirdPartyAccount,
         loginWithMicrosoft,
+        cancelMicrosoftLogin,
         loginState,
         loginError,
       }}

@@ -89,7 +89,7 @@ export const INSTANCE_CARDS: InstanceCard[] = [
     colorFrom: "rgba(167, 139, 250, 0.1)",
     colorTo: "rgba(168, 85, 247, 0.1)",
     iconBgColor: "bg-violet-50 dark:bg-violet-900/20",
-    iconColor: "text-violet-600 dark:text-violet-400",
+    iconColor: "text-violet-600 dark:text-violet-399",
     icon: (
       <path
         strokeLinecap="round"

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { blobToBase64 } from "@/lib/file-utils";
 
 export interface ModDependency {
   mod_id: string;
@@ -30,6 +31,24 @@ export interface ModInfo {
   incompatible_dependencies: ModDependency[];
 }
 
+type ResourceEntry = {
+  name: string;
+  is_dir: boolean;
+  extension: string;
+  size: number;
+};
+
+export type ResourceFile = {
+  name: string;
+  size: number;
+  isDir?: boolean;
+};
+
+function isMissingDirectoryError(error: unknown) {
+  const message = String(error).toLowerCase();
+  return message.includes("not found") || message.includes("系统找不到");
+}
+
 /**
  * 通用的资源管理 hook - 管理两列资源
  *
@@ -50,14 +69,15 @@ export function useResourceManager(
   mcVersion: string | undefined,
   modLoader: string | undefined,
   extensions: string[] = [],
+  directoryNavigation = false,
 ): {
   // 实例中的文件
-  instanceFiles: { name: string; size: number }[];
+  instanceFiles: ResourceFile[];
   instanceLoading: boolean;
   instanceError: string | null;
 
   // cache 中的文件（对应当前版本/加载器）
-  cacheFiles: { name: string; size: number }[];
+  cacheFiles: ResourceFile[];
   cacheLoading: boolean;
   cacheError: string | null;
 
@@ -74,6 +94,9 @@ export function useResourceManager(
   renameInInstance: (oldName: string, newName: string) => Promise<void>;
   uploadFiles: () => Promise<void>;
   refresh: () => void;
+  openInstanceDirectory: (directoryName: string) => void;
+  goToParentInstanceDirectory: () => void;
+  instanceDirectoryPath: string[];
 
   // 搜索
   instanceSearch: string;
@@ -82,16 +105,41 @@ export function useResourceManager(
   setCacheSearch: (s: string) => void;
 
   // 过滤后的结果
-  filteredInstanceFiles: { name: string; size: number }[];
-  filteredCacheFiles: { name: string; size: number }[];
+  filteredInstanceFiles: ResourceFile[];
+  filteredCacheFiles: ResourceFile[];
 } {
+  // 页面配置通常以字面量数组传入扩展名。根据内容稳定化它，避免该数组的
+  // 新引用让读取回调在每次 state 更新后发生变化。
+  const extensionsKey = extensions.join(",");
+  const stableExtensions = useMemo(
+    () => (extensionsKey ? extensionsKey.split(",") : []),
+    [extensionsKey],
+  );
+
   // 实例中的文件 - 使用 vm_list_dir
-  const [instanceFiles, setInstanceFiles] = useState<{ name: string; size: number }[]>([]);
+  const directoryRootKey = `${instanceDir ?? ""}\u0000${instanceSubdir}`;
+  const [directoryLocation, setDirectoryLocation] = useState<{
+    rootKey: string;
+    segments: string[];
+  }>({ rootKey: directoryRootKey, segments: [] });
+  const instanceDirectoryPath = directoryLocation.rootKey === directoryRootKey
+    ? directoryLocation.segments
+    : [];
+  const currentInstanceSubdir = [instanceSubdir, ...instanceDirectoryPath].join("/");
+
+  // 实例中的文件
+  const [instanceFiles, setInstanceFiles] = useState<ResourceFile[]>([]);
   const [instanceLoading, setInstanceLoading] = useState(false);
   const [instanceError, setInstanceError] = useState<string | null>(null);
 
+  // 使用 ref 来存储最新的 instanceFiles，避免依赖循环
+  const instanceFilesRef = useRef(instanceFiles);
+  useEffect(() => {
+    instanceFilesRef.current = instanceFiles;
+  }, [instanceFiles]);
+
   // cache 中的文件
-  const [cacheFiles, setCacheFiles] = useState<{ name: string; size: number }[]>([]);
+  const [cacheFiles, setCacheFiles] = useState<ResourceFile[]>([]);
   const [cacheLoading, setCacheLoading] = useState(false);
   const [cacheError, setCacheError] = useState<string | null>(null);
 
@@ -103,6 +151,7 @@ export function useResourceManager(
   // 搜索
   const [instanceSearch, setInstanceSearch] = useState("");
   const [cacheSearch, setCacheSearch] = useState("");
+  const instanceRequestIdRef = useRef(0);
 
   const parseModMetadata = useCallback(
     async (
@@ -135,20 +184,25 @@ export function useResourceManager(
   );
 
   const fetchInstanceFiles = useCallback(async () => {
-    if (!instanceDir) return;
+    const requestId = ++instanceRequestIdRef.current;
+    if (!instanceDir) {
+      setInstanceFiles([]);
+      return;
+    }
     setInstanceLoading(true);
     setInstanceError(null);
     try {
-      const dir = `${instanceDir}/${instanceSubdir}`;
-      const entries: { name: string; is_dir: boolean; extension: string; size: number }[] =
-        await invoke("vm_list_dir", { dirPath: dir, extensionsFilter: extensions });
-      // world 类型保留目录（存档是目录），其他类型仅保留文件
-      const filtered = cacheKind === "world"
+      const dir = `${instanceDir}/${currentInstanceSubdir}`;
+      const entries: ResourceEntry[] =
+        await invoke("vm_list_dir", { dirPath: dir, extensionsFilter: stableExtensions });
+      // 存档本身是目录；支持目录导航的页面也需要保留目录条目。
+      const filtered = cacheKind === "world" || directoryNavigation
         ? entries
         : entries.filter((e) => !e.is_dir);
       const sorted = filtered
-        .map((e) => ({ name: e.name, size: e.size }))
-        .sort((a, b) => a.name.localeCompare(b.name));
+        .map((e) => ({ name: e.name, size: e.size, isDir: e.is_dir }))
+        .sort((a, b) => Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name));
+      if (requestId !== instanceRequestIdRef.current) return;
       setInstanceFiles(sorted);
 
       // 当是模组目录时，批量解析元数据（任何 ZIP 格式的文件都能解析：.jar / .litemod / .zip）
@@ -163,22 +217,37 @@ export function useResourceManager(
             modFiles.map((f) => f.name),
             dir.replace(/\\/g, "/"),
           );
-          setInstanceModInfo(infoMap);
+          if (requestId === instanceRequestIdRef.current) {
+            setInstanceModInfo(infoMap);
+          }
         } finally {
           setModsParsing(false);
         }
       }
-    } catch (e: any) {
-      if (String(e).toLowerCase().includes("not found") || String(e).toLowerCase().includes("系统找不到")) {
-        setInstanceFiles([]);
+    } catch (error: unknown) {
+      if (isMissingDirectoryError(error)) {
+        if (requestId === instanceRequestIdRef.current) {
+          setInstanceFiles([]);
+        }
       } else {
-        setInstanceError(String(e));
-        setInstanceFiles([]);
+        if (requestId === instanceRequestIdRef.current) {
+          setInstanceError(String(error));
+          setInstanceFiles([]);
+        }
       }
     } finally {
-      setInstanceLoading(false);
+      if (requestId === instanceRequestIdRef.current) {
+        setInstanceLoading(false);
+      }
     }
-  }, [instanceDir, instanceSubdir, JSON.stringify(extensions), cacheKind, parseModMetadata]);
+  }, [
+    instanceDir,
+    currentInstanceSubdir,
+    stableExtensions,
+    cacheKind,
+    directoryNavigation,
+    parseModMetadata,
+  ]);
 
   const fetchCacheFiles = useCallback(async () => {
     if (!mcVersion) {
@@ -214,42 +283,59 @@ export function useResourceManager(
         });
       }
 
-      // 过滤掉已存在于实例中的文件
-      const instanceNames = new Set(instanceFiles.map((f) => f.name));
-      const unique = names.filter((n) => !instanceNames.has(n));
-      const sorted = unique
-        .map((n) => ({ name: n, size: 0 }))
-        .sort((a, b) => a.name.localeCompare(b.name));
-      setCacheFiles(sorted);
+      // 过滤掉已存在于实例中的文件 - 使用 ref 来获取最新的 instanceFiles
+      setCacheFiles(() => {
+        const instanceNames = new Set(instanceFilesRef.current.map((f) => f.name));
+        const unique = names.filter((n) => !instanceNames.has(n));
+        const sorted = unique
+          .map((n) => ({ name: n, size: 0 }))
+          .sort((a, b) => a.name.localeCompare(b.name));
 
-      // 当是模组目录时，批量解析元数据（任何 ZIP 格式的文件都能解析：.jar / .litemod / .zip）
-      if (cacheKind === "mod" && sorted.length > 0 && cacheDirBase) {
-        setModsParsing(true);
-        try {
-          const modFiles = sorted.filter((f) => {
-            const lower = f.name.toLowerCase();
-            return lower.endsWith(".jar") || lower.endsWith(".litemod") || lower.endsWith(".zip");
-          });
-          const infoMap = await parseModMetadata(
-            modFiles.map((f) => f.name),
-            cacheDirBase,
-          );
-          setCacheModInfo(infoMap);
-        } finally {
-          setModsParsing(false);
+        // 当是模组目录时，批量解析元数据（任何 ZIP 格式的文件都能解析：.jar / .litemod / .zip）
+        if (cacheKind === "mod" && sorted.length > 0 && cacheDirBase) {
+          setModsParsing(true);
+          (async () => {
+            try {
+              const modFiles = sorted.filter((f) => {
+                const lower = f.name.toLowerCase();
+                return lower.endsWith(".jar") || lower.endsWith(".litemod") || lower.endsWith(".zip");
+              });
+              const infoMap = await parseModMetadata(
+                modFiles.map((f) => f.name),
+                cacheDirBase,
+              );
+              setCacheModInfo(infoMap);
+            } finally {
+              setModsParsing(false);
+            }
+          })();
         }
-      }
-    } catch (e: any) {
-      if (String(e).toLowerCase().includes("not found") || String(e).toLowerCase().includes("系统找不到")) {
+
+        return sorted;
+      });
+    } catch (error: unknown) {
+      if (isMissingDirectoryError(error)) {
         setCacheFiles([]);
       } else {
-        setCacheError(String(e));
+        setCacheError(String(error));
         setCacheFiles([]);
       }
     } finally {
       setCacheLoading(false);
     }
-  }, [cacheKind, mcVersion, modLoader, JSON.stringify(instanceFiles), parseModMetadata]);
+  }, [cacheKind, mcVersion, modLoader, parseModMetadata]);
+
+  // 使用 ref 来存储 fetch 函数，避免依赖循环
+  const fetchInstanceFilesRef = useRef(fetchInstanceFiles);
+  const fetchCacheFilesRef = useRef(fetchCacheFiles);
+
+  useEffect(() => {
+    fetchInstanceFilesRef.current = fetchInstanceFiles;
+  }, [fetchInstanceFiles]);
+
+  useEffect(() => {
+    fetchCacheFilesRef.current = fetchCacheFiles;
+  }, [fetchCacheFiles]);
 
   const addToInstance = useCallback(
     async (fileName: string) => {
@@ -260,12 +346,12 @@ export function useResourceManager(
         modLoader: cacheKind === "mod" ? (modLoader || null) : null,
         fileName: fileName,
         instanceDir: instanceDir,
-        instanceSubdir: instanceSubdir,
+        instanceSubdir: currentInstanceSubdir,
       });
-      fetchInstanceFiles();
-      fetchCacheFiles();
+      fetchInstanceFilesRef.current();
+      fetchCacheFilesRef.current();
     },
-    [instanceDir, mcVersion, cacheKind, modLoader, instanceSubdir, fetchInstanceFiles, fetchCacheFiles],
+    [instanceDir, mcVersion, cacheKind, modLoader, currentInstanceSubdir],
   );
 
   const removeFromInstance = useCallback(
@@ -277,22 +363,22 @@ export function useResourceManager(
         modLoader: cacheKind === "mod" ? (modLoader || null) : null,
         fileName: fileName,
         instanceDir: instanceDir,
-        instanceSubdir: instanceSubdir,
+        instanceSubdir: currentInstanceSubdir,
       });
-      fetchInstanceFiles();
-      fetchCacheFiles();
+      fetchInstanceFilesRef.current();
+      fetchCacheFilesRef.current();
     },
-    [instanceDir, mcVersion, cacheKind, modLoader, instanceSubdir, fetchInstanceFiles, fetchCacheFiles],
+    [instanceDir, mcVersion, cacheKind, modLoader, currentInstanceSubdir],
   );
 
   const deleteFromInstance = useCallback(
     async (fileName: string) => {
       if (!instanceDir) return;
-      const dir = `${instanceDir}/${instanceSubdir}`;
+      const dir = `${instanceDir}/${currentInstanceSubdir}`;
       await invoke("vm_delete_file", { dirPath: dir, fileName });
-      fetchInstanceFiles();
+      fetchInstanceFilesRef.current();
     },
-    [instanceDir, instanceSubdir, fetchInstanceFiles],
+    [instanceDir, currentInstanceSubdir],
   );
 
   const deleteFromCache = useCallback(
@@ -304,19 +390,19 @@ export function useResourceManager(
         modLoader: cacheKind === "mod" ? (modLoader || null) : null,
         fileName,
       });
-      fetchCacheFiles();
+      fetchCacheFilesRef.current();
     },
-    [cacheKind, mcVersion, modLoader, fetchCacheFiles],
+    [cacheKind, mcVersion, modLoader],
   );
 
   const renameInInstance = useCallback(
     async (oldName: string, newName: string) => {
       if (!instanceDir) return;
-      const dir = `${instanceDir}/${instanceSubdir}`;
+      const dir = `${instanceDir}/${currentInstanceSubdir}`;
       await invoke("vm_rename_file", { dirPath: dir, oldName, newName });
-      fetchInstanceFiles();
+      fetchInstanceFilesRef.current();
     },
-    [instanceDir, instanceSubdir, fetchInstanceFiles],
+    [instanceDir, currentInstanceSubdir],
   );
 
   const uploadFiles = useCallback(async () => {
@@ -325,14 +411,14 @@ export function useResourceManager(
     const input = document.createElement('input');
     input.type = 'file';
     input.multiple = true;
-    if (extensions.length > 0) {
-      input.accept = extensions.map(e => `.${e}`).join(',');
+    if (stableExtensions.length > 0) {
+      input.accept = stableExtensions.map(e => `.${e}`).join(',');
     }
     input.style.display = 'none';
     
     document.body.appendChild(input);
     
-    return new Promise<void>((resolve) => {
+    return new Promise<void>((resolve, reject) => {
       input.addEventListener('change', async (e) => {
         const files = (e.target as HTMLInputElement).files;
         if (!files || files.length === 0) {
@@ -341,45 +427,69 @@ export function useResourceManager(
           return;
         }
 
-        const targetDir = `${instanceDir}/${instanceSubdir}`;
-        
-        for (const file of Array.from(files)) {
-          const arrayBuffer = await file.arrayBuffer();
-          const bytes = new Uint8Array(arrayBuffer);
-          const base64 = btoa(String.fromCharCode(...bytes));
-          
-          await invoke("vm_write_file_base64", {
-            dirPath: targetDir,
-            fileName: file.name,
-            contentBase64: base64,
-          });
+        try {
+          const targetDir = `${instanceDir}/${currentInstanceSubdir}`;
+          for (const file of Array.from(files)) {
+            const base64 = await blobToBase64(file);
+            await invoke("vm_write_file_base64", {
+              dirPath: targetDir,
+              fileName: file.name,
+              contentBase64: base64,
+            });
+          }
+
+          fetchInstanceFilesRef.current();
+          fetchCacheFilesRef.current();
+          resolve();
+        } catch (error) {
+          reject(error);
+        } finally {
+          document.body.removeChild(input);
         }
-        
-        fetchInstanceFiles();
-        fetchCacheFiles();
-        
-        document.body.removeChild(input);
-        resolve();
       });
       
       input.click();
     });
-  }, [instanceDir, instanceSubdir, fetchInstanceFiles, fetchCacheFiles, extensions]);
+  }, [instanceDir, currentInstanceSubdir, stableExtensions]);
 
   const refresh = useCallback(() => {
-    fetchInstanceFiles();
-    fetchCacheFiles();
-  }, [fetchInstanceFiles, fetchCacheFiles]);
+    fetchInstanceFilesRef.current();
+    fetchCacheFilesRef.current();
+  }, []);
 
-  // 初始化加载
+  const openInstanceDirectory = useCallback(
+    (directoryName: string) => {
+      if (!directoryNavigation) return;
+      setDirectoryLocation((current) => {
+        const segments = current.rootKey === directoryRootKey ? current.segments : [];
+        return { rootKey: directoryRootKey, segments: [...segments, directoryName] };
+      });
+      setInstanceSearch("");
+    },
+    [directoryNavigation, directoryRootKey],
+  );
+
+  const goToParentInstanceDirectory = useCallback(() => {
+    if (!directoryNavigation) return;
+    setDirectoryLocation((current) => {
+      const segments = current.rootKey === directoryRootKey ? current.segments : [];
+      return { rootKey: directoryRootKey, segments: segments.slice(0, -1) };
+    });
+    setInstanceSearch("");
+  }, [directoryNavigation, directoryRootKey]);
+
+  // 初始化加载 - 使用 ref 避免依赖循环
   useEffect(() => {
     if (instanceDir) {
-      fetchInstanceFiles();
+      void fetchInstanceFilesRef.current();
     }
+  }, [instanceDir, currentInstanceSubdir]);
+
+  useEffect(() => {
     if (mcVersion) {
-      fetchCacheFiles();
+      void fetchCacheFilesRef.current();
     }
-  }, [instanceDir, mcVersion, fetchInstanceFiles, fetchCacheFiles]);
+  }, [mcVersion]);
 
   // 过滤结果 - 同时搜索文件名和模组名称
   const filteredInstanceFiles = useMemo(() => {
@@ -425,6 +535,9 @@ export function useResourceManager(
     renameInInstance,
     uploadFiles,
     refresh,
+    openInstanceDirectory,
+    goToParentInstanceDirectory,
+    instanceDirectoryPath,
     instanceSearch,
     setInstanceSearch,
     cacheSearch,

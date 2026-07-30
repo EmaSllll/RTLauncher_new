@@ -27,13 +27,17 @@ export default function SchematicsPage() {
     setCacheSearch,
     instanceFiles,
     cacheFiles,
+    openInstanceDirectory,
+    goToParentInstanceDirectory,
+    instanceDirectoryPath,
   } = useResourceManager(
     instanceDir,
     "schematics",
     "world",
     selectedInstance?.minecraft_version,
     undefined,
-    ["schem", "schematic"],
+    ["schem", "schematic", "litematic", "nbt"],
+    true,
   );
 
   if (!configLoaded) {
@@ -86,6 +90,9 @@ export default function SchematicsPage() {
       leftSearch={instanceSearch}
       setLeftSearch={setInstanceSearch}
       leftBadge={`${instanceFiles.length} 个`}
+      leftDirectoryPath={instanceDirectoryPath}
+      onOpenLeftDirectory={openInstanceDirectory}
+      onNavigateUpLeft={goToParentInstanceDirectory}
       rightTitle=""
       rightIcon={<Folder className="size-5 text-sky-500" />}
       rightIconBg="bg-sky-500/10"

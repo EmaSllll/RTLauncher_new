@@ -17,7 +17,8 @@ use super::decompression::extract_library_paths;
 const MOJANG_MANIFEST: &str = "https://launchermeta.mojang.com/mc/game/version_manifest.json";
 const MIRROR_URL: &str = "https://bmclapi2.bangbang93.com";
 
-const MAX_CONCURRENT_DOWNLOADS: usize = 128;
+// 过高的文件级并发会争用 Tokio 线程、文件描述符和磁盘，拖慢整个启动器。
+const MAX_CONCURRENT_DOWNLOADS: usize = 16;
 #[derive(Debug)]
 struct DownloadTask {
     urls: Vec<String>,
@@ -26,13 +27,11 @@ struct DownloadTask {
     size: u64,
 }
 struct DownloadProgress {
-    total: Arc<AtomicUsize>,
     done: Arc<AtomicUsize>, 
 }
 impl DownloadProgress {
-    fn new(total: usize) -> Self {
+    fn new() -> Self {
         Self {
-            total: Arc::new(AtomicUsize::new(total)),
             done: Arc::new(AtomicUsize::new(0)),
         }
     }
@@ -122,7 +121,7 @@ struct Rule {
 struct OsRule {
     name: Option<String>,
 }
-pub async fn download_task(
+async fn download_task(
     task: DownloadTask,
     client: Arc<reqwest::Client>,
     semaphore: Arc<Semaphore>,
@@ -325,7 +324,7 @@ pub async fn process_version(
         });
     }
     let total = tasks.len();
-    let progress = Arc::new(DownloadProgress::new(total));
+    let progress = Arc::new(DownloadProgress::new());
     let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_DOWNLOADS));
     let client = shared_client().await;
     let progress_reporter = {

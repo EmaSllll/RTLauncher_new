@@ -58,3 +58,18 @@ no-password-key.txt.pub
 /.worktrees/
 /src-tauri/RTL
 gen_latest_json.js
+
+# AI Agents
+/.devin
+/.agents
+/.codex
+
+# Local IDE
+/.idea/
+/.npm-cache/
+/.pnpm-store/
+/.dev-server*.log
+/.tauri-dev.log
+/.tauri-codex-dev.json
+/.tauri-start.ps1
+/downloads/

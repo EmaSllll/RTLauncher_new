@@ -224,8 +224,8 @@ export default function WorldsPage() {
   const mcVersion = selectedInstance?.minecraft_version;
   const savesDir = instanceDir ? `${instanceDir}/saves` : undefined;
 
-  const fetchInstanceWorlds = useCallback(async () => {
-    if (!savesDir) return;
+  const fetchInstanceWorlds = useCallback(async (): Promise<WorldFolder[]> => {
+    if (!savesDir) return [];
     setInstanceLoading(true);
     setInstanceError(null);
     try {
@@ -236,6 +236,7 @@ export default function WorldsPage() {
       const folders = entries.filter((e) => e.is_dir);
       folders.sort((a, b) => a.name.localeCompare(b.name));
       setInstanceWorlds(folders);
+      return folders;
     } catch (e: any) {
       const msg = String(e).toLowerCase();
       if (msg.includes("not found") || msg.includes("系统找不到")) {
@@ -244,12 +245,13 @@ export default function WorldsPage() {
         setInstanceError(String(e));
         setInstanceWorlds([]);
       }
+      return [];
     } finally {
       setInstanceLoading(false);
     }
   }, [savesDir]);
 
-  const fetchCacheWorlds = useCallback(async () => {
+  const fetchCacheWorlds = useCallback(async (currentInstanceWorlds: WorldFolder[]) => {
     if (!mcVersion) return;
     setCacheLoading(true);
     setCacheError(null);
@@ -258,7 +260,7 @@ export default function WorldsPage() {
         kind: "world",
         mcVersion: mcVersion,
       });
-      const instanceNames = new Set(instanceWorlds.map((f) => f.name));
+      const instanceNames = new Set(currentInstanceWorlds.map((f) => f.name));
       const folders = names
         .filter((n) => !instanceNames.has(n))
         .map((n) => ({ name: n, is_dir: true, extension: "", size: 0 }));
@@ -275,7 +277,15 @@ export default function WorldsPage() {
     } finally {
       setCacheLoading(false);
     }
-  }, [mcVersion, instanceWorlds]);
+  }, [mcVersion]);
+
+  const refreshWorlds = useCallback(async () => {
+    // 将本次读取到的实例列表直接传给缓存读取，避免把 instanceWorlds
+    // 放入 effect 依赖。此前列表 state 每次更新都会重新触发两次请求，
+    // 形成无限刷新并最终令页面失去响应。
+    const worlds = await fetchInstanceWorlds();
+    await fetchCacheWorlds(worlds);
+  }, [fetchCacheWorlds, fetchInstanceWorlds]);
 
   const addToInstance = useCallback(
     async (worldName: string) => {
@@ -288,10 +298,9 @@ export default function WorldsPage() {
         instanceDir: instanceDir,
         instanceSubdir: "saves",
       });
-      fetchInstanceWorlds();
-      fetchCacheWorlds();
+      await refreshWorlds();
     },
-    [instanceDir, mcVersion, fetchInstanceWorlds, fetchCacheWorlds],
+    [instanceDir, mcVersion, refreshWorlds],
   );
 
   const removeFromInstance = useCallback(
@@ -305,17 +314,15 @@ export default function WorldsPage() {
         instanceDir: instanceDir,
         instanceSubdir: "saves",
       });
-      fetchInstanceWorlds();
-      fetchCacheWorlds();
+      await refreshWorlds();
     },
-    [instanceDir, mcVersion, fetchInstanceWorlds, fetchCacheWorlds],
+    [instanceDir, mcVersion, refreshWorlds],
   );
 
   useEffect(() => {
     if (!instanceDir) return;
-    fetchInstanceWorlds();
-    fetchCacheWorlds();
-  }, [instanceDir, mcVersion, fetchInstanceWorlds, fetchCacheWorlds]);
+    void refreshWorlds();
+  }, [instanceDir, refreshWorlds]);
 
   const filteredInstance = instanceWorlds.filter((w) =>
     w.name.toLowerCase().includes(instanceSearch.toLowerCase())
@@ -400,10 +407,7 @@ export default function WorldsPage() {
                 variant="ghost"
                 size="icon"
                 className="size-8"
-                onClick={() => {
-                  fetchInstanceWorlds();
-                  fetchCacheWorlds();
-                }}
+                onClick={() => void refreshWorlds()}
                 title="刷新"
               >
                 <RefreshCw className="size-3.5" />
