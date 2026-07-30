@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { invoke } from "@tauri-apps/api/core";
 import { useDownloadManager } from "@/components/download/download-provider";
+import { useSettings } from "@/components/settings/settings-provider";
 import { useRouter } from "next/navigation";
 
 const openExternalUrl = async (url: string) => {
@@ -61,6 +62,13 @@ interface ParsedFile {
   loaderLabel: string;
   versionLabel: string;
   serverLabel: string;
+}
+
+interface ResolvedModDependency {
+  projectId: string;
+  projectSlug: string;
+  projectName: string;
+  downloadUrl: string;
 }
 
 function decodeUriSafe(s: string): string {
@@ -339,6 +347,23 @@ function cleanTags(tags: string[], mcVersion: string, loaderLabel: string, serve
   return result;
 }
 
+function compareMinecraftVersionDescending(a: string, b: string): number {
+  const parts = (version: string) => {
+    const match = version.match(/^(\d+(?:\.\d+)+)/);
+    return match ? match[1].split(".").map(Number) : null;
+  };
+  const aParts = parts(a);
+  const bParts = parts(b);
+  if (aParts && bParts) {
+    const length = Math.max(aParts.length, bParts.length);
+    for (let index = 0; index < length; index += 1) {
+      const difference = (bParts[index] ?? 0) - (aParts[index] ?? 0);
+      if (difference !== 0) return difference;
+    }
+  }
+  return b.localeCompare(a, undefined, { numeric: true });
+}
+
 export default function ModDetailContent({ modId }: { modId: string }) {
   const router = useRouter();
   const [liveInfo, setLiveInfo] = useState<LiveModDetail | null>(null);
@@ -351,6 +376,7 @@ export default function ModDetailContent({ modId }: { modId: string }) {
   const [filesError, setFilesError] = useState<string | null>(null);
   const [dataSource, setDataSource] = useState<string | null>(null);
   const { startModDownload, startResourceDownload, tasks } = useDownloadManager();
+  const { settings } = useSettings();
 
   // 根据 URL 获取下载状态（用 taskId 精确匹配）
   const getDownloadStatus = (url: string) => {
@@ -383,7 +409,7 @@ export default function ModDetailContent({ modId }: { modId: string }) {
     if (!modFiles) return new Map<string, ParsedFile[]>();
 
     const result = new Map<string, ParsedFile[]>();
-    for (const [mcVersion, files] of Object.entries(modFiles)) {
+    for (const [mcVersion, files] of Object.entries(modFiles).sort(([a], [b]) => compareMinecraftVersionDescending(a, b))) {
       const parsed: ParsedFile[] = files.map(([tags, url]) => {
         const isRelease = isReleaseVersion(tags);
         const loaderInfo = extractLoaderInfo(tags);
@@ -417,12 +443,12 @@ export default function ModDetailContent({ modId }: { modId: string }) {
       setLiveError(null);
 
       // Query Modrinth and CurseForge in parallel to get complete project information
-      const mrPromise = fetch(
-        `https://api.modrinth.com/v2/project/${encodeURIComponent(modId)}`,
-        { headers: { 'User-Agent': 'RTLauncher', 'x-modrinth-api-version': 'v2' } }
-      )
-        .then((r) => (r.ok ? r.json() : null))
-        .catch(() => null);
+      const mrPromise = invoke<string>('get_modrinth_project', { slug: modId })
+        .then((result) => JSON.parse(result))
+        .catch((error) => {
+          console.warn('Modrinth project lookup failed:', error);
+          return null;
+        });
 
       const cfUrl = `https://api.curseforge.com/v1/mods/search?slug=${encodeURIComponent(modId)}&gameId=432`;
       const cfPromise = fetch(cfUrl, {
@@ -698,7 +724,7 @@ export default function ModDetailContent({ modId }: { modId: string }) {
         if (Object.keys(merged).length > 0) {
           setModFiles(merged);
           setDataSource(firstNonEmpty || "CurseForge");
-          const firstKey = Object.keys(merged)[0];
+          const firstKey = Object.keys(merged).sort(compareMinecraftVersionDescending)[0];
           if (firstKey) {
             setExpandedVersions(new Set([firstKey]));
           }
@@ -799,6 +825,47 @@ export default function ModDetailContent({ modId }: { modId: string }) {
         next.set(file.url, taskId);
         return next;
       });
+
+      if (settings.general.autoDownloadModDependencies && resourceKind === "mod") {
+        const hostname = new URL(file.url).hostname;
+        const dependencyCommand = /(^|\.)modrinth\.com$/i.test(hostname)
+          ? "get_modrinth_required_dependencies"
+          : /(^|\.)forgecdn\.net$/i.test(hostname) || /(^|\.)curseforge\.com$/i.test(hostname)
+            ? "get_curseforge_required_dependencies"
+            : null;
+
+        if (!dependencyCommand) return;
+
+        void invoke<ResolvedModDependency[]>(dependencyCommand, {
+          projectSlug: modSlug,
+          mcVersion,
+          modLoader,
+          downloadUrl: file.url,
+        })
+          .then(async (dependencies) => {
+            await Promise.all(
+              dependencies.map(async (dependency) => {
+                try {
+                  await startResourceDownload(
+                    "mod",
+                    dependency.projectSlug || dependency.projectId,
+                    `${dependency.projectName} (dependency)`,
+                    mcVersion,
+                    modLoader,
+                    dependency.downloadUrl,
+                  );
+                } catch (error) {
+                  console.error(`Failed to download dependency ${dependency.projectName}:`, error);
+                }
+              }),
+            );
+          })
+          .catch((error) => {
+            // The selected mod download is already running; dependency lookup
+            // failure should not turn it into a failed task.
+            console.warn("Failed to resolve required mod dependencies:", error);
+          });
+      }
     } catch (err) {
       console.error("Download failed:", err);
       setDownloadingUrlToTaskId(prev => {
@@ -825,7 +892,16 @@ export default function ModDetailContent({ modId }: { modId: string }) {
 
   return (
     <div className="flex h-full flex-col p-4">
-      <Button variant="ghost" size="sm" className="w-fit mb-4" onClick={() => router.push("/download")}>
+      <Button variant="ghost" size="sm" className="w-fit mb-4" onClick={() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("returnTo") === "english") {
+          const query = params.get("query") || "";
+          const category = params.get("category") || "mod";
+          router.push(`/download?tab=english&query=${encodeURIComponent(query)}&category=${encodeURIComponent(category)}`);
+          return;
+        }
+        router.push("/download");
+      }}>
         <ArrowLeft className="mr-2 size-4" />
         Back to Search
       </Button>

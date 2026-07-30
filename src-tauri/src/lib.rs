@@ -21,7 +21,7 @@ use handler::neoforge_handler::{get_neoforge_versions, download_and_install_neof
 use handler::liteloader_handler::{get_liteloader_versions, download_and_install_liteloader, cancel_liteloader_download};
 use handler::java_scanner::{search_java_installations, validate_java_path};
 use handler::chinese_search::{search_moddata, get_moddata_info};
-use handler::mod_links::{get_mod_links, get_curseforge_mod_files, get_mod_files_by_slug, get_modrinth_mod_files, download_mod_file, download_resource_file, cancel_mod_download, search_curseforge_projects};
+use handler::mod_links::{get_mod_links, get_curseforge_mod_files, get_curseforge_required_dependencies, get_mod_files_by_slug, get_modrinth_mod_files, get_modrinth_project, get_modrinth_required_dependencies, download_mod_file, download_resource_file, cancel_mod_download, search_curseforge_projects, search_modrinth_projects};
 use handler::modpack_builder::{
     get_modpack_dir, save_modpack_instance, list_modpack_instances,
     load_modpack_instance, delete_modpack_instance, rename_modpack_instance,
@@ -154,8 +154,12 @@ pub fn run() {
             get_moddata_info,
             get_mod_links,
             get_curseforge_mod_files,
+            get_curseforge_required_dependencies,
             get_mod_files_by_slug,
             get_modrinth_mod_files,
+            get_modrinth_project,
+            get_modrinth_required_dependencies,
+            search_modrinth_projects,
             download_mod_file,
             download_resource_file,
             cancel_mod_download,

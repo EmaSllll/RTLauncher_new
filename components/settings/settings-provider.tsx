@@ -31,6 +31,8 @@ export interface AppearanceSettings {
 
 export interface GeneralSettings {
   language: AppLanguage;
+  /** 下载 Modrinth 或 CurseForge 模组时自动下载其必需依赖。 */
+  autoDownloadModDependencies: boolean;
 }
 
 export interface LauncherSettings {
@@ -64,6 +66,7 @@ export const COLOR_PRESETS: ColorPreset[] = [
 export const DEFAULT_SETTINGS: LauncherSettings = {
   general: {
     language: "zh-CN",
+    autoDownloadModDependencies: true,
   },
   appearance: {
     themeMode: "light",
@@ -341,7 +344,10 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     let cancelled = false;
     let merged: LauncherSettings = {
       ...DEFAULT_SETTINGS,
-      general: { language: detectSystemLanguage() },
+      general: {
+        ...DEFAULT_SETTINGS.general,
+        language: detectSystemLanguage(),
+      },
       appearance: {
         ...DEFAULT_SETTINGS.appearance,
         background: { ...DEFAULT_SETTINGS.appearance.background },
@@ -427,7 +433,10 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
   const reset = React.useCallback(() => setSettings({
     ...DEFAULT_SETTINGS,
-    general: { language: detectSystemLanguage() },
+    general: {
+      ...DEFAULT_SETTINGS.general,
+      language: detectSystemLanguage(),
+    },
   }), []);
 
   const value = React.useMemo<SettingsContextValue>(
