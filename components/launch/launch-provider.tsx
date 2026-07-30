@@ -13,6 +13,7 @@ import { listen } from "@tauri-apps/api/event";
 import { useAccountContext } from "@/components/accounts/account-provider";
 import { isTauriRuntime } from "@/lib/tauri-runtime";
 import { log4jParser } from "@/components/launch/log4j-progress-parser";
+import { useI18n } from "@/components/i18n/use-i18n";
 import type { LaunchConfig, LaunchLogEntry, LaunchProgress, LaunchStatus } from "@/types";
 
 /** 默认启动配置 */
@@ -72,6 +73,7 @@ export function useLaunchContext() {
 }
 
 export function LaunchProvider({ children }: { children: React.ReactNode }) {
+  const { t } = useI18n();
   const [config, setConfig] = useState<LaunchConfig>(DEFAULT_LAUNCH_CONFIG);
   const [configLoaded, setConfigLoaded] = useState(false);
 
@@ -201,7 +203,7 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
     let unlisten: (() => void) | null = null;
     listen<number>("game-exited", (event) => {
       const exitCode = event.payload;
-      const timeStr = new Date().toLocaleString("zh-CN");
+      const timeStr = new Date().toLocaleString();
       setLastLaunchTime(timeStr);
       try { localStorage.setItem("rtl-last-launch-time", timeStr); } catch { /* ignore */ }
       setStatus("idle");
@@ -213,12 +215,12 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
           id: ++logIdRef.current,
           timestamp: new Date().toLocaleTimeString(),
           level: exitCode === 0 ? "info" : "warn",
-          message: `游戏已退出，退出码: ${exitCode}`,
+          message: t({ "zh-CN": `游戏已退出，退出码: ${exitCode}`, "en-US": `Game exited with code: ${exitCode}` }),
         },
       ]);
     }).then((fn) => { unlisten = fn; });
     return () => { unlisten?.(); };
-  }, []);
+  }, [t]);
 
   // 监听游戏完全启动事件（JVM 启动完成、资源加载完成）
   useEffect(() => {
@@ -235,12 +237,12 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
           id: ++logIdRef.current,
           timestamp: new Date().toLocaleTimeString(),
           level: "info",
-          message: `游戏已完全启动 (PID ${pid})，停止 JVM 追踪`,
+          message: t({ "zh-CN": `游戏已完全启动 (PID ${pid})，停止 JVM 追踪`, "en-US": `Game fully started (PID ${pid}); stopped JVM tracking` }),
         },
       ]);
     }).then((fn) => { unlisten = fn; });
     return () => { unlisten?.(); };
-  }, []);
+  }, [t]);
 
   // 监听启动进度事件
   useEffect(() => {
@@ -288,19 +290,19 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
 
       // 校验必要参数
       if (!merged.minecraftPath) {
-        setErrorMessage("请设置 Minecraft 游戏目录");
+        setErrorMessage(t({ "zh-CN": "请设置 Minecraft 游戏目录", "en-US": "Set the Minecraft game directory" }));
         return;
       }
       if (!merged.javaPath) {
-        setErrorMessage("请设置 Java 路径");
+        setErrorMessage(t({ "zh-CN": "请设置 Java 路径", "en-US": "Set a Java path" }));
         return;
       }
       if (!merged.versionName) {
-        setErrorMessage("请选择游戏版本");
+        setErrorMessage(t({ "zh-CN": "请选择游戏版本", "en-US": "Select a game version" }));
         return;
       }
       if (!selectedProfile) {
-        setErrorMessage("请先选择一个玩家账户");
+        setErrorMessage(t({ "zh-CN": "请先选择一个玩家账户", "en-US": "Select a player account first" }));
         return;
       }
 
@@ -308,16 +310,16 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
       setProgress(null);
       log4jParser.reset(); // 重置日志解析器
       setStatus("preparing");
-      addLog("info", "正在准备启动参数...");
+      addLog("info", t({ "zh-CN": "正在准备启动参数...", "en-US": "Preparing launch arguments..." }));
 
       try {
         setStatus("launching");
-        addLog("info", `启动版本: ${merged.versionName}`);
-        addLog("info", `玩家: ${selectedProfile.name}`);
-        addLog("info", `最大内存: ${merged.maxMemory}MB`);
+        addLog("info", t({ "zh-CN": `启动版本: ${merged.versionName}`, "en-US": `Launch version: ${merged.versionName}` }));
+        addLog("info", t({ "zh-CN": `玩家: ${selectedProfile.name}`, "en-US": `Player: ${selectedProfile.name}` }));
+        addLog("info", t({ "zh-CN": `最大内存: ${merged.maxMemory}MB`, "en-US": `Maximum memory: ${merged.maxMemory}MB` }));
 
         if (merged.loadType !== "0") {
-          addLog("info", `加载器: ${merged.loadName}`);
+          addLog("info", t({ "zh-CN": `加载器: ${merged.loadName}`, "en-US": `Loader: ${merged.loadName}` }));
         }
 
         const result = await invoke<string>("launch_game", {
@@ -340,15 +342,15 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
 
         setLastCommandArgs(result);
         setStatus("running");
-        addLog("info", "游戏已启动！");
+        addLog("info", t({ "zh-CN": "游戏已启动！", "en-US": "Game launched!" }));
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         setStatus("error");
         setErrorMessage(msg);
-        addLog("error", `启动失败: ${msg}`);
+        addLog("error", `${t({ "zh-CN": "启动失败", "en-US": "Launch failed" })}: ${msg}`);
       }
     },
-    [config, selectedProfile, addLog]
+    [config, selectedProfile, addLog, t]
   );
 
   return (

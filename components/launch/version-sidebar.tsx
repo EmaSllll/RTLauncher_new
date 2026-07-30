@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { InstanceData } from "@/types";
 import { useLaunchContext } from "./launch-provider";
+import { useI18n } from "@/components/i18n/use-i18n";
 
 interface VersionSidebarProps {
   className?: string;
@@ -25,6 +26,7 @@ interface VersionSidebarProps {
  * 显示已安装的游戏版本列表，支持切换版本
  */
 export function VersionSidebar({ className }: VersionSidebarProps) {
+  const { t } = useI18n();
   const { config, updateConfig } = useLaunchContext();
   const [instances, setInstances] = useState<InstanceData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,7 +93,7 @@ export function VersionSidebar({ className }: VersionSidebarProps) {
               className="flex items-center gap-2"
             >
               <PackageOpen className="size-4 text-primary" />
-              <span className="text-sm font-medium">游戏版本</span>
+              <span className="text-sm font-medium">{t({ "zh-CN": "游戏版本", "en-US": "Game versions" })}</span>
             </motion.div>
           )}
         </AnimatePresence>
@@ -124,10 +126,10 @@ export function VersionSidebar({ className }: VersionSidebarProps) {
               {isExpanded && (
                 <>
                   <p className="text-xs text-muted-foreground mb-1">
-                    暂无已安装版本
+                    {t({ "zh-CN": "暂无已安装版本", "en-US": "No installed versions" })}
                   </p>
                   <p className="text-[10px] text-muted-foreground/60">
-                    前往下载页面安装游戏
+                    {t({ "zh-CN": "前往下载页面安装游戏", "en-US": "Install a game version from Downloads" })}
                   </p>
                 </>
               )}
@@ -207,7 +209,7 @@ export function VersionSidebar({ className }: VersionSidebarProps) {
             onClick={loadInstances}
           >
             <Plus className="size-3" />
-            刷新列表
+            {t({ "zh-CN": "刷新列表", "en-US": "Refresh list" })}
           </Button>
         </div>
       )}

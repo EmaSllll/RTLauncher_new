@@ -61,11 +61,11 @@ function formatDate(iso?: string): string {
     const now = Date.now();
     const diffMs = now - d.getTime();
     const day = 24 * 60 * 60 * 1000;
-    if (diffMs < day) return "今日";
-    if (diffMs < 7 * day) return Math.round(diffMs / day) + " 天前";
-    if (diffMs < 30 * day) return Math.round(diffMs / (7 * day)) + " 周前";
-    if (diffMs < 365 * day) return Math.round(diffMs / (30 * day)) + " 个月前";
-    return Math.round(diffMs / (365 * day)) + " 年前";
+    if (diffMs < day) return "Today";
+    if (diffMs < 7 * day) return Math.round(diffMs / day) + " days ago";
+    if (diffMs < 30 * day) return Math.round(diffMs / (7 * day)) + " weeks ago";
+    if (diffMs < 365 * day) return Math.round(diffMs / (30 * day)) + " months ago";
+    return Math.round(diffMs / (365 * day)) + " years ago";
   } catch {
     return "";
   }
@@ -94,8 +94,8 @@ function categoryForSource(projectType: string): string {
 }
 
 /**
- * 下载中心
- * 包含 Minecraft 版本下载、Java 下载、中文模组检索
+ * Download Center
+ * Contains Minecraft version downloads, Java downloads, and Chinese mod search
  */
 export default function DownloadPage() {
   const router = useRouter();
@@ -156,50 +156,50 @@ export default function DownloadPage() {
     setChineseSearchError(null);
 
     try {
-      // 1) 空内容检查
+      // 1) Empty content check
       if (query.length === 0) {
-        setChineseSearchError("请输入搜索关键词");
+        setChineseSearchError("Please enter search keywords");
         return;
       }
 
-      // 2) 仅标点/数字检查
+      // 2) Punctuation/numbers only check
       if (isOnlyPunctuationOrEmpty(query)) {
-        setChineseSearchError("请输入有意义的中文关键词");
+        setChineseSearchError("Please enter meaningful Chinese keywords");
         return;
       }
 
-      // 3) 非中文检查 — 必须包含至少一个中文字符
+      // 3) Non-Chinese check — must contain at least one Chinese character
       if (!hasChinese(query)) {
-        setChineseSearchError("请使用中文关键词进行检索");
+        setChineseSearchError("Please use Chinese keywords for search");
         return;
       }
 
-      // 4) 调用后端 SQLite 查询
+      // 4) Call backend SQLite query
       const result = await invoke<string>("search_moddata", { keyword: query });
       const parsed = JSON.parse(result) as { slug: string; chinese_name: string }[];
       setChineseSearchResults(parsed);
 
       if (parsed.length === 0) {
-        setChineseSearchError(`没有找到与「${query}」相关的模组`);
+        setChineseSearchError(`No mods found related to "${query}"`);
       }
     } catch (err) {
-      console.error("中文搜索失败:", err);
-      setChineseSearchError(`搜索失败: ${String(err)}`);
+      console.error("Chinese search failed:", err);
+      setChineseSearchError(`Search failed: ${String(err)}`);
     } finally {
       setChineseSearchLoading(false);
     }
   };
 
-  // 点击结果项时跳转到模组详情页
+  // Navigate to mod detail page when clicking result item
   const handleResultClick = (item: { slug: string; chinese_name: string }) => {
     router.push(`/download/detail?mod=${encodeURIComponent(item.slug)}`);
   };
 
-  // 英文检索处理
+  // English search handling
   const handleEnglishSearch = useCallback(async () => {
     const query = englishQuery.trim();
     if (!query) {
-      setEnglishError("请输入搜索关键词");
+      setEnglishError("Please enter search keywords");
       return;
     }
     setEnglishLoading(true);
@@ -207,9 +207,9 @@ export default function DownloadPage() {
     setEnglishError(null);
     setEnglishSourceInfo(null);
     try {
-      // 将 englishCategory 映射到 Modrinth 的 project_type / CurseForge 的 classId
+      // Map englishCategory to Modrinth project_type / CurseForge classId
       const modrinthProjectType = englishCategory === "shaders" ? "shader" : englishCategory === "worlds" ? "world" : englishCategory === "modpack" ? "modpack" : englishCategory;
-      // 根据 englishCategory 推断 CurseForge classId
+      // Infer CurseForge classId based on englishCategory
       const targetClassIds: number[] = (() => {
         switch (englishCategory) {
           case "modpack": return [4471, 4473];
@@ -221,7 +221,7 @@ export default function DownloadPage() {
         }
       })();
       const isModCategory = englishCategory === "mod";
-      // 搜索结果中要标记的 projectType（用于详情页区分是 mod / modpack / resourcepack 等）
+      // Project type to mark in search results (for detail page to distinguish mod/modpack/resourcepack etc.)
       const resultProjectType = (() => {
         switch (englishCategory) {
           case "modpack": return "modpack";
@@ -232,7 +232,7 @@ export default function DownloadPage() {
           default: return "mod";
         }
       })();
-      // 从 CurseForge 项目的 classId 推断正确的 URL 路径部分
+      // Infer correct URL path part from CurseForge project classId
       const classIdToCfPath = (classId: number | undefined, slug: string): string => {
         switch (classId) {
           case 6: return `https://www.curseforge.com/minecraft/mc-mods/${slug}`;
@@ -246,17 +246,17 @@ export default function DownloadPage() {
           default: return `https://www.curseforge.com/minecraft/mc-mods/${slug}`;
         }
       };
-      // Modrinth facets 需为 JSON 数组字符串：[["project_type:mod"]]
+      // Modrinth facets must be JSON array string: [["project_type:mod"]]
       const modrinthFacets = encodeURIComponent(`[["project_type:${modrinthProjectType}"]]`);
 
       const modrinthUrl = `https://api.modrinth.com/v2/search?query=${encodeURIComponent(query)}&limit=25&facets=${modrinthFacets}`;
 
-      // Modrinth 继续使用 fetch（API 支持 CORS）
+      // Modrinth continues to use fetch (API supports CORS)
       const modrinthPromise = fetch(modrinthUrl, { headers: { "User-Agent": "RTLauncher" } })
         .then(r => r.ok ? r.json() : null)
         .catch(() => null);
 
-      // CurseForge 通过后端代理搜索（避免 CORS 问题，改进 classId 搜索策略）
+      // CurseForge searches through backend proxy (avoid CORS issues, improve classId search strategy)
       const cfPromise = invoke('search_curseforge_projects', {
         query: query,
         category: englishCategory,
@@ -271,16 +271,16 @@ export default function DownloadPage() {
         }
         return result;
       }).catch((err) => {
-        console.warn('CurseForge 搜索失败:', err);
+        console.warn('CurseForge search failed:', err);
         return null;
       });
 
       const [modrinthData, cfData] = await Promise.all([modrinthPromise, cfPromise]);
 
-      // 从后端代理结果中直接获取过滤后的 CurseForge 项目
+      // Get filtered CurseForge projects directly from backend proxy results
       const cfAllItems: any[] = Array.isArray(cfData?.data) ? cfData.data : [];
       const seenCfIds = new Set<string>();
-      // 对结果进行去重（后端代理已做了主要过滤，但确保前端也去重）
+      // Deduplicate results (backend proxy has done main filtering, but ensure frontend also deduplicates)
       const finalCfItems = cfAllItems.filter((mod: any) => {
         const cfId = String(mod.id);
         if (seenCfIds.has(cfId)) return false;
@@ -318,7 +318,7 @@ export default function DownloadPage() {
         for (const mod of finalCfItems) {
           const slug = mod.slug || String(mod.id);
           if (seenSlugs.has(slug)) {
-            // 已经来自 Modrinth，标记为双源
+            // Already from Modrinth, mark as dual source
             const existing = mergedResults.find((r) => r.slug === slug);
             if (existing) existing.source = "both";
             continue;
@@ -349,23 +349,23 @@ export default function DownloadPage() {
         }
       }
 
-      // 按下载量降序排序（保证热门项目在前）
+      // Sort by download count descending (ensure popular projects come first)
       mergedResults.sort((a, b) => (b.downloads || 0) - (a.downloads || 0));
 
       setEnglishResults(mergedResults);
-      // CurseForge 统计：检查后端代理是否返回有效数据
+      // CurseForge statistics: check if backend proxy returned valid data
       const cfHasSuccess = cfData?.data && Array.isArray(cfData.data);
       setEnglishSourceInfo({
-        modrinth: modrinthData ? { ok: true, count: modrinthData.hits?.length || 0 } : { ok: false, count: 0, error: "未返回数据" },
-        curseforge: cfHasSuccess ? { ok: true, count: finalCfItems.length } : { ok: false, count: 0, error: "未返回数据" },
+        modrinth: modrinthData ? { ok: true, count: modrinthData.hits?.length || 0 } : { ok: false, count: 0, error: "No data returned" },
+        curseforge: cfHasSuccess ? { ok: true, count: finalCfItems.length } : { ok: false, count: 0, error: "No data returned" },
       });
 
       if (mergedResults.length === 0) {
-        setEnglishError(`在 ${ENGLISH_CATEGORIES.find((c) => c.id === englishCategory)?.label ?? englishCategory} 中未找到 "${query}" 的结果`);
+        setEnglishError(`No results found for "${query}" in ${ENGLISH_CATEGORIES.find((c) => c.id === englishCategory)?.label ?? englishCategory}`);
       }
     } catch (err) {
       console.error("English search failed:", err);
-      setEnglishError(`搜索失败: ${String(err)}`);
+      setEnglishError(`Search failed: ${String(err)}`);
     } finally {
       setEnglishLoading(false);
     }
@@ -379,7 +379,7 @@ export default function DownloadPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, englishCategory]);
 
-  // 使用下载管理器来跟踪 Java 下载任务
+  // Use download manager to track Java download tasks
   const { startJavaDownload, cancelDownload, tasks } = useDownloadManager();
 
   useEffect(() => {
@@ -393,13 +393,13 @@ export default function DownloadPage() {
       const result = await invoke<{ name: string; version: string }[]>("get_java_versions");
       setJavaVersions(result);
     } catch (err) {
-      setJavaMessage({ type: "error", text: `获取 Java 版本失败: ${err}` });
+      setJavaMessage({ type: "error", text: `Failed to get Java versions: ${err}` });
     } finally {
       setJavaVersionsLoading(false);
     }
   };
 
-  // 切换到 Java tab 时加载版本列表
+  // Load version list when switching to Java tab
   useEffect(() => {
     if (tab === "java" && javaVersions.length === 0 && !javaVersionsLoading) {
       loadJavaVersions();
@@ -408,7 +408,7 @@ export default function DownloadPage() {
 
   const handleJavaDownload = async (runtimeName: string) => {
     if (!javaBasePath) {
-      setJavaMessage({ type: "error", text: "下载路径未就绪，请稍候重试" });
+      setJavaMessage({ type: "error", text: "Download path not ready, please try again later" });
       return;
     }
     setJavaMessage(null);
@@ -424,11 +424,11 @@ export default function DownloadPage() {
         await invoke("validate_java_path", { javaPath: result.java_path });
       } catch { /* ignore */ }
     } catch (err) {
-      setJavaMessage({ type: "error", text: `下载失败: ${err}` });
+      setJavaMessage({ type: "error", text: `Download failed: ${err}` });
     }
   };
 
-  // 过滤 Java 版本
+  // Filter Java versions
   const filteredJavaVersions = useMemo(() => {
     return javaVersions.filter((v) => {
       if (javaSearchQuery &&
@@ -493,9 +493,9 @@ export default function DownloadPage() {
                 <Download className="size-5 text-primary" />
               </div>
               <div>
-                <h1 className="text-lg font-semibold leading-none">下载中心</h1>
+                <h1 className="text-lg font-semibold leading-none">Download Center</h1>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  下载 Minecraft 版本和 Java
+                  Download Minecraft versions and Java
                 </p>
               </div>
             </div>
@@ -526,7 +526,7 @@ export default function DownloadPage() {
                 }`}
                 onClick={() => setTab("chinese")}
               >
-                中文检索
+                Chinese Search
               </button>
               <button
                 className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
@@ -534,11 +534,11 @@ export default function DownloadPage() {
                 }`}
                 onClick={() => setTab("english")}
               >
-                英文检索
+                English Search
               </button>
             </div>
 
-            {/* Minecraft 版本下载 */}
+            {/* Minecraft version download */}
             {tab === "minecraft" && <div className="flex-1 min-h-0 flex flex-col gap-4 mt-4">
               <div className="shrink-0">
                 <VersionFilterBar
@@ -560,7 +560,7 @@ export default function DownloadPage() {
                     exit="exit"
                   >
                     <Loader2 className="size-8 animate-spin" />
-                    <p className="text-sm">正在获取版本列表...</p>
+                    <p className="text-sm">Loading version list...</p>
                   </motion.div>
                 ) : error ? (
                   <motion.div
@@ -572,11 +572,11 @@ export default function DownloadPage() {
                     exit="exit"
                   >
                     <AlertCircle className="size-8 text-destructive" />
-                    <p className="text-sm">获取版本列表失败</p>
+                    <p className="text-sm">Failed to get version list</p>
                     <p className="text-xs">{error}</p>
                     <Button variant="outline" size="sm" onClick={refetch} className="mt-2 gap-2">
                       <RefreshCw className="size-3.5" />
-                      重试
+                      Retry
                     </Button>
                   </motion.div>
                 ) : (
@@ -597,7 +597,7 @@ export default function DownloadPage() {
               </AnimatePresence>
             </div>}
 
-            {/* Java 下载 */}
+            {/* Java download */}
             {tab === "java" && <div className="flex-1 min-h-0 flex flex-col gap-4 mt-4">
               <div className="shrink-0">
                 <div className="flex items-center justify-between gap-4">
@@ -608,7 +608,7 @@ export default function DownloadPage() {
                       onClick={() => setJavaVersionFilter("all")}
                       className="text-xs"
                     >
-                      全部
+                      All
                     </Button>
                     <Button
                       variant={javaVersionFilter === "jre" ? "default" : "ghost"}
@@ -630,7 +630,7 @@ export default function DownloadPage() {
                   <div className="relative w-64">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                     <Input
-                      placeholder="搜索Java版本..."
+                      placeholder="Search Java versions..."
                       value={javaSearchQuery}
                       onChange={(e) => setJavaSearchQuery(e.target.value)}
                       className="pl-9 h-8 text-sm"
@@ -650,7 +650,7 @@ export default function DownloadPage() {
                     exit="exit"
                   >
                     <Loader2 className="size-8 animate-spin" />
-                    <p className="text-sm">正在获取版本列表...</p>
+                    <p className="text-sm">Loading version list...</p>
                   </motion.div>
                 ) : javaMessage && javaMessage.type === "error" ? (
                   <motion.div
@@ -662,11 +662,11 @@ export default function DownloadPage() {
                     exit="exit"
                   >
                     <AlertCircle className="size-8 text-destructive" />
-                    <p className="text-sm">获取版本列表失败</p>
+                    <p className="text-sm">Failed to get version list</p>
                     <p className="text-xs">{javaMessage.text}</p>
                     <Button variant="outline" size="sm" onClick={loadJavaVersions} className="mt-2 gap-2">
                       <RefreshCw className="size-3.5" />
-                      重试
+                      Retry
                     </Button>
                   </motion.div>
                 ) : filteredJavaVersions.length === 0 ? (
@@ -679,7 +679,7 @@ export default function DownloadPage() {
                     exit="exit"
                   >
                     <Coffee className="size-10 opacity-40" />
-                    <p className="text-sm">没有找到匹配的Java版本</p>
+                    <p className="text-sm">No matching Java versions found</p>
                   </motion.div>
                 ) : (
                   <motion.div
@@ -737,14 +737,14 @@ export default function DownloadPage() {
               </AnimatePresence>
             </div>}
 
-            {/* 中文检索（新版：基于本地 moddata.db） */}
+            {/* Chinese search (new version: based on local moddata.db) */}
             {tab === "chinese" && <div className="flex-1 min-h-0 flex flex-col gap-4 mt-4">
               <div className="shrink-0">
                 <div className="flex items-center justify-between gap-4">
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                     <Input
-                      placeholder="输入中文关键词搜索模组..."
+                      placeholder="Enter Chinese keywords to search mods..."
                       value={chineseSearchQuery}
                       onChange={(e) => {
                         setChineseSearchQuery(e.target.value);
@@ -761,20 +761,20 @@ export default function DownloadPage() {
                     onClick={handleChineseSearch}
                     disabled={chineseSearchLoading || !chineseSearchQuery.trim()}
                   >
-                    {chineseSearchLoading ? <Loader2 className="size-4 animate-spin" /> : "搜索"}
+                    {chineseSearchLoading ? <Loader2 className="size-4 animate-spin" /> : "Search"}
                   </Button>
                 </div>
-                {/* 错误提示 */}
+                {/* Error message */}
                 {chineseSearchError && (
                   <div className="flex items-center gap-2 mt-2 text-xs text-destructive">
                     <AlertCircle className="size-3.5" />
                     <span>{chineseSearchError}</span>
                   </div>
                 )}
-                {/* 小提示 */}
+                {/* Hint */}
                 {!chineseSearchError && !chineseSearchLoading && !chineseSearchResults && (
                   <p className="mt-2 text-xs text-muted-foreground">
-                    💡 请输入中文关键词（如「工业」「林业」「存储」等），将在本地离线数据库中匹配
+                    💡 Enter Chinese keywords (e.g., "工业", "林业", "存储") to search in local offline database
                   </p>
                 )}
               </div>
@@ -790,7 +790,7 @@ export default function DownloadPage() {
                     exit="exit"
                   >
                     <Loader2 className="size-8 animate-spin" />
-                    <p className="text-sm">正在搜索...</p>
+                    <p className="text-sm">Searching...</p>
                   </motion.div>
                 ) : chineseSearchResults && chineseSearchResults.length > 0 ? (
                   <motion.div
@@ -811,11 +811,11 @@ export default function DownloadPage() {
                             className="group w-full text-left px-4 py-3 hover:bg-accent/50 transition-colors flex items-center gap-3"
                           >
                             <div className="flex flex-col gap-0.5 min-w-0 flex-1">
-                              {/* 中文名称（主标题） */}
+                              {/* Chinese name (main title) */}
                               <span className="font-semibold text-sm leading-tight truncate">
                                 {result.chinese_name || result.slug}
                               </span>
-                              {/* slug（副标题，次要信息） */}
+                              {/* slug (subtitle, secondary info) */}
                               <span className="text-xs text-muted-foreground truncate">
                                 {result.chinese_name ? result.slug : ""}
                               </span>
@@ -830,7 +830,7 @@ export default function DownloadPage() {
                                   className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 px-2 py-1 rounded border border-border hover:border-primary/50 transition-colors"
                                 >
                                   <ExternalLink className="size-3" />
-                                  MC百科
+                                  MCMod
                                 </a>
                               )}
                               <ArrowRight className="size-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -839,9 +839,9 @@ export default function DownloadPage() {
                         );
                       })}
                     </div>
-                    {/* 结果数量提示 */}
+                    {/* Result count hint */}
                     <div className="px-4 py-2 text-xs text-muted-foreground border-t border-border bg-muted/30">
-                      共 {chineseSearchResults.length} 条结果
+                      Total {chineseSearchResults.length} results
                     </div>
                   </motion.div>
                 ) : (
@@ -855,18 +855,18 @@ export default function DownloadPage() {
                   >
                     <Search className="size-10 opacity-40" />
                     <p className="text-sm">
-                      {chineseSearchResults ? "没有找到匹配的模组" : "输入关键词开始搜索"}
+                      {chineseSearchResults ? "No matching mods found" : "Enter keywords to start searching"}
                     </p>
                   </motion.div>
                 )}
               </AnimatePresence>
             </div>}
 
-            {/* 英文检索 */}
+            {/* English search */}
             {tab === "english" && <div className="flex-1 min-h-0 flex flex-col gap-4 mt-4">
               <div className="shrink-0 flex flex-col gap-3">
                 <div className="flex items-center gap-3">
-                  {/* 搜索栏 */}
+                  {/* Search bar */}
                   <div className="relative flex-1">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
                     <Input
@@ -890,7 +890,7 @@ export default function DownloadPage() {
                     <span className="ml-1">Search</span>
                   </Button>
                 </div>
-                {/* 六个类别选择按钮 */}
+                {/* Six category selection buttons */}
                 <div className="flex flex-wrap items-center gap-2">
                   {ENGLISH_CATEGORIES.map((cat) => {
                     const Icon = cat.icon;
@@ -919,18 +919,18 @@ export default function DownloadPage() {
                 )}
                 {!englishError && !englishLoading && !englishResults && (
                   <p className="text-xs text-muted-foreground">
-                    同时检索 Modrinth 与 CurseForge，点击结果查看版本与下载。
+                    Search both Modrinth and CurseForge, click results to view versions and download.
                   </p>
                 )}
                 {englishSourceInfo && (
                   <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
                     <span className={`inline-flex items-center gap-1 ${englishSourceInfo.modrinth.ok ? "" : "text-destructive"}`}>
                       <span className="size-1.5 rounded-full bg-emerald-500" />
-                      Modrinth {englishSourceInfo.modrinth.ok ? `(${englishSourceInfo.modrinth.count})` : "(不可达)"}
+                      Modrinth {englishSourceInfo.modrinth.ok ? `(${englishSourceInfo.modrinth.count})` : "(unreachable)"}
                     </span>
                     <span className={`inline-flex items-center gap-1 ${englishSourceInfo.curseforge.ok ? "" : "text-destructive"}`}>
                       <span className="size-1.5 rounded-full bg-orange-500" />
-                      CurseForge {englishSourceInfo.curseforge.ok ? `(${englishSourceInfo.curseforge.count})` : "(不可达)"}
+                      CurseForge {englishSourceInfo.curseforge.ok ? `(${englishSourceInfo.curseforge.count})` : "(unreachable)"}
                     </span>
                   </div>
                 )}
@@ -947,7 +947,7 @@ export default function DownloadPage() {
                     exit="exit"
                   >
                     <Loader2 className="size-8 animate-spin" />
-                    <p className="text-sm">正在检索 Modrinth 和 CurseForge…</p>
+                    <p className="text-sm">Searching Modrinth and CurseForge…</p>
                   </motion.div>
                 ) : englishResults && englishResults.length > 0 ? (
                   <motion.div
@@ -973,7 +973,7 @@ export default function DownloadPage() {
                             onClick={() => router.push(path)}
                             className="group w-full text-left px-4 py-3 hover:bg-accent/50 transition-colors flex items-start gap-3"
                           >
-                            {/* 图标 */}
+                            {/* Icon */}
                             <div className="shrink-0 w-12 h-12 rounded-lg bg-muted flex items-center justify-center overflow-hidden border border-border">
                               {result.iconUrl ? (
                                 <img
@@ -989,7 +989,7 @@ export default function DownloadPage() {
                               )}
                             </div>
 
-                            {/* 主信息 */}
+                            {/* Main info */}
                             <div className="flex-1 min-w-0 flex flex-col gap-1">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-semibold text-sm leading-tight truncate">
@@ -1023,14 +1023,14 @@ export default function DownloadPage() {
                               <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground pt-0.5">
                                 {result.author && (
                                   <span className="inline-flex items-center gap-1">
-                                    <span className="text-foreground/70">作者</span>
+                                    <span className="text-foreground/70">Author</span>
                                     <span className="text-foreground">{result.author}</span>
                                   </span>
                                 )}
                                 {result.downloads !== undefined && (
-                                  <span>· {formatNumber(result.downloads)} 次下载</span>
+                                  <span>· {formatNumber(result.downloads)} downloads</span>
                                 )}
-                                {result.updated && <span>· 更新于 {formatDate(result.updated)}</span>}
+                                {result.updated && <span>· Updated {formatDate(result.updated)}</span>}
                                 {result.mcVersions && result.mcVersions.length > 0 && (
                                   <span className="inline-flex items-center gap-1">
                                     · MC {result.mcVersions.slice(0, 3).join(", ")}
@@ -1060,7 +1060,7 @@ export default function DownloadPage() {
                                   className="text-[10px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
                                 >
                                   <ExternalLink className="size-3" />
-                                  打开源站
+                                  Open Source
                                 </a>
                               )}
                             </div>
@@ -1069,7 +1069,7 @@ export default function DownloadPage() {
                       })}
                     </div>
                     <div className="px-4 py-2 text-xs text-muted-foreground border-t border-border bg-muted/30">
-                      {englishResults.length} 个结果
+                      {englishResults.length} results
                     </div>
                   </motion.div>
                 ) : englishResults ? (
@@ -1082,7 +1082,7 @@ export default function DownloadPage() {
                     exit="exit"
                   >
                     <Coffee className="size-10 opacity-40" />
-                    <p className="text-sm">未找到匹配的项目</p>
+                    <p className="text-sm">No matching projects found</p>
                   </motion.div>
                 ) : (
                   <motion.div
@@ -1094,7 +1094,7 @@ export default function DownloadPage() {
                     exit="exit"
                   >
                     <Search className="size-10 opacity-40" />
-                    <p className="text-sm">输入关键词开始搜索</p>
+                    <p className="text-sm">Enter keywords to start searching</p>
                   </motion.div>
                 )}
               </AnimatePresence>

@@ -8,6 +8,7 @@ import { useLaunchContext } from "@/components/launch/launch-provider";
 import { VersionSelectorDialog } from "@/components/launch/version-selector-dialog";
 import { LaunchProgress } from "@/components/launch/launch-progress";
 import { LaunchProgressStages } from "@/components/launch/launch-progress-stages";
+import { useI18n } from "@/components/i18n/use-i18n";
 
 /**
  * 全局悬浮启动按钮组件
@@ -21,6 +22,7 @@ const LONG_PRESS_MS = 300;      // 长按阈值
 const DRAG_THRESHOLD_PX = 6;    // 鼠标移动多少像素视为拖动
 
 export function FloatingLaunchButton() {
+  const { t } = useI18n();
   const { config, status, launchGame, cancelLaunch } = useLaunchContext();
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -41,7 +43,7 @@ export function FloatingLaunchButton() {
   const displayName = (
     config.loadName ||
     config.versionName ||
-    "未选择版本"
+    t({ "zh-CN": "未选择版本", "en-US": "No version selected" })
   );
 
   // 初始化位置：横轴 1/2、纵轴 1/3（按钮初始为收起态 60×60，居中放置）
@@ -246,17 +248,17 @@ export function FloatingLaunchButton() {
                     {isLaunching ? (
                       <>
                         <Loader2 className="size-3 animate-spin" />
-                        {status === "preparing" ? "准备中" : "Launching"}
+                        {status === "preparing" ? t({ "zh-CN": "准备中", "en-US": "Preparing" }) : "Launching"}
                       </>
                     ) : isRunning ? (
                       <>
                         <Square className="size-3" />
-                        停止游戏
+                        {t({ "zh-CN": "停止游戏", "en-US": "Stop game" })}
                       </>
                     ) : (
                       <>
                         <Play className="size-3" />
-                        启动游戏
+                        {t({ "zh-CN": "启动游戏", "en-US": "Launch game" })}
                       </>
                     )}
                   </Button>

@@ -6,12 +6,14 @@ import { LaunchConfigCard } from "@/components/launch/launch-config-card";
 import { LaunchPanel } from "@/components/launch/launch-panel";
 import { LaunchConsole } from "@/components/launch/launch-console";
 import { fadeSlideUp } from "@/lib/motion";
+import { useI18n } from "@/components/i18n/use-i18n";
 
 /**
  * 启动页面
  * 配置启动参数 → 启动游戏 → 查看日志
  */
 export default function LaunchPage() {
+  const { t } = useI18n();
   return (
     <div className="flex h-full flex-col gap-4 p-4 overflow-y-auto">
       {/* 页面标题 */}
@@ -20,9 +22,9 @@ export default function LaunchPage() {
           <Rocket className="size-5 text-primary" />
         </div>
         <div>
-          <h1 className="text-lg font-semibold leading-none">游戏启动</h1>
+          <h1 className="text-lg font-semibold leading-none">{t({ "zh-CN": "游戏启动", "en-US": "Launch" })}</h1>
           <p className="mt-1 text-xs text-muted-foreground">
-            选择版本，配置启动参数，开始你的 Minecraft 之旅
+            {t({ "zh-CN": "选择版本，配置启动参数，开始你的 Minecraft 之旅", "en-US": "Choose a version, configure launch settings, and begin your Minecraft adventure" })}
           </p>
         </div>
       </div>

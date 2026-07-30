@@ -5,21 +5,42 @@ import { cn } from "@/lib/utils";
 import { AppearanceSection } from "@/components/settings/section-appearance";
 import { AboutSection } from "@/components/settings/section-about";
 import { SidebarConfigSection } from "@/components/settings/section-sidebar-config";
-import { Settings, Sparkles, Package, Layout } from "lucide-react";
+import { LanguageSection } from "@/components/settings/section-language";
+import { useSettings, type AppLanguage } from "@/components/settings/settings-provider";
+import { Settings, Sparkles, Package, Layout, Globe2 } from "lucide-react";
 
 interface NavItem {
   id: string;
-  label: string;
+  label: Record<AppLanguage, string>;
   icon: React.ReactNode;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: "section-sidebar-config", label: "侧边栏配置", icon: <Layout className="size-4" /> },
-  { id: "section-appearance", label: "外观", icon: <Sparkles className="size-4" /> },
-  { id: "section-about", label: "版本更新", icon: <Package className="size-4" /> },
+  { id: "section-language", label: { "zh-CN": "语言", "en-US": "Language" }, icon: <Globe2 className="size-4" /> },
+  { id: "section-sidebar-config", label: { "zh-CN": "侧边栏配置", "en-US": "Sidebar" }, icon: <Layout className="size-4" /> },
+  { id: "section-appearance", label: { "zh-CN": "外观", "en-US": "Appearance" }, icon: <Sparkles className="size-4" /> },
+  { id: "section-about", label: { "zh-CN": "版本更新", "en-US": "Updates" }, icon: <Package className="size-4" /> },
 ];
 
+const PAGE_COPY: Record<AppLanguage, { title: string; description: string; category: string; end: string }> = {
+  "zh-CN": {
+    title: "设置",
+    description: "全局设置 —— 外观、主题、版本信息",
+    category: "分类",
+    end: "— 已经到底了 —",
+  },
+  "en-US": {
+    title: "Settings",
+    description: "Global settings — appearance, theme, and version information",
+    category: "Categories",
+    end: "— End of settings —",
+  },
+};
+
 export default function SettingsPage() {
+  const { settings } = useSettings();
+  const language = settings.general.language;
+  const copy = PAGE_COPY[language];
   const [activeId, setActiveId] = useState<string>("section-sidebar-config");
 
   // 使用 IntersectionObserver 自动高亮当前可见区域
@@ -70,8 +91,8 @@ export default function SettingsPage() {
             <Settings className="size-3.5" />
           </div>
           <div>
-            <h1 className="text-sm font-semibold leading-tight">设置</h1>
-            <p className="text-xs text-muted-foreground">全局设置 —— 外观、主题、版本信息</p>
+            <h1 className="text-sm font-semibold leading-tight">{copy.title}</h1>
+            <p className="text-xs text-muted-foreground">{copy.description}</p>
           </div>
         </div>
       </div>
@@ -82,7 +103,7 @@ export default function SettingsPage() {
         <nav className="hidden w-52 shrink-0 border-r border-border bg-background/30 p-3 md:block">
           <div className="sticky top-0 space-y-1">
             <div className="px-2 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-              分类
+              {copy.category}
             </div>
             {NAV_ITEMS.map((item) => (
               <button
@@ -97,7 +118,7 @@ export default function SettingsPage() {
                 )}
               >
                 {item.icon}
-                <span>{item.label}</span>
+                <span>{item.label[language]}</span>
               </button>
             ))}
           </div>
@@ -109,11 +130,12 @@ export default function SettingsPage() {
           className="h-full flex-1 overflow-y-auto px-4 py-4 md:px-6"
         >
           <div className="mx-auto max-w-2xl space-y-4">
+            <LanguageSection />
             <SidebarConfigSection />
             <AppearanceSection />
             <AboutSection />
             <div className="py-3 text-center text-xs text-muted-foreground">
-              — 已经到底了 —
+              {copy.end}
             </div>
           </div>
         </main>

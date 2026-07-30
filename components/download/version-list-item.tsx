@@ -21,7 +21,7 @@ export function VersionListItem({ version, onSelect }: VersionListItemProps) {
     <button
       type="button"
       onClick={() => onSelect(version)}
-      className="group flex w-full items-center justify-between px-4 py-3 hover:bg-accent/50 transition-colors duration-200 border-b border-border last:border-b-0 text-left"
+      className="group flex w-full items-center px-4 py-3 hover:bg-accent/50 transition-colors duration-200 border-b border-border last:border-b-0 text-left"
     >
       {/* 左侧：版本号 + 发布日期 */}
       <div className="flex items-center gap-4 min-w-0">
@@ -36,7 +36,7 @@ export function VersionListItem({ version, onSelect }: VersionListItemProps) {
       </div>
 
       {/* 中间：版本类型标签 */}
-      <div className="flex items-center gap-2">
+      <div className="ml-auto flex items-center gap-2">
         {version.isLatest && (
           <Badge variant="default" className="text-[10px] px-1.5 py-0">
             最新
@@ -51,7 +51,7 @@ export function VersionListItem({ version, onSelect }: VersionListItemProps) {
       </div>
 
       {/* 右侧：箭头指示 */}
-      <ChevronRight className="size-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+      <ChevronRight className="ml-4 size-4 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
     </button>
   );
 }

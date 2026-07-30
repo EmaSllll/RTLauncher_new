@@ -27,6 +27,7 @@ import { LaunchStatusBadge } from "@/components/launch/launch-status-badge";
 import { useLaunchContext } from "@/components/launch/launch-provider";
 import { AppUpdateSection } from "@/components/settings/app-updater";
 import { useSettings } from "@/components/settings/settings-provider";
+import { useI18n } from "@/components/i18n/use-i18n";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,30 +43,6 @@ import {
 } from "@/components/ui/dialog";
 import { useInstancePath } from "@/hooks/use-instance-path";
 import type { Account } from "@/types";
-
-const QUICK_ACTIONS = [
-  {
-    href: "/launch",
-    title: "启动设置",
-    description: "版本、Java 与内存",
-    icon: Rocket,
-    iconClassName: "bg-primary/10 text-primary",
-  },
-  {
-    href: "/download",
-    title: "下载内容",
-    description: "游戏、加载器与资源",
-    icon: Download,
-    iconClassName: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
-  },
-  {
-    href: "/game-settings",
-    title: "游戏管理",
-    description: "模组、存档与资源包",
-    icon: Gamepad2,
-    iconClassName: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-  },
-];
 
 /** 首页仪表盘：把启动状态、实例资源与账户操作集中在一个可滚动页面。 */
 export default function Home() {
@@ -87,6 +64,7 @@ export default function Home() {
     loading: instanceLoading,
   } = useInstancePath();
   const { settings } = useSettings();
+  const { t } = useI18n();
   const homeMode = settings.appearance.homeMode;
 
   const isLaunchActive =
@@ -97,9 +75,23 @@ export default function Home() {
       config.versionName &&
       selectedProfile,
   );
-  const versionName = selectedInstance?.minecraft_version || config.versionName || "未选择版本";
+  const versionName = selectedInstance?.minecraft_version || config.versionName || t({ "zh-CN": "未选择版本", "en-US": "No version selected" });
   const loaderName =
-    selectedInstance?.loader || (config.loadType === "0" ? "Vanilla" : "模组加载器");
+    selectedInstance?.loader || (config.loadType === "0" ? "Vanilla" : t({ "zh-CN": "模组加载器", "en-US": "Mod loader" }));
+  const profileStatusMap: Record<string, string> = {
+    "LittleSkin 登录": t({ "zh-CN": "LittleSkin 登录", "en-US": "Signed in with LittleSkin" }),
+    "第三方登录": t({ "zh-CN": "第三方登录", "en-US": "Third-party sign-in" }),
+    "离线登录": t({ "zh-CN": "离线登录", "en-US": "Offline sign-in" }),
+    "正版登录": t({ "zh-CN": "正版登录", "en-US": "Microsoft sign-in" }),
+  };
+  const profileStatus = selectedProfile?.status
+    ? profileStatusMap[selectedProfile.status] ?? selectedProfile.status
+    : t({ "zh-CN": "添加账户后即可启动游戏", "en-US": "Add an account to launch the game" });
+  const quickActions = [
+    { href: "/launch", title: t({ "zh-CN": "启动设置", "en-US": "Launch settings" }), description: t({ "zh-CN": "版本、Java 与内存", "en-US": "Version, Java, and memory" }), icon: Rocket, iconClassName: "bg-primary/10 text-primary" },
+    { href: "/download", title: t({ "zh-CN": "下载内容", "en-US": "Downloads" }), description: t({ "zh-CN": "游戏、加载器与资源", "en-US": "Game, loaders, and resources" }), icon: Download, iconClassName: "bg-sky-500/10 text-sky-600 dark:text-sky-400" },
+    { href: "/game-settings", title: t({ "zh-CN": "游戏管理", "en-US": "Game management" }), description: t({ "zh-CN": "模组、存档与资源包", "en-US": "Mods, worlds, and resource packs" }), icon: Gamepad2, iconClassName: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" },
+  ];
 
   const handleProfileSelect = (profile: Account) => {
     selectProfile(profile);
@@ -119,11 +111,11 @@ export default function Home() {
 
   const primaryActionLabel = isLaunchActive
     ? status === "running"
-      ? "停止游戏"
-      : "取消启动"
+      ? t({ "zh-CN": "停止游戏", "en-US": "Stop game" })
+      : t({ "zh-CN": "取消启动", "en-US": "Cancel launch" })
     : canLaunch
-      ? "立即启动"
-      : "完成启动配置";
+      ? t({ "zh-CN": "立即启动", "en-US": "Launch now" })
+      : t({ "zh-CN": "完成启动配置", "en-US": "Finish launch setup" });
 
   return (
     <div className="h-full overflow-y-auto">
@@ -133,10 +125,10 @@ export default function Home() {
             <div>
               <p className="text-xs font-medium text-primary">RTLauncher</p>
               <h1 className="mt-1 text-xl font-semibold tracking-tight">
-                欢迎回来，{selectedProfile?.name ?? "冒险者"}
+                {t({ "zh-CN": "欢迎回来，", "en-US": "Welcome back, " })}{selectedProfile?.name ?? t({ "zh-CN": "冒险者", "en-US": "Adventurer" })}
               </h1>
               <p className="mt-1 text-sm text-muted-foreground">
-                在这里管理你的游戏版本、资源与启动状态。
+                {t({ "zh-CN": "在这里管理你的游戏版本、资源与启动状态。", "en-US": "Manage your game versions, resources, and launch status here." })}
               </p>
             </div>
             <LaunchStatusBadge status={status} className="mt-1" />
@@ -153,8 +145,8 @@ export default function Home() {
             >
               <Card className="overflow-hidden border shadow-sm">
                 <CardHeader className="pb-2">
-                  <CardTitle>账户与角色</CardTitle>
-                  <CardDescription>选择玩家并管理皮肤、披风</CardDescription>
+                  <CardTitle>{t({ "zh-CN": "账户与角色", "en-US": "Accounts and characters" })}</CardTitle>
+                  <CardDescription>{t({ "zh-CN": "选择玩家并管理皮肤、披风", "en-US": "Choose a player and manage skins and capes" })}</CardDescription>
                 </CardHeader>
                 <CardContent className="flex min-h-[270px] items-center justify-center pt-0">
                   <SkinPreviewLarge profile={selectedProfile} />
@@ -172,10 +164,10 @@ export default function Home() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium">
-                          {selectedProfile?.name ?? "尚未登录"}
+                          {selectedProfile?.name ?? t({ "zh-CN": "尚未登录", "en-US": "Not signed in" })}
                         </p>
                         <p className="truncate text-xs text-muted-foreground">
-                          {selectedProfile?.status ?? "添加账户后即可启动游戏"}
+                          {profileStatus}
                         </p>
                       </div>
                     </div>
@@ -188,7 +180,7 @@ export default function Home() {
                         onClick={() => setIsProfileSelectorOpen(true)}
                       >
                         <Users className="size-3.5" />
-                        管理账户
+                        {t({ "zh-CN": "管理账户", "en-US": "Manage accounts" })}
                       </Button>
                       {selectedProfile?.authType === "microsoft" && (
                         <Button
@@ -198,7 +190,7 @@ export default function Home() {
                           onClick={() => setIsSkinManagerOpen(true)}
                         >
                           <Shirt className="size-3.5" />
-                          皮肤和披风
+                          {t({ "zh-CN": "皮肤和披风", "en-US": "Skins and capes" })}
                         </Button>
                       )}
                     </div>
@@ -226,11 +218,11 @@ export default function Home() {
                             {instanceLoading ? (
                               <Badge variant="outline" className="gap-1.5">
                                 <Loader2 className="size-3 animate-spin" />
-                                正在读取版本
+                                {t({ "zh-CN": "正在读取版本", "en-US": "Loading version" })}
                               </Badge>
                             ) : (
                               <Badge variant="outline">
-                                {selectedInstance ? "当前实例" : "尚未选择实例"}
+                                {selectedInstance ? t({ "zh-CN": "当前实例", "en-US": "Current instance" }) : t({ "zh-CN": "尚未选择实例", "en-US": "No instance selected" })}
                               </Badge>
                             )}
                             <Badge variant="outline" className="text-muted-foreground">
@@ -242,8 +234,8 @@ export default function Home() {
                           </h2>
                           <p className="mt-2 text-sm text-muted-foreground">
                             {selectedInstance
-                              ? `Minecraft ${versionName} · 已安装 ${selectedInstance.mods_count} 个模组`
-                              : "选择一个已安装版本后，即可在这里快速启动游戏。"}
+                              ? `Minecraft ${versionName} · ${t({ "zh-CN": `已安装 ${selectedInstance.mods_count} 个模组`, "en-US": `${selectedInstance.mods_count} mods installed` })}`
+                              : t({ "zh-CN": "选择一个已安装版本后，即可在这里快速启动游戏。", "en-US": "Select an installed version to launch the game here." })}
                           </p>
                         </div>
                         <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
@@ -267,7 +259,7 @@ export default function Home() {
                         </Button>
                         <Button variant="outline" size="lg" asChild>
                           <Link href="/launch" className="gap-2">
-                            查看启动详情
+                            {t({ "zh-CN": "查看启动详情", "en-US": "View launch details" })}
                             <ArrowRight className="size-4" />
                           </Link>
                         </Button>
@@ -294,12 +286,12 @@ export default function Home() {
 
               <Card size="sm" className="shadow-sm">
                 <CardHeader className="pb-1">
-                  <CardTitle>快速入口</CardTitle>
-                  <CardDescription>常用功能无需切换多层菜单</CardDescription>
+                  <CardTitle>{t({ "zh-CN": "快速入口", "en-US": "Quick access" })}</CardTitle>
+                  <CardDescription>{t({ "zh-CN": "常用功能无需切换多层菜单", "en-US": "Access common features without navigating multiple menus" })}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="grid gap-2 sm:grid-cols-3">
-                    {QUICK_ACTIONS.map(({ href, title, description, icon: Icon, iconClassName }) => (
+                    {quickActions.map(({ href, title, description, icon: Icon, iconClassName }) => (
                       <Link
                         key={href}
                         href={href}
@@ -323,15 +315,15 @@ export default function Home() {
                 <div className="flex items-end justify-between gap-3 px-1">
                   <div>
                     <h2 id="resource-overview-title" className="text-base font-semibold">
-                      实例资源概览
+                      {t({ "zh-CN": "实例资源概览", "en-US": "Instance resource overview" })}
                     </h2>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      资源数据随当前选择的游戏版本自动更新。
+                      {t({ "zh-CN": "资源数据随当前选择的游戏版本自动更新。", "en-US": "Resource data updates automatically for the selected game version." })}
                     </p>
                   </div>
                   <Button variant="ghost" size="sm" asChild>
                     <Link href="/game-settings" className="gap-1.5">
-                      管理游戏
+                      {t({ "zh-CN": "管理游戏", "en-US": "Manage game" })}
                       <ArrowRight className="size-3.5" />
                     </Link>
                   </Button>
@@ -351,8 +343,8 @@ export default function Home() {
             >
               <Card className="overflow-hidden border shadow-sm">
                 <CardHeader className="pb-2">
-                  <CardTitle>账户与角色</CardTitle>
-                  <CardDescription>选择玩家并管理皮肤、披风</CardDescription>
+                  <CardTitle>{t({ "zh-CN": "账户与角色", "en-US": "Accounts and characters" })}</CardTitle>
+                  <CardDescription>{t({ "zh-CN": "选择玩家并管理皮肤、披风", "en-US": "Choose a player and manage skins and capes" })}</CardDescription>
                 </CardHeader>
                 <CardContent className="flex min-h-[270px] items-center justify-center pt-0">
                   <SkinPreviewLarge profile={selectedProfile} />
@@ -370,10 +362,10 @@ export default function Home() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium">
-                          {selectedProfile?.name ?? "尚未登录"}
+                          {selectedProfile?.name ?? t({ "zh-CN": "尚未登录", "en-US": "Not signed in" })}
                         </p>
                         <p className="truncate text-xs text-muted-foreground">
-                          {selectedProfile?.status ?? "添加账户后即可启动游戏"}
+                          {profileStatus}
                         </p>
                       </div>
                     </div>
@@ -386,7 +378,7 @@ export default function Home() {
                         onClick={() => setIsProfileSelectorOpen(true)}
                       >
                         <Users className="size-3.5" />
-                        管理账户
+                        {t({ "zh-CN": "管理账户", "en-US": "Manage accounts" })}
                       </Button>
                       {selectedProfile?.authType === "microsoft" && (
                         <Button
@@ -396,7 +388,7 @@ export default function Home() {
                           onClick={() => setIsSkinManagerOpen(true)}
                         >
                           <Shirt className="size-3.5" />
-                          皮肤和披风
+                          {t({ "zh-CN": "皮肤和披风", "en-US": "Skins and capes" })}
                         </Button>
                       )}
                     </div>
@@ -433,8 +425,9 @@ export default function Home() {
 }
 
 function SkinPreviewLarge({ profile }: { profile: Account | null }) {
+  const { t } = useI18n();
   const hasSkin = Boolean(profile?.skinUrl);
-  const displayName = profile?.name ?? "尚未登录";
+  const displayName = profile?.name ?? t({ "zh-CN": "尚未登录", "en-US": "Not signed in" });
 
   return (
     <div className="flex w-full flex-col items-center justify-center gap-3">
@@ -447,14 +440,14 @@ function SkinPreviewLarge({ profile }: { profile: Account | null }) {
           <div className="flex size-24 items-center justify-center rounded-3xl bg-muted text-3xl font-semibold text-muted-foreground shadow-sm">
             {displayName.charAt(0).toUpperCase()}
           </div>
-          <p className="text-xs text-muted-foreground">该账户暂无可预览的皮肤</p>
+          <p className="text-xs text-muted-foreground">{t({ "zh-CN": "该账户暂无可预览的皮肤", "en-US": "This account has no previewable skin." })}</p>
         </div>
       ) : (
         <div className="flex flex-col items-center gap-3 text-center text-muted-foreground">
           <div className="flex size-24 items-center justify-center rounded-3xl bg-muted shadow-sm">
             <UserPlus className="size-10" />
           </div>
-          <p className="text-sm">登录后即可预览 3D 皮肤</p>
+          <p className="text-sm">{t({ "zh-CN": "登录后即可预览 3D 皮肤", "en-US": "Sign in to preview a 3D skin." })}</p>
         </div>
       )}
     </div>

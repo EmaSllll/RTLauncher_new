@@ -22,6 +22,7 @@ import { useLaunchContext } from "@/components/launch/launch-provider";
 import { VersionSelectorDialog } from "@/components/launch/version-selector-dialog";
 import { fadeSlideUp } from "@/lib/motion";
 import { Button } from "@/components/ui/button";
+import { useI18n, type Translation } from "@/components/i18n/use-i18n";
 
 /**
  * 设置入口按钮（黑白简约风格）
@@ -29,47 +30,50 @@ import { Button } from "@/components/ui/button";
 const SETTING_CARDS = [
   {
     href: "/game-settings/mods",
-    title: "模组管理",
-    description: "添加、移除、管理模组",
+    title: { "zh-CN": "模组管理", "en-US": "Mods" } as Translation,
+    description: { "zh-CN": "添加、移除、管理模组", "en-US": "Add, remove, and manage mods" } as Translation,
     icon: Puzzle,
   },
   {
     href: "/game-settings/resources",
-    title: "资源包",
-    description: "切换和管理材质资源包",
+    title: { "zh-CN": "资源包", "en-US": "Resource Packs" } as Translation,
+    description: { "zh-CN": "切换和管理材质资源包", "en-US": "Switch and manage texture resource packs" } as Translation,
     icon: ImageIcon,
   },
   {
     href: "/game-settings/worlds",
-    title: "存档",
-    description: "管理你的世界存档",
+    title: { "zh-CN": "存档", "en-US": "Worlds" } as Translation,
+    description: { "zh-CN": "管理你的世界存档", "en-US": "Manage your world saves" } as Translation,
     icon: Map,
   },
   {
     href: "/game-settings/shaders",
-    title: "光影包",
-    description: "配置光影效果和着色器",
+    title: { "zh-CN": "光影包", "en-US": "Shaders" } as Translation,
+    description: { "zh-CN": "配置光影效果和着色器", "en-US": "Configure shader effects and shaders" } as Translation,
     icon: Layers,
   },
   {
     href: "/game-settings/datapacks",
-    title: "数据包",
-    description: "管理 Minecraft 数据包",
+    title: { "zh-CN": "数据包", "en-US": "Datapacks" } as Translation,
+    description: { "zh-CN": "管理 Minecraft 数据包", "en-US": "Manage Minecraft datapacks" } as Translation,
     icon: Database,
   },
   {
     href: "/game-settings/schematics",
-    title: "投影原理图",
-    description: "管理建筑原理图文件",
+    title: { "zh-CN": "投影原理图", "en-US": "Schematics" } as Translation,
+    description: { "zh-CN": "管理建筑原理图文件", "en-US": "Manage building schematic files" } as Translation,
     icon: Box,
   },
   {
     href: "/game-settings/screenshots",
-    title: "截图",
-    description: "浏览游戏内保存的截图",
+    title: { "zh-CN": "截图", "en-US": "Screenshots" } as Translation,
+    description: { "zh-CN": "浏览游戏内保存的截图", "en-US": "View screenshots saved in-game" } as Translation,
     icon: Camera,
   },
 ];
+
+const SETTING_CARD_CLASS =
+  "flex h-40 w-40 shrink-0 flex-col items-center justify-center gap-3 rounded-2xl border-[3px] border-border bg-card/40 transition-all hover:-translate-y-0.5 hover:border-foreground/50 hover:bg-accent/40 active:bg-accent/70 focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50";
 
 /**
  * 游戏设置页面
@@ -87,10 +91,11 @@ const SETTING_CARDS = [
  */
 export default function GameSettings() {
   const { config, updateConfig } = useLaunchContext();
+  const { t } = useI18n();
   const [versionDialogOpen, setVersionDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const versionName = config.versionName || "点击选择版本";
+  const versionName = config.versionName || t({ "zh-CN": "点击选择版本", "en-US": "Click to select version" });
   const hasLoader = config.loadType !== "0" && config.loadName;
   const isConfigured = !!config.minecraftPath && !!config.versionName;
 
@@ -103,12 +108,15 @@ export default function GameSettings() {
   async function handleDeleteVersion(e: React.MouseEvent) {
     e.stopPropagation();
     if (!config.minecraftPath || !effectiveVersionDirName) {
-      alert("请先选择要删除的版本");
+      alert(t({ "zh-CN": "请先选择要删除的版本", "en-US": "Please select a version to delete first" }));
       return;
     }
 
     const confirmed = window.confirm(
-      `确认删除游戏版本目录「${effectiveVersionDirName}」？\n\n将删除：${config.minecraftPath}\\versions\\${effectiveVersionDirName}\n\n此操作不可撤销。`
+      t({
+        "zh-CN": `确认删除游戏版本目录「${effectiveVersionDirName}」？\n\n将删除：${config.minecraftPath}\\versions\\${effectiveVersionDirName}\n\n此操作不可撤销。`,
+        "en-US": `Confirm deletion of game version directory "${effectiveVersionDirName}"?\n\nThis will delete: ${config.minecraftPath}\\versions\\${effectiveVersionDirName}\n\nThis action cannot be undone.`,
+      })
     );
     if (!confirmed) return;
 
@@ -125,7 +133,7 @@ export default function GameSettings() {
         loadName: "",
       });
       setVersionDialogOpen(false);
-      alert(`已删除版本目录：${effectiveVersionDirName}`);
+      alert(t({ "zh-CN": `已删除版本目录：${effectiveVersionDirName}`, "en-US": `Deleted version directory: ${effectiveVersionDirName}` }));
     } catch (err) {
       alert(String(err));
     } finally {
@@ -142,7 +150,7 @@ export default function GameSettings() {
             type="button"
             onClick={() => setVersionDialogOpen(true)}
             className="flex items-center gap-3 px-4 pt-3 pb-3 text-left flex-1 min-w-0 hover:bg-accent/30 transition-colors rounded-lg cursor-pointer focus:outline-none"
-            title="点击选择游戏版本"
+            title={t({ "zh-CN": "点击选择游戏版本", "en-US": "Click to select game version" })}
           >
             <div className="flex size-9 items-center justify-center rounded-xl bg-muted shrink-0 pointer-events-none">
               <Gamepad2 className="size-5 text-foreground" />
@@ -150,7 +158,7 @@ export default function GameSettings() {
             <div className="pointer-events-none min-w-0 flex-1 text-left">
               <h1 className="text-lg font-semibold leading-none truncate">{versionName}</h1>
               <p className="mt-1 text-xs text-muted-foreground truncate">
-                {hasLoader ? config.loadName : "原版 · 无 ModLoader · 点击标题选择版本"}
+                {hasLoader ? config.loadName : t({ "zh-CN": "原版 · 无 ModLoader · 点击标题选择版本", "en-US": "Vanilla · No ModLoader · Click title to select version" })}
               </p>
             </div>
           </button>
@@ -161,14 +169,14 @@ export default function GameSettings() {
               className="shrink-0 gap-1.5 hover:text-red-500 hover:border-red-500/50"
               onClick={handleDeleteVersion}
               disabled={deleting}
-              title="删除当前选中的游戏版本目录"
+              title={t({ "zh-CN": "删除当前选中的游戏版本目录", "en-US": "Delete currently selected game version directory" })}
             >
               {deleting ? (
                 <Loader2 className="size-3.5 animate-spin" />
               ) : (
                 <Trash2 className="size-3.5" />
               )}
-              <span className="text-xs">删除版本</span>
+              <span className="text-xs">{t({ "zh-CN": "删除版本", "en-US": "Delete version" })}</span>
             </Button>
           )}
         </div>
@@ -191,15 +199,15 @@ export default function GameSettings() {
                   <div className="size-12 rounded-full bg-muted flex items-center justify-center">
                     <Gamepad2 className="size-6 text-muted-foreground" />
                   </div>
-                  <p className="text-sm font-medium">请先点击上方标题选择游戏版本</p>
+                  <p className="text-sm font-medium">{t({ "zh-CN": "请先点击上方标题选择游戏版本", "en-US": "Please click the title above to select a game version" })}</p>
                   <p className="text-xs text-muted-foreground">
-                    配置完成后即可管理当前版本的模组、资源包等内容
+                    {t({ "zh-CN": "配置完成后即可管理当前版本的模组、资源包等内容", "en-US": "After configuration, you can manage mods, resource packs, and more for the current version" })}
                   </p>
                 </motion.div>
               ) : (
                 <div className="flex flex-col items-center gap-4">
                   {/* 上面三个按钮 */}
-                  <div className="flex items-stretch justify-center gap-3 w-full max-w-[600px]">
+                  <div className="flex justify-center gap-3 w-full">
                     {SETTING_CARDS.slice(0, 3).map((card) => {
                       const Icon = card.icon;
                       return (
@@ -207,14 +215,14 @@ export default function GameSettings() {
                           key={card.href}
                           href={card.href}
                           suppressHydrationWarning
-                          className="flex flex-col items-center justify-center gap-3 flex-1 min-w-[140px] max-w-[200px] h-[160px] rounded-2xl border-[3px] border-border bg-card/40 hover:bg-accent/40 active:bg-accent/70 transition-all hover:border-foreground/50 hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50"
+                          className={SETTING_CARD_CLASS}
                         >
                           <div className="flex size-11 items-center justify-center rounded-xl bg-muted">
                             <Icon className="size-5 text-foreground" />
                           </div>
-                          <h3 className="text-sm font-semibold leading-tight text-center">{card.title}</h3>
+                          <h3 className="text-sm font-semibold leading-tight text-center">{t(card.title)}</h3>
                           <p className="text-xs text-muted-foreground text-center leading-tight px-2">
-                            {card.description}
+                            {t(card.description)}
                           </p>
                         </Link>
                       );
@@ -222,7 +230,7 @@ export default function GameSettings() {
                   </div>
 
                   {/* 下面四个按钮 */}
-                  <div className="flex items-stretch justify-center gap-3 w-full max-w-[700px]">
+                  <div className="flex justify-center gap-3 w-full">
                     {SETTING_CARDS.slice(3, 7).map((card) => {
                       const Icon = card.icon;
                       return (
@@ -230,14 +238,14 @@ export default function GameSettings() {
                           key={card.href}
                           href={card.href}
                           suppressHydrationWarning
-                          className="flex flex-col items-center justify-center gap-3 flex-1 min-w-[140px] max-w-[180px] h-[160px] rounded-2xl border-[3px] border-border bg-card/40 hover:bg-accent/40 active:bg-accent/70 transition-all hover:border-foreground/50 hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50"
+                          className={SETTING_CARD_CLASS}
                         >
                           <div className="flex size-11 items-center justify-center rounded-xl bg-muted">
                             <Icon className="size-5 text-foreground" />
                           </div>
-                          <h3 className="text-sm font-semibold leading-tight text-center">{card.title}</h3>
+                          <h3 className="text-sm font-semibold leading-tight text-center">{t(card.title)}</h3>
                           <p className="text-xs text-muted-foreground text-center leading-tight px-2">
-                            {card.description}
+                            {t(card.description)}
                           </p>
                         </Link>
                       );
@@ -256,7 +264,7 @@ export default function GameSettings() {
               className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl border border-border bg-card/30 hover:bg-accent/40 active:bg-accent/70 transition-all hover:border-foreground/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50 text-sm font-medium"
             >
               <Package className="size-4" />
-              <span>进入整合包管理</span>
+              <span>{t({ "zh-CN": "进入整合包管理", "en-US": "Go to Modpack Management" })}</span>
               <ChevronRight className="size-4" />
             </Link>
           </div>

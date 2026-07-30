@@ -179,8 +179,10 @@ body[data-app-bg="active"] [data-slot="card"] {
   background-color: color-mix(in oklch, var(--card) 78%, transparent);
   backdrop-filter: blur(8px) saturate(140%);
   -webkit-backdrop-filter: blur(8px) saturate(140%);
+  clip-path: inset(0 round 1rem);
+  -webkit-clip-path: inset(0 round 1rem);
 }
-body[data-app-bg="active"] aside {
+body[data-app-bg="active"] aside[data-app-sidebar] {
   background-color: color-mix(in oklch, var(--sidebar) 75%, transparent);
   backdrop-filter: blur(8px) saturate(140%);
   -webkit-backdrop-filter: blur(8px) saturate(140%);
@@ -188,6 +190,8 @@ body[data-app-bg="active"] aside {
 body[data-app-bg="active"] [data-settings-content] + * [data-slot="card"] {
   backdrop-filter: blur(8px) saturate(140%);
   -webkit-backdrop-filter: blur(8px) saturate(140%);
+  clip-path: inset(0 round 1rem);
+  -webkit-clip-path: inset(0 round 1rem);
 }
 
 @layer base {

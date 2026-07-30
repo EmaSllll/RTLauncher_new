@@ -7,6 +7,7 @@ import * as React from "react";
 // ============================================================
 export type ThemeMode = "light" | "dark";
 export type HomeMode = "simple" | "full";
+export type AppLanguage = "zh-CN" | "en-US";
 
 export interface BackgroundConfig {
   imageDataUrl?: string;
@@ -28,7 +29,12 @@ export interface AppearanceSettings {
   homeMode: HomeMode; // 主页模式：simple 或 full
 }
 
+export interface GeneralSettings {
+  language: AppLanguage;
+}
+
 export interface LauncherSettings {
+  general: GeneralSettings;
   appearance: AppearanceSettings;
 }
 
@@ -56,6 +62,9 @@ export const COLOR_PRESETS: ColorPreset[] = [
 // 默认值
 // ============================================================
 export const DEFAULT_SETTINGS: LauncherSettings = {
+  general: {
+    language: "zh-CN",
+  },
   appearance: {
     themeMode: "light",
     themeColor: "default",
@@ -81,6 +90,21 @@ export const BG_OPACITY_MIN = 0;
 export const BG_OPACITY_MAX = 100;
 
 const STORAGE_KEY = "rtlauncher:settings:v3";
+
+function isAppLanguage(value: unknown): value is AppLanguage {
+  return value === "zh-CN" || value === "en-US";
+}
+
+export function languageFromSystemPreference(preferred: string | undefined): AppLanguage {
+  if (!preferred) return "zh-CN";
+  return preferred.toLowerCase().startsWith("zh") ? "zh-CN" : "en-US";
+}
+
+/** 首次使用时根据系统（WebView）首选语言决定默认界面语言。 */
+export function detectSystemLanguage(): AppLanguage {
+  if (typeof navigator === "undefined") return "zh-CN";
+  return languageFromSystemPreference(navigator.languages?.[0] || navigator.language);
+}
 
 // ============================================================
 // Provider
@@ -314,23 +338,48 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
   // 初始化：读取本地存储
   React.useEffect(() => {
+    let cancelled = false;
+    let merged: LauncherSettings = {
+      ...DEFAULT_SETTINGS,
+      general: { language: detectSystemLanguage() },
+      appearance: {
+        ...DEFAULT_SETTINGS.appearance,
+        background: { ...DEFAULT_SETTINGS.appearance.background },
+      },
+    };
+
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<LauncherSettings>;
-        const merged: LauncherSettings = {
+        merged = {
+          general: {
+            ...DEFAULT_SETTINGS.general,
+            ...(parsed.general ?? {}),
+            language: isAppLanguage(parsed.general?.language)
+              ? parsed.general.language
+              : detectSystemLanguage(),
+          },
           appearance: {
             ...DEFAULT_SETTINGS.appearance,
             ...parsed.appearance,
             background: { ...DEFAULT_SETTINGS.appearance.background, ...(parsed.appearance?.background ?? {}) },
           },
         };
-        setSettings(merged);
       }
     } catch (e) {
       console.warn("[settings] 读取失败，使用默认值", e);
     }
-    setReady(true);
+
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setSettings(merged);
+      setReady(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // 每次设置变化都应用到 DOM 并持久化
@@ -338,6 +387,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     if (!ready) return;
 
     const isDark = settings.appearance.themeMode === "dark";
+    document.documentElement.lang = settings.general.language;
     applyThemeModeToDom(settings.appearance.themeMode);
     applyThemeColorToDom(settings.appearance.themeColor, isDark);
     applyFontSizeToDom(settings.appearance.fontSize);
@@ -375,7 +425,10 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
-  const reset = React.useCallback(() => setSettings(DEFAULT_SETTINGS), []);
+  const reset = React.useCallback(() => setSettings({
+    ...DEFAULT_SETTINGS,
+    general: { language: detectSystemLanguage() },
+  }), []);
 
   const value = React.useMemo<SettingsContextValue>(
     () => ({ settings, update, reset }),

@@ -8,6 +8,7 @@ import { useInstancePath, getMcVersion, getModLoader } from "@/hooks/use-instanc
 import { useResourceManager } from "@/hooks/use-resource-manager";
 import { useLaunchContext } from "@/components/launch/launch-provider";
 import { fadeSlideUp } from "@/lib/motion";
+import { useI18n } from "@/components/i18n/use-i18n";
 
 /**
  * 资源管理页面的配置
@@ -92,14 +93,15 @@ export function createResourcePage(config: ResourcePageConfig): React.FC {
   } = config;
 
   const Component: React.FC = () => {
+    const { t } = useI18n();
     const { config: launcherConfig } = useLaunchContext();
     const { instanceDir, selectedInstance, minecraftPath, configLoaded } = useInstancePath();
 
     // 根据 versionSource 决定版本信息的来源
     const versionName =
       versionSource === "instance"
-        ? selectedInstance?.name || "未选择版本"
-        : launcherConfig.versionName || "未选择版本";
+        ? selectedInstance?.name || t({ "zh-CN": "未选择版本", "en-US": "No version selected" })
+        : launcherConfig.versionName || t({ "zh-CN": "未选择版本", "en-US": "No version selected" });
     const mcVersion =
       versionSource === "instance"
         ? selectedInstance?.minecraft_version
@@ -158,8 +160,8 @@ export function createResourcePage(config: ResourcePageConfig): React.FC {
           <div className="size-12 rounded-full bg-muted flex items-center justify-center">
             <Package className="size-6 text-muted-foreground" />
           </div>
-          <p className="text-sm font-medium">正在加载配置...</p>
-          <p className="text-xs text-muted-foreground">请稍候</p>
+          <p className="text-sm font-medium">{t({ "zh-CN": "正在加载配置...", "en-US": "Loading configuration..." })}</p>
+          <p className="text-xs text-muted-foreground">{t({ "zh-CN": "请稍候", "en-US": "Please wait" })}</p>
         </motion.div>
       );
     }
@@ -175,11 +177,11 @@ export function createResourcePage(config: ResourcePageConfig): React.FC {
           <div className="size-12 rounded-full bg-muted flex items-center justify-center">
             <Package className="size-6 text-muted-foreground" />
           </div>
-          <p className="text-sm font-medium">未配置游戏目录</p>
+          <p className="text-sm font-medium">{t({ "zh-CN": "未配置游戏目录", "en-US": "Game directory is not configured" })}</p>
           <p className="text-xs text-muted-foreground">
             {versionSource === "instance"
-              ? "请先选择一个实例"
-              : "请先在「启动」页面配置 Minecraft 游戏目录"}
+              ? t({ "zh-CN": "请先选择一个实例", "en-US": "Select an instance first" })
+              : t({ "zh-CN": "请先在「启动」页面配置 Minecraft 游戏目录", "en-US": "Configure the Minecraft game directory on the Launch page first" })}
           </p>
         </motion.div>
       );
@@ -193,11 +195,11 @@ export function createResourcePage(config: ResourcePageConfig): React.FC {
               ...(modLoader ? [modLoader] : []),
               ...(mcVersion ? [`MC ${mcVersion}`] : []),
             ].join(" · ")
-          : "请选择一个实例"
+          : t({ "zh-CN": "请选择一个实例", "en-US": "Select an instance" })
         : [
-            `版本: ${versionName}`,
+            t({ "zh-CN": `版本: ${versionName}`, "en-US": `Version: ${versionName}` }),
             ...(modLoader ? [modLoader] : []),
-            ...(mcVersion && mcVersion !== versionName ? [`原版: ${mcVersion}`] : []),
+            ...(mcVersion && mcVersion !== versionName ? [t({ "zh-CN": `原版: ${mcVersion}`, "en-US": `Vanilla: ${mcVersion}` })] : []),
           ].join(" · ");
 
     return (
@@ -211,7 +213,7 @@ export function createResourcePage(config: ResourcePageConfig): React.FC {
         leftError={instanceError}
         leftSearch={instanceSearch}
         setLeftSearch={setInstanceSearch}
-        leftBadge={`${instanceFiles.length} 个`}
+        leftBadge={t({ "zh-CN": `${instanceFiles.length} 个`, "en-US": `${instanceFiles.length}` })}
         leftDirectoryPath={directoryNavigation ? instanceDirectoryPath : undefined}
         onOpenLeftDirectory={directoryNavigation ? openInstanceDirectory : undefined}
         onNavigateUpLeft={directoryNavigation ? goToParentInstanceDirectory : undefined}
@@ -223,7 +225,7 @@ export function createResourcePage(config: ResourcePageConfig): React.FC {
         rightError={cacheError}
         rightSearch={cacheSearch}
         setRightSearch={setCacheSearch}
-        rightBadge={`${cacheFiles.length} 个`}
+        rightBadge={t({ "zh-CN": `${cacheFiles.length} 个`, "en-US": `${cacheFiles.length}` })}
         onMoveRightToLeft={addToInstance}
         onMoveLeftToRight={removeFromInstance}
         onDeleteLeft={deleteFromInstance}
@@ -259,6 +261,7 @@ export function useResourcePage(config: ResourcePageConfig): {
   loadingState: { configLoaded: boolean; minecraftPath: string | undefined; instanceDir: string | undefined };
   extra: ResourcePageExtra;
 } {
+  const { t } = useI18n();
   const {
     title,
     leftIcon,
@@ -279,8 +282,8 @@ export function useResourcePage(config: ResourcePageConfig): {
 
   const versionName =
     versionSource === "instance"
-      ? selectedInstance?.name || "未选择版本"
-      : launcherConfig.versionName || "未选择版本";
+      ? selectedInstance?.name || t({ "zh-CN": "未选择版本", "en-US": "No version selected" })
+      : launcherConfig.versionName || t({ "zh-CN": "未选择版本", "en-US": "No version selected" });
   const mcVersion =
     versionSource === "instance"
       ? selectedInstance?.minecraft_version
@@ -314,11 +317,11 @@ export function useResourcePage(config: ResourcePageConfig): {
             ...(modLoader ? [modLoader] : []),
             ...(mcVersion ? [`MC ${mcVersion}`] : []),
           ].join(" · ")
-        : "请选择一个实例"
+        : t({ "zh-CN": "请选择一个实例", "en-US": "Select an instance" })
       : [
-          `版本: ${versionName}`,
+          t({ "zh-CN": `版本: ${versionName}`, "en-US": `Version: ${versionName}` }),
           ...(modLoader ? [modLoader] : []),
-          ...(mcVersion && mcVersion !== versionName ? [`原版: ${mcVersion}`] : []),
+          ...(mcVersion && mcVersion !== versionName ? [t({ "zh-CN": `原版: ${mcVersion}`, "en-US": `Vanilla: ${mcVersion}` })] : []),
         ].join(" · ");
 
   return {
@@ -332,7 +335,7 @@ export function useResourcePage(config: ResourcePageConfig): {
       leftError: manager.instanceError,
       leftSearch: manager.instanceSearch,
       setLeftSearch: manager.setInstanceSearch,
-      leftBadge: `${manager.instanceFiles.length} 个`,
+      leftBadge: t({ "zh-CN": `${manager.instanceFiles.length} 个`, "en-US": `${manager.instanceFiles.length}` }),
       leftDirectoryPath: directoryNavigation ? manager.instanceDirectoryPath : undefined,
       onOpenLeftDirectory: directoryNavigation ? manager.openInstanceDirectory : undefined,
       onNavigateUpLeft: directoryNavigation ? manager.goToParentInstanceDirectory : undefined,
@@ -345,7 +348,7 @@ export function useResourcePage(config: ResourcePageConfig): {
       rightError: manager.cacheError,
       rightSearch: manager.cacheSearch,
       setRightSearch: manager.setCacheSearch,
-      rightBadge: `${manager.cacheFiles.length} 个`,
+      rightBadge: t({ "zh-CN": `${manager.cacheFiles.length} 个`, "en-US": `${manager.cacheFiles.length}` }),
       rightModInfo: manager.cacheModInfo,
       onMoveRightToLeft: manager.addToInstance,
       onMoveLeftToRight: manager.removeFromInstance,
@@ -387,6 +390,17 @@ export function ResourcePageFallback({
   title: string;
   subtitle: string;
 }) {
+  const { t } = useI18n();
+  const copy = (value: string) => {
+    const translations: Record<string, { "zh-CN": string; "en-US": string }> = {
+      "正在加载配置...": { "zh-CN": "正在加载配置...", "en-US": "Loading configuration..." },
+      "未配置游戏目录": { "zh-CN": "未配置游戏目录", "en-US": "Game directory is not configured" },
+      "请稍候": { "zh-CN": "请稍候", "en-US": "Please wait" },
+      "请先在「启动」页面配置 Minecraft 游戏目录": { "zh-CN": "请先在「启动」页面配置 Minecraft 游戏目录", "en-US": "Configure the Minecraft game directory on the Launch page first" },
+    };
+    return translations[value] ? t(translations[value]) : value;
+  };
+
   return (
     <motion.div
       variants={fadeSlideUp}
@@ -397,8 +411,8 @@ export function ResourcePageFallback({
       <div className="size-12 rounded-full bg-muted flex items-center justify-center">
         <Package className="size-6 text-muted-foreground" />
       </div>
-      <p className="text-sm font-medium">{title}</p>
-      <p className="text-xs text-muted-foreground">{subtitle}</p>
+      <p className="text-sm font-medium">{copy(title)}</p>
+      <p className="text-xs text-muted-foreground">{copy(subtitle)}</p>
     </motion.div>
   );
 }

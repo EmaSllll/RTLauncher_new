@@ -5,23 +5,25 @@ import { useLaunchContext } from "@/components/launch/launch-provider";
 import { Check, Loader2, Circle } from "lucide-react";
 import { fadeSlideUp } from "@/lib/motion";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/components/i18n/use-i18n";
 
 /**
  * 启动阶段进度组件
  * 显示详细的启动阶段和各阶段完成状态
  */
 export function LaunchProgressStages() {
+  const { t } = useI18n();
   const { progress, status } = useLaunchContext();
   const isLaunching = status === "preparing" || status === "launching";
 
   const stages = [
-    { id: "jvm_start", name: "JVM 启动", icon: Loader2 },
-    { id: "loading_libraries", name: "加载库文件", icon: Circle },
-    { id: "loading_assets", name: "加载资源", icon: Circle },
-    { id: "initializing_game", name: "初始化游戏", icon: Circle },
-    { id: "loading_mods", name: "加载模组", icon: Circle },
-    { id: "loading_world", name: "加载世界", icon: Circle },
-    { id: "ready", name: "准备完成", icon: Check },
+    { id: "jvm_start", name: t({ "zh-CN": "JVM 启动", "en-US": "Starting JVM" }), icon: Loader2 },
+    { id: "loading_libraries", name: t({ "zh-CN": "加载库文件", "en-US": "Loading libraries" }), icon: Circle },
+    { id: "loading_assets", name: t({ "zh-CN": "加载资源", "en-US": "Loading assets" }), icon: Circle },
+    { id: "initializing_game", name: t({ "zh-CN": "初始化游戏", "en-US": "Initializing game" }), icon: Circle },
+    { id: "loading_mods", name: t({ "zh-CN": "加载模组", "en-US": "Loading mods" }), icon: Circle },
+    { id: "loading_world", name: t({ "zh-CN": "加载世界", "en-US": "Loading world" }), icon: Circle },
+    { id: "ready", name: t({ "zh-CN": "准备完成", "en-US": "Ready" }), icon: Check },
   ];
 
   // 根据当前进度确定各阶段状态
@@ -43,7 +45,7 @@ export function LaunchProgressStages() {
           className="space-y-3"
         >
           <div className="text-xs font-medium text-foreground">
-            启动进度
+            {t({ "zh-CN": "启动进度", "en-US": "Launch progress" })}
           </div>
           <div className="space-y-2">
             {stages.map((stage, index) => {

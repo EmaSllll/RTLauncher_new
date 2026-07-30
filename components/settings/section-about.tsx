@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Loader2, Download, Check, RefreshCcw, Package, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/components/i18n/use-i18n";
 
 type UpdateState =
   | { kind: "idle" }
@@ -14,6 +15,7 @@ type UpdateState =
   | { kind: "error"; message: string };
 
 export function AboutSection() {
+  const { t } = useI18n();
   const [state, setState] = useState<UpdateState>({ kind: "idle" });
   const [installing, setInstalling] = useState(false);
   const [version, setVersion] = useState<string | null>(null);
@@ -78,9 +80,11 @@ export function AboutSection() {
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
             <Package className="size-4 text-primary" />
-            版本更新
+            {t({ "zh-CN": "版本更新", "en-US": "Updates" })}
           </CardTitle>
-          <CardDescription className="text-xs mt-1">当前版本、检查启动器更新</CardDescription>
+          <CardDescription className="text-xs mt-1">
+            {t({ "zh-CN": "当前版本、检查启动器更新", "en-US": "Current version and launcher updates" })}
+          </CardDescription>
         </div>
       </CardHeader>
 
@@ -92,7 +96,7 @@ export function AboutSection() {
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium">RTLauncher</div>
             <div className="text-xs text-muted-foreground">
-              版本 <span className="font-mono">{version ?? "—"}</span>
+              {t({ "zh-CN": "版本", "en-US": "Version" })} <span className="font-mono">{version ?? "—"}</span>
             </div>
           </div>
         </div>
@@ -101,23 +105,25 @@ export function AboutSection() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm">
               <RefreshCcw className={cn("size-3.5 text-muted-foreground", state.kind === "checking" && "animate-spin")} />
-              {state.kind === "idle" && "尚未检查更新"}
-              {state.kind === "checking" && "正在检查更新..."}
-              {state.kind === "up-to-date" && <span className="text-emerald-600 dark:text-emerald-400">已是最新版本</span>}
+              {state.kind === "idle" && t({ "zh-CN": "尚未检查更新", "en-US": "Updates have not been checked" })}
+              {state.kind === "checking" && t({ "zh-CN": "正在检查更新...", "en-US": "Checking for updates..." })}
+              {state.kind === "up-to-date" && <span className="text-emerald-600 dark:text-emerald-400">{t({ "zh-CN": "已是最新版本", "en-US": "You're up to date" })}</span>}
               {state.kind === "available" && (
-                <span className="text-amber-600 dark:text-amber-400">发现新版本 v{state.version}</span>
+                <span className="text-amber-600 dark:text-amber-400">{t({ "zh-CN": "发现新版本", "en-US": "New version available" })} v{state.version}</span>
               )}
-              {state.kind === "error" && <span className="text-destructive">检查失败</span>}
+              {state.kind === "error" && <span className="text-destructive">{t({ "zh-CN": "检查失败", "en-US": "Update check failed" })}</span>}
             </div>
             <div className="flex items-center gap-2">
               <Button size="sm" variant="outline" onClick={check} disabled={state.kind === "checking"} className="gap-1.5 h-8">
                 <RefreshCcw className={cn("size-3.5", state.kind === "checking" && "animate-spin")} />
-                检查更新
+                {t({ "zh-CN": "检查更新", "en-US": "Check for updates" })}
               </Button>
               {state.kind === "available" && (
                 <Button size="sm" onClick={install} disabled={installing} className="gap-1.5 h-8">
                   {installing ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
-                  {installing ? "安装中" : "立即安装"}
+                  {installing
+                    ? t({ "zh-CN": "安装中", "en-US": "Installing" })
+                    : t({ "zh-CN": "立即安装", "en-US": "Install now" })}
                 </Button>
               )}
             </div>
@@ -138,7 +144,7 @@ export function AboutSection() {
           {state.kind === "up-to-date" && (
             <div className="flex items-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs text-emerald-600 dark:text-emerald-400">
               <Check className="size-3.5" />
-              启动器已在最新版本。
+              {t({ "zh-CN": "启动器已在最新版本。", "en-US": "The launcher is up to date." })}
             </div>
           )}
         </div>

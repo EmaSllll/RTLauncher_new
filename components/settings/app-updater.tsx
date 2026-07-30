@@ -10,6 +10,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { check } from "@tauri-apps/plugin-updater";
+import { useI18n } from "@/components/i18n/use-i18n";
+import type { AppLanguage } from "@/components/settings/settings-provider";
 
 /**
  * 自动更新组件 — 支持两种使用模式：
@@ -36,7 +38,11 @@ function setState(s: UpdateState) {
   for (const l of _listeners) l(s);
 }
 
-async function checkInBackground(showError = false) {
+function updateAlert(language: AppLanguage, chinese: string, english: string) {
+  return language === "en-US" ? english : chinese;
+}
+
+async function checkInBackground(showError = false, language: AppLanguage = "zh-CN") {
   setState({ kind: "checking" });
   try {
     const update = await check();
@@ -51,7 +57,7 @@ async function checkInBackground(showError = false) {
       if (showError) {
         // 调用方希望显式提示用户
         setTimeout(() => {
-          window.alert("当前已是最新版本 ✅");
+          window.alert(updateAlert(language, "当前已是最新版本 ✅", "You're up to date ✅"));
         }, 50);
       }
     }
@@ -60,27 +66,27 @@ async function checkInBackground(showError = false) {
     setState({ kind: "error", message: msg });
     if (showError) {
       setTimeout(() => {
-        window.alert("检查更新失败：\n" + msg);
+        window.alert(updateAlert(language, "检查更新失败：\n", "Update check failed:\n") + msg);
       }, 50);
     }
   }
 }
 
 // 手动触发下载安装（弹窗模式用）
-async function downloadAndInstall(): Promise<boolean> {
+async function downloadAndInstall(language: AppLanguage = "zh-CN"): Promise<boolean> {
   try {
     const update = await check();
     if (!update?.available) {
-      window.alert("没有可用更新");
+      window.alert(updateAlert(language, "没有可用更新", "No updates are available"));
       return false;
     }
     await update.downloadAndInstall(() => {});
-    window.alert("新版本下载完成，即将重启并安装。");
+    window.alert(updateAlert(language, "新版本下载完成，即将重启并安装。", "The update has downloaded and will restart to install."));
     return true;
   } catch (e) {
     console.error("[updater] install failed:", e);
     window.alert(
-      "安装失败：\n" + (e instanceof Error ? e.message : String(e))
+      updateAlert(language, "安装失败：\n", "Installation failed:\n") + (e instanceof Error ? e.message : String(e))
     );
     return false;
   }
@@ -105,6 +111,7 @@ function useUpdateState(): UpdateState {
 
 export function AppUpdateBadge() {
   const state = useUpdateState();
+  const { t } = useI18n();
 
   if (state.kind === "available") {
     return (
@@ -120,7 +127,7 @@ export function AppUpdateBadge() {
     return (
       <div className="flex items-center justify-center gap-2 px-3 py-2 text-xs text-muted-foreground">
         <Loader2 className="size-3.5 animate-spin" />
-        正在检查更新...
+        {t({ "zh-CN": "正在检查更新...", "en-US": "Checking for updates..." })}
       </div>
     );
   }
@@ -137,10 +144,11 @@ export function AppUpdateButton({
   variant?: "button" | "banner";
 }) {
   const state = useUpdateState();
+  const { t, language } = useI18n();
   const [dialogOpen, setDialogOpen] = useState(false);
 
   async function handleCheck() {
-    await checkInBackground(true);
+    await checkInBackground(true, language);
     if (_state.kind === "available") {
       setDialogOpen(true);
     }
@@ -149,7 +157,7 @@ export function AppUpdateButton({
   const [installing, setInstalling] = useState(false);
   async function handleInstall() {
     setInstalling(true);
-    const ok = await downloadAndInstall();
+    const ok = await downloadAndInstall(language);
     if (!ok) setInstalling(false);
   }
 
@@ -163,7 +171,7 @@ export function AppUpdateButton({
           className="shrink-0 gap-1.5"
           onClick={handleCheck}
           disabled={state.kind === "checking"}
-          title="检查启动器是否有新版本"
+          title={t({ "zh-CN": "检查启动器是否有新版本", "en-US": "Check for launcher updates" })}
         >
           {state.kind === "checking" ? (
             <Loader2 className="size-3.5 animate-spin" />
@@ -172,7 +180,7 @@ export function AppUpdateButton({
           ) : (
             <RefreshCw className="size-3.5" />
           )}
-          <span className="text-xs">检查更新</span>
+          <span className="text-xs">{t({ "zh-CN": "检查更新", "en-US": "Check for updates" })}</span>
         </Button>
       ) : (
         <button
@@ -181,7 +189,7 @@ export function AppUpdateButton({
           className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs rounded-md bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 transition-colors"
         >
           <Sparkles className="size-3.5" />
-          发现新版本 v{state.kind === "available" ? state.version : ""} · 点击查看
+          {t({ "zh-CN": `发现新版本 v${state.kind === "available" ? state.version : ""} · 点击查看`, "en-US": `New version v${state.kind === "available" ? state.version : ""} · View details` })}
         </button>
       )}
 
@@ -191,7 +199,7 @@ export function AppUpdateButton({
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Download className="size-5" />
-                发现新版本 v{state.version}
+                {t({ "zh-CN": `发现新版本 v${state.version}`, "en-US": `New version v${state.version}` })}
               </DialogTitle>
             </DialogHeader>
 
@@ -201,13 +209,13 @@ export function AppUpdateButton({
                   {state.notes}
                 </pre>
               ) : (
-                <span className="text-sm text-muted-foreground">暂无更新说明</span>
+                <span className="text-sm text-muted-foreground">{t({ "zh-CN": "暂无更新说明", "en-US": "No release notes available" })}</span>
               )}
 
               {installing && (
                 <div className="mt-4 flex items-center gap-3">
                   <Loader2 className="size-4 animate-spin" />
-                  <span className="text-xs text-muted-foreground">正在下载并安装...</span>
+                  <span className="text-xs text-muted-foreground">{t({ "zh-CN": "正在下载并安装...", "en-US": "Downloading and installing..." })}</span>
                 </div>
               )}
             </div>
@@ -218,18 +226,18 @@ export function AppUpdateButton({
                 onClick={() => setDialogOpen(false)}
                 disabled={installing}
               >
-                稍后再说
+                {t({ "zh-CN": "稍后再说", "en-US": "Later" })}
               </Button>
               <Button onClick={handleInstall} disabled={installing}>
                 {installing ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />
-                    正在更新
+                    {t({ "zh-CN": "正在更新", "en-US": "Updating" })}
                   </>
                 ) : (
                   <>
                     <Check className="size-4" />
-                    立即安装
+                    {t({ "zh-CN": "立即安装", "en-US": "Install now" })}
                   </>
                 )}
               </Button>
@@ -254,10 +262,11 @@ function AppUpdateDialogTrigger({
 }) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [installing, setInstalling] = useState(false);
+  const { t, language } = useI18n();
 
   async function handleInstall() {
     setInstalling(true);
-    const ok = await downloadAndInstall();
+    const ok = await downloadAndInstall(language);
     if (!ok) setInstalling(false);
   }
 
@@ -269,7 +278,7 @@ function AppUpdateDialogTrigger({
         className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs rounded-md bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 transition-colors"
       >
         <Sparkles className="size-3.5" />
-        发现新版本 v{version} · 点击查看
+        {t({ "zh-CN": `发现新版本 v${version} · 点击查看`, "en-US": `New version v${version} · View details` })}
       </button>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -277,7 +286,7 @@ function AppUpdateDialogTrigger({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Download className="size-5" />
-              发现新版本 v{version}
+              {t({ "zh-CN": `发现新版本 v${version}`, "en-US": `New version v${version}` })}
             </DialogTitle>
           </DialogHeader>
 
@@ -287,13 +296,13 @@ function AppUpdateDialogTrigger({
                 {notes}
               </pre>
             ) : (
-              <span className="text-sm text-muted-foreground">暂无更新说明</span>
+              <span className="text-sm text-muted-foreground">{t({ "zh-CN": "暂无更新说明", "en-US": "No release notes available" })}</span>
             )}
 
             {installing && (
               <div className="mt-4 flex items-center gap-3">
                 <Loader2 className="size-4 animate-spin" />
-                <span className="text-xs text-muted-foreground">正在下载并安装...</span>
+                <span className="text-xs text-muted-foreground">{t({ "zh-CN": "正在下载并安装...", "en-US": "Downloading and installing..." })}</span>
               </div>
             )}
           </div>
@@ -304,18 +313,18 @@ function AppUpdateDialogTrigger({
               onClick={() => setDialogOpen(false)}
               disabled={installing}
             >
-              稍后再说
+              {t({ "zh-CN": "稍后再说", "en-US": "Later" })}
             </Button>
             <Button onClick={handleInstall} disabled={installing}>
               {installing ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  正在更新
+                  {t({ "zh-CN": "正在更新", "en-US": "Updating" })}
                 </>
               ) : (
                 <>
                   <Check className="size-4" />
-                  立即安装
+                  {t({ "zh-CN": "立即安装", "en-US": "Install now" })}
                 </>
               )}
             </Button>

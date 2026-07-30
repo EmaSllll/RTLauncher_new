@@ -9,42 +9,42 @@ import {
   Loader2,
   Play,
   AlertCircle,
-  CheckCircle2,
   Square,
 } from "lucide-react";
 import type { LaunchStatus } from "@/types";
+import { useI18n } from "@/components/i18n/use-i18n";
 
 const statusConfig: Record<
   LaunchStatus,
-  { label: string; icon: React.ReactNode; color: string }
+  { label: { "zh-CN": string; "en-US": string }; icon: React.ReactNode; color: string }
 > = {
   idle: {
-    label: "就绪",
+    label: { "zh-CN": "就绪", "en-US": "Ready" },
     icon: <Circle className="size-3" />,
     color: "text-muted-foreground",
   },
   preparing: {
-    label: "准备中",
+    label: { "zh-CN": "准备中", "en-US": "Preparing" },
     icon: <Loader2 className="size-3 animate-spin" />,
     color: "text-blue-500",
   },
   launching: {
-    label: "Launching",
+    label: { "zh-CN": "启动中", "en-US": "Launching" },
     icon: <Loader2 className="size-3 animate-spin" />,
     color: "text-amber-500",
   },
   running: {
-    label: "运行中",
+    label: { "zh-CN": "运行中", "en-US": "Running" },
     icon: <Play className="size-3" />,
     color: "text-green-500",
   },
   stopped: {
-    label: "已停止",
+    label: { "zh-CN": "已停止", "en-US": "Stopped" },
     icon: <Square className="size-3" />,
     color: "text-muted-foreground",
   },
   error: {
-    label: "错误",
+    label: { "zh-CN": "错误", "en-US": "Error" },
     icon: <AlertCircle className="size-3" />,
     color: "text-destructive",
   },
@@ -56,6 +56,7 @@ interface LaunchStatusBadgeProps {
 }
 
 export function LaunchStatusBadge({ status, className }: LaunchStatusBadgeProps) {
+  const { t } = useI18n();
   const cfg = statusConfig[status];
   return (
     <Badge
@@ -72,7 +73,7 @@ export function LaunchStatusBadge({ status, className }: LaunchStatusBadgeProps)
           className="flex items-center gap-1.5"
         >
           {cfg.icon}
-          {cfg.label}
+          {t(cfg.label)}
         </motion.span>
       </AnimatePresence>
     </Badge>
