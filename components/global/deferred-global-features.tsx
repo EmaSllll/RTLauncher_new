@@ -28,6 +28,10 @@ export function DeferredGlobalFeatures() {
         if (cancelled) return;
         setGlobalDragDrop(() => dragDropModule.GlobalDragDrop);
         setFloatingLaunchButton(() => launchButtonModule.FloatingLaunchButton);
+      }).catch((err) => {
+        if (!cancelled) {
+          console.error("Failed to load deferred global features", err);
+        }
       });
     };
 
