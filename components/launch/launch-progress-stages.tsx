@@ -17,13 +17,13 @@ export function LaunchProgressStages() {
   const isLaunching = status === "preparing" || status === "launching";
 
   const stages = [
-    { id: "jvm_start", name: t({ "zh-CN": "JVM 启动", "en-US": "Starting JVM" }), icon: Loader2 },
-    { id: "loading_libraries", name: t({ "zh-CN": "加载库文件", "en-US": "Loading libraries" }), icon: Circle },
-    { id: "loading_assets", name: t({ "zh-CN": "加载资源", "en-US": "Loading assets" }), icon: Circle },
-    { id: "initializing_game", name: t({ "zh-CN": "初始化游戏", "en-US": "Initializing game" }), icon: Circle },
-    { id: "loading_mods", name: t({ "zh-CN": "加载模组", "en-US": "Loading mods" }), icon: Circle },
-    { id: "loading_world", name: t({ "zh-CN": "加载世界", "en-US": "Loading world" }), icon: Circle },
-    { id: "ready", name: t({ "zh-CN": "准备完成", "en-US": "Ready" }), icon: Check },
+    { id: "jvm_start", name: t("launch.startingJvm"), icon: Loader2 },
+    { id: "loading_libraries", name: t("launch.loadingLibraries"), icon: Circle },
+    { id: "loading_assets", name: t("launch.loadingAssets"), icon: Circle },
+    { id: "initializing_game", name: t("launch.initializingGame"), icon: Circle },
+    { id: "loading_mods", name: t("launch.loadingMods"), icon: Circle },
+    { id: "loading_world", name: t("launch.loadingWorld"), icon: Circle },
+    { id: "ready", name: t("launch.ready"), icon: Check },
   ];
 
   // 根据当前进度确定各阶段状态
@@ -45,13 +45,11 @@ export function LaunchProgressStages() {
           className="space-y-3"
         >
           <div className="text-xs font-medium text-foreground">
-            {t({ "zh-CN": "启动进度", "en-US": "Launch progress" })}
+            {t("launch.launchProgress")}
           </div>
           <div className="space-y-2">
             {stages.map((stage, index) => {
               const stageStatus = getStageStatus(index);
-              const StageIcon = stage.icon;
-
               return (
                 <motion.div
                   key={stage.id}

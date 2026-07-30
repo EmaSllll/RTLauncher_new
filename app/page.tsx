@@ -79,10 +79,10 @@ export default function Home() {
   const loaderName =
     selectedInstance?.loader || (config.loadType === "0" ? "Vanilla" : t({ "zh-CN": "模组加载器", "en-US": "Mod loader" }));
   const profileStatusMap: Record<string, string> = {
-    "LittleSkin 登录": t({ "zh-CN": "LittleSkin 登录", "en-US": "Signed in with LittleSkin" }),
-    "第三方登录": t({ "zh-CN": "第三方登录", "en-US": "Third-party sign-in" }),
-    "离线登录": t({ "zh-CN": "离线登录", "en-US": "Offline sign-in" }),
-    "正版登录": t({ "zh-CN": "正版登录", "en-US": "Microsoft sign-in" }),
+    "LittleSkin 登录": t("account.littleSkinSignIn"),
+    "第三方登录": t("account.thirdPartySignIn"),
+    "离线登录": t("account.offlineSignIn"),
+    "正版登录": t("account.microsoftSignIn"),
   };
   const profileStatus = selectedProfile?.status
     ? profileStatusMap[selectedProfile.status] ?? selectedProfile.status

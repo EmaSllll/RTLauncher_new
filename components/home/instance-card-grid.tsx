@@ -182,7 +182,7 @@ export function InstanceCardGrid({
               </CardHeader>
               <CardContent className="px-4">
                 <div className="space-y-1.5">
-                  {getDynamicStats(card.id, copy.stats.map(t)).map((stat, index) => (
+                  {getDynamicStats(card.id, copy.stats.map((stat) => t(stat))).map((stat, index) => (
                     <p key={index} className="text-xs text-muted-foreground">
                       {stat}
                     </p>

@@ -37,7 +37,7 @@ function LogLines({ logs }: { logs: ReturnType<typeof useLaunchContext>["logs"] 
       className="h-full overflow-y-auto rounded-xl bg-muted/50 p-3 font-mono text-xs leading-relaxed"
     >
       {logs.length === 0 ? (
-        <p className="text-muted-foreground/50 select-none">{t({ "zh-CN": "等待启动...", "en-US": "Waiting to launch..." })}</p>
+        <p className="text-muted-foreground/50 select-none">{t("launch.waitingToLaunch")}</p>
       ) : (
         logs.map((log) => (
           <motion.div
@@ -84,7 +84,7 @@ export function LaunchConsole() {
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-sm">
             <Terminal className="size-4 text-primary" />
-            {t({ "zh-CN": "启动日志", "en-US": "Launch log" })}
+            {t("launch.launchLog")}
           </CardTitle>
           <div className="flex items-center gap-1">
             <AnimatePresence>
@@ -124,7 +124,7 @@ export function LaunchConsole() {
           >
             {logs.length === 0 ? (
               <p className="text-muted-foreground/50 select-none">
-                {t({ "zh-CN": "等待启动...", "en-US": "Waiting to launch..." })}
+                {t("launch.waitingToLaunch")}
               </p>
             ) : (
               logs.map((log) => (
@@ -159,7 +159,7 @@ export function LaunchConsole() {
           <DialogHeader>
             <DialogTitle>
               <Terminal className="size-4 text-primary" />
-              {t({ "zh-CN": "启动日志", "en-US": "Launch log" })}
+              {t("launch.launchLog")}
             </DialogTitle>
             {logs.length > 0 && (
               <Button

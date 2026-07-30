@@ -51,10 +51,10 @@ export function LaunchPanel() {
   const [lastReport, setLastReport] = useState<MemoryOptimizationReport | null>(null);
   const [optimizeError, setOptimizeError] = useState<string | null>(null);
   const profileStatusMap: Record<string, string> = {
-    "LittleSkin 登录": t({ "zh-CN": "LittleSkin 登录", "en-US": "Signed in with LittleSkin" }),
-    "第三方登录": t({ "zh-CN": "第三方登录", "en-US": "Third-party sign-in" }),
-    "离线登录": t({ "zh-CN": "离线登录", "en-US": "Offline sign-in" }),
-    "正版登录": t({ "zh-CN": "正版登录", "en-US": "Microsoft sign-in" }),
+    "LittleSkin 登录": t("account.littleSkinSignIn"),
+    "第三方登录": t("account.thirdPartySignIn"),
+    "离线登录": t("account.offlineSignIn"),
+    "正版登录": t("account.microsoftSignIn"),
   };
   const profileStatus = selectedProfile?.status
     ? profileStatusMap[selectedProfile.status] ?? selectedProfile.status
@@ -98,7 +98,7 @@ export function LaunchPanel() {
             </div>
             <div>
               <p className="text-sm font-medium">
-                {config.versionName || t({ "zh-CN": "未选择版本", "en-US": "No version selected" })}
+                {config.versionName || t("launch.noVersionSelected")}
               </p>
               <div className="flex items-center gap-2 mt-0.5">
                 {config.loadType !== "0" && config.loadName && (
@@ -172,12 +172,12 @@ export function LaunchPanel() {
           ) : isRunning ? (
             <>
               <Square className="size-4" />
-              {t({ "zh-CN": "停止游戏", "en-US": "Stop game" })}
+              {t("launch.stopGame")}
             </>
           ) : (
             <>
               <Play className="size-4" />
-              {t({ "zh-CN": "启动游戏", "en-US": "Launch game" })}
+              {t("launch.launchGame")}
             </>
           )}
         </Button>

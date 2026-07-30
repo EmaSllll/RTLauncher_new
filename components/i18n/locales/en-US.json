@@ -1,0 +1,49 @@
+{
+  "common": {
+    "add": "Add",
+    "back": "Back",
+    "cancel": "Cancel",
+    "clear": "Clear",
+    "delete": "Delete",
+    "loading": "Loading...",
+    "notSet": "Not set",
+    "refresh": "Refresh",
+    "search": "Search..."
+  },
+  "account": {
+    "microsoftSignIn": "Microsoft sign-in",
+    "littleSkinSignIn": "Signed in with LittleSkin",
+    "thirdPartySignIn": "Third-party sign-in",
+    "offlineSignIn": "Offline sign-in"
+  },
+  "resource": {
+    "cacheLibrary": "Cache library",
+    "currentInstance": "In current instance",
+    "matchingVersionAvailable": "Matching version · Available to add",
+    "addedFiles": "Added files",
+    "doubleClickFolder": "Double-click a folder to open it",
+    "noFiles": "No files",
+    "noAvailableFiles": "No available files",
+    "uploadFiles": "Upload files",
+    "addToInstance": "Add to instance",
+    "removeFromInstance": "Remove from instance",
+    "openFolder": "Open folder {name}",
+    "deleteConfirm": "Delete “{name}”?"
+  },
+  "launch": {
+    "title": "Launch",
+    "noVersionSelected": "No version selected",
+    "launchGame": "Launch game",
+    "stopGame": "Stop game",
+    "launchLog": "Launch log",
+    "waitingToLaunch": "Waiting to launch...",
+    "launchProgress": "Launch progress",
+    "startingJvm": "Starting JVM",
+    "loadingLibraries": "Loading libraries",
+    "loadingAssets": "Loading assets",
+    "initializingGame": "Initializing game",
+    "loadingMods": "Loading mods",
+    "loadingWorld": "Loading world",
+    "ready": "Ready"
+  }
+}
