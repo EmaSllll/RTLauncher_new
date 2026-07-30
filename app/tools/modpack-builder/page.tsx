@@ -25,6 +25,9 @@ function ModpackBuilderInner() {
   >(editExisting && name ? null : []);
   const [existingGV, setExistingGV] = useState<string>("");
   const [existingLoader, setExistingLoader] = useState<string>("");
+  const [existingLoaderVersion, setExistingLoaderVersion] = useState<string>("");
+  const [existingPackVersion, setExistingPackVersion] = useState<string>("1.0.0");
+  const [existingAuthor, setExistingAuthor] = useState<string>("");
   const [existingOptifine, setExistingOptifine] = useState<boolean>(false);
   const [existingOptifineVersion, setExistingOptifineVersion] = useState<string>("");
   const [existingCrossLoader, setExistingCrossLoader] = useState<boolean>(false);
@@ -44,14 +47,39 @@ function ModpackBuilderInner() {
             return;
           }
           setExistingFiles(inst.files as any);
-          // Modrinth 新格式用 versionId/dependencies.minecraft，旧格式用 game_version
+          // MC 版本来自 dependencies.minecraft；versionId 是整合包自身版本。
           const gv =
-            (inst as any).versionId ||
             (inst as any).dependencies?.minecraft ||
             (inst as any).game_version ||
+            // 兼容旧工程：旧版错误地把 MC 版本保存在 versionId。
+            (inst as any).versionId ||
             "";
           setExistingGV(gv);
-          setExistingLoader((inst as any).loader || "");
+          const loadedLoader = (inst as any).loader || "";
+          setExistingLoader(loadedLoader);
+          const dependencyLoaderVersion =
+            loadedLoader === "forge"
+              ? (inst as any).dependencies?.forge
+              : loadedLoader === "neoforge"
+                ? (inst as any).dependencies?.neoforge ||
+                  (inst as any).dependencies?.["neoforge-loader"]
+                : loadedLoader === "fabric"
+                  ? (inst as any).dependencies?.["fabric-loader"]
+                  : loadedLoader === "quilt"
+                    ? (inst as any).dependencies?.["quilt-loader"]
+                    : "";
+          const loadedLoaderVersion =
+            (inst as any).loader_version || dependencyLoaderVersion || "";
+          setExistingLoaderVersion(
+            loadedLoaderVersion.toLowerCase() === "latest" ? "" : loadedLoaderVersion,
+          );
+          const modrinthVersionId = (inst as any).versionId || "";
+          setExistingPackVersion(
+            (inst as any).format === "modrinth"
+              ? modrinthVersionId || "1.0.0"
+              : (inst as any).version || "1.0.0",
+          );
+          setExistingAuthor((inst as any).author || "");
           setExistingOptifine((inst as any).optifine || false);
           setExistingOptifineVersion((inst as any).optifine_version || "");
           setExistingCrossLoader((inst as any).cross_loader || false);
@@ -90,6 +118,9 @@ function ModpackBuilderInner() {
       initialName={name}
       gameVersion={existingGV || undefined}
       initialLoader={existingLoader || undefined}
+      initialLoaderVersion={existingLoaderVersion || undefined}
+      initialPackVersion={existingPackVersion}
+      initialAuthor={existingAuthor || undefined}
       initialOptifine={existingOptifine}
       initialOptifineVersion={existingOptifineVersion || undefined}
       initialCrossLoader={existingCrossLoader}

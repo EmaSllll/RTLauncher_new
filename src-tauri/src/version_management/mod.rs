@@ -2,9 +2,9 @@
 #[allow(dead_code)]
 pub mod resource_checker;
 
+use base64::Engine;
 use serde::Serialize;
 use std::path::Path;
-use base64::Engine;
 
 /// Minecraft 实例中需要存在的标准子目录
 ///
@@ -42,7 +42,6 @@ pub async fn vm_ensure_instance_dirs(instance_dir: String) -> Result<(), String>
     }
     ensure_instance_dirs(path)
 }
-
 
 // ── 返回结构体 ───────────────────────────────────────────────
 
@@ -85,13 +84,16 @@ pub struct LevelDatInfo {
 /// 根据 mainClass 推断加载器类型
 fn detect_loader_from_main_class(main_class: &str) -> &'static str {
     let mc = main_class.to_lowercase();
-    if mc.contains("fabricmc") || mc.contains("knot") {
-        "Fabric"
-    } else if mc.contains("quiltmc") || mc.contains("quilt") {
+    if mc.contains("quiltmc") || mc.contains("quilt") {
         "Quilt"
+    } else if mc.contains("fabricmc") || mc.contains("knot") {
+        "Fabric"
     } else if mc.contains("neoforged") {
         "NeoForge"
-    } else if mc.contains("bootstraplauncher") || mc.contains("modlauncher") || mc.contains("minecraftforge") {
+    } else if mc.contains("bootstraplauncher")
+        || mc.contains("modlauncher")
+        || mc.contains("minecraftforge")
+    {
         "Forge"
     } else if mc.contains("liteloader") {
         "LiteLoader"
@@ -136,13 +138,58 @@ fn extract_minecraft_version(name: &str) -> String {
     }
     
     // 模式 2：版本号在字符串中间，例如 "fabric-loader-0.15.0-1.21.1"
-    let re2 = regex::Regex::new(r"(?<!\d)(\d+\.\d+(?:\.\d+)?)(?!\d)").ok();
+    // Rust regex 不支持 look-around，使用非数字边界并只捕获版本号本身。
+    let re2 = regex::Regex::new(r"(?:^|[^0-9])(\d+\.\d+(?:\.\d+)?)(?:[^0-9]|$)").ok();
     if let Some(caps) = re2.as_ref().and_then(|r| r.captures(name)) {
         return caps.get(1).unwrap().as_str().to_string();
     }
     
     // fallback：原样返回
     name.to_string()
+}
+
+/// 判断目录名本身是否是可识别的 Minecraft 版本标识。
+///
+/// assetIndex.id 是资源索引代号（例如 32），不是 Minecraft 版本；只有目录名
+/// 确实像正式版或周快照时，才把它作为分组版本使用。
+fn version_from_instance_name(name: &str) -> Option<String> {
+    let release = regex::Regex::new(r"^\d+\.\d+(?:\.\d+)?(?:-.+)?$").ok()?;
+    let weekly_snapshot = regex::Regex::new(r"^\d{2}w\d{2}[a-z]$").ok()?;
+
+    if release.is_match(name) {
+        Some(extract_minecraft_version(name))
+    } else if weekly_snapshot.is_match(name) {
+        Some(name.to_string())
+    } else {
+        None
+    }
+}
+
+/// 合并型整合包实例没有 inheritsFrom，目录名也不一定带加载器名称。
+/// 优先从加载器库坐标中读取真实 Minecraft 版本。
+fn detect_minecraft_version_from_libraries(json: &serde_json::Value) -> Option<String> {
+    let libraries = json.get("libraries")?.as_array()?;
+    for library in libraries {
+        let name = library.get("name")?.as_str()?;
+        let parts: Vec<&str> = name.split(':').collect();
+        if parts.len() < 3 {
+            continue;
+        }
+
+        let group = parts[0];
+        let artifact = parts[1];
+        let version = parts[2];
+        let carries_mc_version = (group == "net.minecraftforge"
+            && (artifact == "forge" || artifact == "fmlloader"))
+            || (group == "net.fabricmc" && artifact == "intermediary");
+        if carries_mc_version {
+            let detected = extract_minecraft_version(version);
+            if detected != version || version.contains('.') {
+                return Some(detected);
+            }
+        }
+    }
+    None
 }
 
 /// 扫描单个实例目录，构建 InstanceData
@@ -164,25 +211,23 @@ fn build_instance_data(instance_dir: &Path, minecraft_path: &Path) -> Option<Ins
     };
 
     // 尝试从 versions/<name>/<name>.json 推断加载器与真实 MC 版本
-    let version_json_path = minecraft_path.join("versions").join(&name).join(format!("{}.json", name));
+    let version_json_path = minecraft_path
+        .join("versions")
+        .join(&name)
+        .join(format!("{}.json", name));
     let (minecraft_version, loader) = if version_json_path.is_file() {
         match std::fs::read_to_string(&version_json_path) {
             Ok(content) => {
                 match serde_json::from_str::<serde_json::Value>(&content) {
                     Ok(json) => {
-                        // 尝试从 inheritsFrom 字段获取真实 MC 版本（Fabric/Forge 等情况）
-                        // 如果没有 inheritsFrom（合并版 instance），则从 assetIndex.id 或 downloads.client 中提取
+                        // assetIndex.id 是资源索引代号，不是 Minecraft 版本。
+                        // 合并型实例优先读加载器库坐标，普通实例再读版本目录名。
                         let raw_ver = json
                             .get("inheritsFrom")
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string())
-                            .or_else(|| {
-                                // 从 assetIndex 的 id 中获取（通常与 MC 版本一致）
-                                json.get("assetIndex")
-                                    .and_then(|v| v.get("id"))
-                                    .and_then(|v| v.as_str())
-                                    .map(|s| s.to_string())
-                            })
+                            .or_else(|| detect_minecraft_version_from_libraries(&json))
+                            .or_else(|| version_from_instance_name(&name))
                             .or_else(|| {
                                 // 从 downloads.client.url 中匹配版本号
                                 json.get("downloads")
@@ -190,8 +235,13 @@ fn build_instance_data(instance_dir: &Path, minecraft_path: &Path) -> Option<Ins
                                     .and_then(|v| v.get("url"))
                                     .and_then(|v| v.as_str())
                                     .and_then(|url| {
-                                        let re = regex::Regex::new(r"/(\d+\.\d+(\.\d+)?(-pre\d+)?(-rc\d+)?(-snapshot)?)/").ok()?;
-                                        re.captures(url).and_then(|c| c.get(1)).map(|m| m.as_str().to_string())
+                                        let re = regex::Regex::new(
+                                            r"/(\d+\.\d+(\.\d+)?(-pre\d+)?(-rc\d+)?(-snapshot)?)/",
+                                        )
+                                        .ok()?;
+                                        re.captures(url)
+                                            .and_then(|c| c.get(1))
+                                            .map(|m| m.as_str().to_string())
                                     })
                             })
                             .unwrap_or(name.clone());
@@ -217,13 +267,22 @@ fn build_instance_data(instance_dir: &Path, minecraft_path: &Path) -> Option<Ins
                         .to_string();
                         (mc_ver, loader)
                     }
-                    Err(_) => (extract_minecraft_version(&name), detect_loader_from_name(&name).to_string()),
+                    Err(_) => (
+                        extract_minecraft_version(&name),
+                        detect_loader_from_name(&name).to_string(),
+                    ),
                 }
             }
-            Err(_) => (extract_minecraft_version(&name), detect_loader_from_name(&name).to_string()),
+            Err(_) => (
+                extract_minecraft_version(&name),
+                detect_loader_from_name(&name).to_string(),
+            ),
         }
     } else {
-        (extract_minecraft_version(&name), detect_loader_from_name(&name).to_string())
+        (
+            extract_minecraft_version(&name),
+            detect_loader_from_name(&name).to_string(),
+        )
     };
 
     Some(InstanceData {
@@ -269,8 +328,7 @@ pub async fn vm_scan_instances(instances_path: String) -> Result<Vec<InstanceDat
         return Ok(vec![]);
     }
 
-    let entries = std::fs::read_dir(path)
-        .map_err(|e| format!("读取实例目录失败: {}", e))?;
+    let entries = std::fs::read_dir(path).map_err(|e| format!("读取实例目录失败: {}", e))?;
 
     let mut result = Vec::new();
     for entry in entries.flatten() {
@@ -350,8 +408,7 @@ pub async fn vm_list_dir(
         return Ok(vec![]);
     }
 
-    let entries = std::fs::read_dir(path)
-        .map_err(|e| format!("读取目录失败: {}", e))?;
+    let entries = std::fs::read_dir(path).map_err(|e| format!("读取目录失败: {}", e))?;
 
     let mut result = Vec::new();
     for entry in entries.flatten() {
@@ -500,7 +557,10 @@ pub async fn vm_delete_cached_file(
     mod_loader: Option<String>,
     file_name: String,
 ) -> Result<(), String> {
-    use crate::handler::cache_paths::{parse_mod_loader, parse_resource_kind, get_cache_dir_for_version, get_mod_cache_dir, CacheResourceKind};
+    use crate::handler::cache_paths::{
+        get_cache_dir_for_version, get_mod_cache_dir, parse_mod_loader, parse_resource_kind,
+        CacheResourceKind,
+    };
 
     let resource_kind = parse_resource_kind(&kind)?;
 
@@ -522,4 +582,57 @@ pub async fn vm_delete_cached_file(
         std::fs::remove_file(&file_path).map_err(|e| format!("删除文件失败: {}", e))?;
     }
     Ok(())
+}
+#[cfg(test)]
+mod tests {
+    use super::{
+        detect_loader_from_main_class, detect_minecraft_version_from_libraries,
+        extract_minecraft_version, version_from_instance_name,
+    };
+    use serde_json::json;
+
+    #[test]
+    fn extracts_version_from_named_modpack_instance() {
+        assert_eq!(extract_minecraft_version("1-1.20.1"), "1.20.1");
+    }
+
+    #[test]
+    fn detects_forge_mc_version_from_merged_libraries() {
+        let version = json!({
+            "libraries": [
+                { "name": "net.minecraftforge:fmlloader:1.20.1-47.4.9" }
+            ]
+        });
+
+        assert_eq!(
+            detect_minecraft_version_from_libraries(&version).as_deref(),
+            Some("1.20.1")
+        );
+    }
+
+    #[test]
+    fn keeps_release_and_snapshot_versions_instead_of_asset_index_ids() {
+        assert_eq!(version_from_instance_name("26.2").as_deref(), Some("26.2"));
+        assert_eq!(
+            version_from_instance_name("26.3-snapshot-5").as_deref(),
+            Some("26.3")
+        );
+        assert_eq!(
+            version_from_instance_name("25w42a").as_deref(),
+            Some("25w42a")
+        );
+        assert_eq!(version_from_instance_name("custom-profile"), None);
+    }
+
+    #[test]
+    fn detects_quilt_before_generic_knot_main_class() {
+        assert_eq!(
+            detect_loader_from_main_class("org.quiltmc.loader.impl.launch.knot.KnotClient"),
+            "Quilt"
+        );
+        assert_eq!(
+            detect_loader_from_main_class("net.fabricmc.loader.impl.launch.knot.KnotClient"),
+            "Fabric"
+        );
+    }
 }

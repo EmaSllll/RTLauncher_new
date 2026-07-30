@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
-use std::collections::HashMap;
 
 /// Java安装信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,7 +45,10 @@ fn default_minecraft_path() -> String {
     {
         // Windows: %APPDATA%/.minecraft
         if let Ok(appdata) = std::env::var("APPDATA") {
-            return std::path::PathBuf::from(appdata).join(".minecraft").to_string_lossy().to_string();
+            return std::path::PathBuf::from(appdata)
+                .join(".minecraft")
+                .to_string_lossy()
+                .to_string();
         }
         // 回退到启动器所在目录
         let exe_dir = std::env::current_exe()

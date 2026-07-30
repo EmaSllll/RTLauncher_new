@@ -1,7 +1,7 @@
-use anyhow::{anyhow, Result};
 use crate::downloader::concurrent_download::{self, DownloadTask};
 use crate::downloader::shared_utils::{self, Library, MetaResponse};
 use crate::http_client::shared_client;
+use anyhow::{anyhow, Result};
 use serde_json;
 use std::fs;
 use std::path::PathBuf;
@@ -44,13 +44,21 @@ pub async fn get_fabric_api_versions(mc_version: &str) -> Result<Vec<String>> {
 }
 
 /// 安装 Fabric Loader
-pub async fn install_fabric_loader(mc_version: &str, loader_version: &str, mc_folder_path: &str, use_mirror: bool) -> Result<String> {
+pub async fn install_fabric_loader(
+    mc_version: &str,
+    loader_version: &str,
+    mc_folder_path: &str,
+    use_mirror: bool,
+) -> Result<String> {
     let meta_url = if use_mirror {
         "https://bmclapi2.bangbang93.com/fabric-meta/v2/versions/loader"
     } else {
         "https://meta.fabricmc.net/v2/versions/loader"
     };
-    let url = format!("{}/{}/{}/profile/json", meta_url, mc_version, loader_version);
+    let url = format!(
+        "{}/{}/{}/profile/json",
+        meta_url, mc_version, loader_version
+    );
     let client = shared_client().await;
     let resp = client.get(&url).send().await?;
     if !resp.status().is_success() {
@@ -58,7 +66,9 @@ pub async fn install_fabric_loader(mc_version: &str, loader_version: &str, mc_fo
     }
     let profile_json_text = resp.text().await?;
     let version_id = format!("{}-{}-fabric", mc_version, loader_version);
-    let versions_dir = PathBuf::from(mc_folder_path).join("versions").join(&version_id);
+    let versions_dir = PathBuf::from(mc_folder_path)
+        .join("versions")
+        .join(&version_id);
     fs::create_dir_all(&versions_dir)?;
     let profile_json_path = versions_dir.join(format!("{}.json", version_id));
     fs::write(&profile_json_path, &profile_json_text)?;
@@ -107,12 +117,19 @@ pub async fn install_fabric_loader(mc_version: &str, loader_version: &str, mc_fo
 }
 
 /// 安装 Fabric API
-pub async fn install_fabric_api(mc_version: &str, fabric_api_version: &str, mc_folder_path: &str) -> Result<()> {
+pub async fn install_fabric_api(
+    mc_version: &str,
+    fabric_api_version: &str,
+    mc_folder_path: &str,
+) -> Result<()> {
     let fabric_api_url = format!(
         "https://maven.fabricmc.net/net/fabricmc/fabric-api/fabric-api/{}/fabric-api-{}.jar",
         fabric_api_version, fabric_api_version
     );
-    let mods_dir = PathBuf::from(mc_folder_path).join("versions").join(mc_version).join("mods");
+    let mods_dir = PathBuf::from(mc_folder_path)
+        .join("versions")
+        .join(mc_version)
+        .join("mods");
     fs::create_dir_all(&mods_dir)?;
     let jar_name = format!("fabric-api-{}.jar", fabric_api_version);
 
@@ -141,10 +158,16 @@ async fn download_libraries(
 ) -> Result<()> {
     let mut tasks = Vec::new();
     for lib in libraries {
-        let base_url = lib.url.as_deref().unwrap_or(default_url).trim_end_matches('/');
+        let base_url = lib
+            .url
+            .as_deref()
+            .unwrap_or(default_url)
+            .trim_end_matches('/');
         let name = lib.name.clone();
         let (sub_path, jar_name) = shared_utils::parse_library_path_for_fs(&name)?;
-        let library_dir = PathBuf::from(mc_folder_path).join("libraries").join(&sub_path);
+        let library_dir = PathBuf::from(mc_folder_path)
+            .join("libraries")
+            .join(&sub_path);
         let url_sub_path = shared_utils::parse_library_path_for_url(&name)?;
         let download_url = format!("{}/{}", base_url, url_sub_path);
 
@@ -152,7 +175,11 @@ async fn download_libraries(
             file_name: jar_name,
             target_dir: library_dir,
             urls: vec![download_url],
-            sha1: lib.downloads.as_ref().and_then(|d| d.artifact.as_ref()).map(|a| a.sha1.clone()),
+            sha1: lib
+                .downloads
+                .as_ref()
+                .and_then(|d| d.artifact.as_ref())
+                .map(|a| a.sha1.clone()),
         });
     }
 

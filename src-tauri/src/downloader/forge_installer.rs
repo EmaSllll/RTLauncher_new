@@ -15,7 +15,10 @@ struct ForgeBmclEntry {
 }
 async fn fetch_bmcl_forge_versions(mc_version: &str) -> Option<Vec<String>> {
     let client = shared_client().await;
-    let url = format!("https://bmclapi2.bangbang93.com/forge/{}/versions", mc_version);
+    let url = format!(
+        "https://bmclapi2.bangbang93.com/forge/{}/versions",
+        mc_version
+    );
     let text = client.get(&url).send().await.ok()?.text().await.ok()?;
     if let Ok(list) = serde_json::from_str::<Vec<ForgeBmclEntry>>(&text) {
         if !list.is_empty() {
@@ -59,9 +62,10 @@ async fn fetch_webpage_forge_versions(mc_version: &str) -> Result<Vec<String>> {
         match client.get(url).send().await {
             Ok(resp) => {
                 if resp.status().is_success() {
-                    let text = resp.text().await.with_context(|| {
-                        format!("读取 Forge 页面内容失败: {}", url)
-                    })?;
+                    let text = resp
+                        .text()
+                        .await
+                        .with_context(|| format!("读取 Forge 页面内容失败: {}", url))?;
                     if !text.is_empty() {
                         html = Some(text);
                         break;
@@ -98,8 +102,9 @@ async fn fetch_webpage_forge_versions(mc_version: &str) -> Result<Vec<String>> {
             }
         }
     }
-    let re_td_version = Regex::new(r#"<td[^>]*class="[^"]*download-version[^"]*"[^>]*>\s*(\d+(?:\.\d+)+)"#)
-        .context("构造 td-version 正则失败")?;
+    let re_td_version =
+        Regex::new(r#"<td[^>]*class="[^"]*download-version[^"]*"[^>]*>\s*(\d+(?:\.\d+)+)"#)
+            .context("构造 td-version 正则失败")?;
     for cap in re_td_version.captures_iter(&html) {
         if let Some(v) = cap.get(1) {
             versions.push(format!("{}-{}", mc_version, v.as_str()));
@@ -134,7 +139,10 @@ async fn fetch_maven_metadata_forge_versions(mc_version: &str) -> Result<Vec<Str
         }
     }
     if versions.is_empty() {
-        bail!("从 maven-metadata.xml 未找到 Minecraft {} 的 Forge 版本", mc_version);
+        bail!(
+            "从 maven-metadata.xml 未找到 Minecraft {} 的 Forge 版本",
+            mc_version
+        );
     }
     versions.sort_by(|a, b| b.cmp(a));
     versions.dedup();
@@ -172,7 +180,9 @@ async fn download_installer(
         .to_string();
     fn mc_is_modern(mc: &str) -> bool {
         let parts: Vec<&str> = mc.split('.').collect();
-        if parts.len() < 2 { return false; }
+        if parts.len() < 2 {
+            return false;
+        }
         if let (Ok(major), Ok(minor)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
             (major, minor) >= (1, 13)
         } else {
@@ -214,9 +224,7 @@ async fn download_installer(
         }
     }
     if is_modern {
-        let guesses = vec![
-            fmt_mc_forge.clone(),          
-        ];
+        let guesses = vec![fmt_mc_forge.clone()];
         for g in guesses {
             if !version_candidates.contains(&g) {
                 version_candidates.push(g);
@@ -236,7 +244,11 @@ async fn download_installer(
             }
         }
     }
-    println!("[Forge] 候选版本列表 ({}): {:?}", version_candidates.len(), version_candidates);
+    println!(
+        "[Forge] 候选版本列表 ({}): {:?}",
+        version_candidates.len(),
+        version_candidates
+    );
     for v in &version_candidates {
         let file_name = format!("forge-{}-installer.jar", v);
         let target_path = cache_dir.join(&file_name);
@@ -275,7 +287,9 @@ async fn download_installer(
         simple_name.clone(),
         format!(
             "https://files.forgecdn.net/files/{}/{}/forge-{}-installer.jar",
-            mc_version.replace(".", ""), forge_only, forge_version
+            mc_version.replace(".", ""),
+            forge_only,
+            forge_version
         ),
     ));
     candidate_urls.push((
@@ -325,7 +339,11 @@ async fn download_installer(
                                     let _ = std::fs::remove_file(&target_path);
                                     continue;
                                 }
-                                println!("[Forge]   <- OK, {} bytes, file: {}", size, target_path.display());
+                                println!(
+                                    "[Forge]   <- OK, {} bytes, file: {}",
+                                    size,
+                                    target_path.display()
+                                );
                                 return Ok(target_path);
                             }
                             Err(e) => {
@@ -350,9 +368,14 @@ async fn download_installer(
             }
         }
     }
-    println!("[Forge] All download URLs failed, last error: {:?}", last_error);
+    println!(
+        "[Forge] All download URLs failed, last error: {:?}",
+        last_error
+    );
     println!("[Forge] Tip: You can manually open the above links in a browser to test");
-    println!("[Forge]      Or place forge-*-installer.jar in the following directory to skip download:");
+    println!(
+        "[Forge]      Or place forge-*-installer.jar in the following directory to skip download:"
+    );
     println!("[Forge]      {}", cache_dir.display());
     bail!(
         "下载 Forge Installer JAR 失败: {} (候选版本: {:?}, 最后错误: {})",
@@ -375,7 +398,10 @@ pub async fn install_forge(
     } else {
         format!("{}-{}", mc_version, forge_version)
     };
-    println!("[Forge] 版本号归一化: {} -> {}", forge_version, normalized_version);
+    println!(
+        "[Forge] 版本号归一化: {} -> {}",
+        forge_version, normalized_version
+    );
     let installer_jar = download_installer(mc_version, &normalized_version, &mc_path).await?;
     let java_executable = if java_path.is_empty() {
         let auto = shared::pick_java_executable(mc_version);

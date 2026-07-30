@@ -1,7 +1,7 @@
+use crate::downloader::dwPatch::get_minecraft_dir;
 use crate::downloader::liteloader_installer;
 use crate::downloader::original_dwl::process_version;
-use crate::downloader::dwPatch::get_minecraft_dir;
-use crate::downloader::shared_utils::{sanitize_instance_name, merge_version_jsons_to_instance};
+use crate::downloader::shared_utils::{merge_version_jsons_to_instance, sanitize_instance_name};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -32,9 +32,7 @@ fn liteloader_active_tasks() -> &'static Mutex<HashMap<u64, LiteLoaderActiveTask
     INSTANCE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 #[tauri::command]
-pub async fn get_liteloader_versions(
-    mc_version: String,
-) -> Result<Vec<LiteLoaderVersion>, String> {
+pub async fn get_liteloader_versions(mc_version: String) -> Result<Vec<LiteLoaderVersion>, String> {
     let version_names = liteloader_installer::get_liteloader_versions(&mc_version)
         .await
         .map_err(|e| format!("获取 LiteLoader 版本失败: {}", e))?;
@@ -55,8 +53,7 @@ pub async fn download_and_install_liteloader(
 ) -> Result<u64, String> {
     let task_id = LITELOADER_TASK_COUNTER.fetch_add(1, Ordering::SeqCst);
     let minecraft_path = get_minecraft_dir()?;
-    std::fs::create_dir_all(&minecraft_path)
-        .map_err(|e| format!("创建目录失败: {}", e))?;
+    std::fs::create_dir_all(&minecraft_path).map_err(|e| format!("创建目录失败: {}", e))?;
     let (tx, mut rx) = tokio::sync::mpsc::channel::<f64>(64);
     let cancel = Arc::new(AtomicBool::new(false));
     {
@@ -72,7 +69,11 @@ pub async fn download_and_install_liteloader(
     let task_id_clone = task_id;
     tokio::spawn(async move {
         while let Some(percent) = rx.recv().await {
-            let p = if percent > 1.0 { percent } else { percent * 100.0 };
+            let p = if percent > 1.0 {
+                percent
+            } else {
+                percent * 100.0
+            };
             let _ = app_clone.emit(
                 "liteloader-download-progress",
                 LiteLoaderDownloadProgressPayload {
@@ -124,7 +125,11 @@ pub async fn download_and_install_liteloader(
             let (tx2, mut rx2) = tokio::sync::mpsc::channel::<f64>(64);
             tokio::spawn(async move {
                 while let Some(percent) = rx2.recv().await {
-                    let p = if percent > 1.0 { percent } else { percent * 40.0 };
+                    let p = if percent > 1.0 {
+                        percent
+                    } else {
+                        percent * 40.0
+                    };
                     let _ = tx_for_liteloader.send(60.0 + p).await;
                 }
             });

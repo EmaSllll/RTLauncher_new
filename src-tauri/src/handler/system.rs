@@ -1,9 +1,9 @@
+use base64::{self, Engine};
 use serde::Serialize;
-use sysinfo::System;
 use std::fs;
 use std::path::Path;
 use std::time::{Duration, SystemTime};
-use base64::{self, Engine};
+use sysinfo::System;
 
 #[derive(Serialize)]
 pub struct MemoryInfo {
@@ -24,8 +24,7 @@ pub fn open_external(url: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn read_file_base64(path: String) -> Result<String, String> {
-    let content = fs::read(&path)
-        .map_err(|e| format!("读取文件失败: {}", e))?;
+    let content = fs::read(&path).map_err(|e| format!("读取文件失败: {}", e))?;
     Ok(base64::engine::general_purpose::STANDARD.encode(&content))
 }
 
@@ -40,9 +39,7 @@ pub fn get_system_memory() -> MemoryInfo {
     //  - 至少 512 MB，最多总内存的 90%
     let raw_recommended = (available_mb as f64 * 0.8) as u64;
     let upper_bound = (total_mb as f64 * 0.9) as u64;
-    let recommended_mb = raw_recommended
-        .min(upper_bound)
-        .max(512);
+    let recommended_mb = raw_recommended.min(upper_bound).max(512);
     MemoryInfo {
         total_mb,
         used_mb,
@@ -116,10 +113,7 @@ pub fn optimize_memory_usage() -> Result<MemoryOptimizationReport, String> {
     let jitter_bytes = platform_memory_jitter_size_bytes();
     if jitter_bytes > 0 {
         memory_jitter(jitter_bytes);
-        methods.push(format!(
-            "memory_jitter({}MB)",
-            jitter_bytes / 1024 / 1024
-        ));
+        methods.push(format!("memory_jitter({}MB)", jitter_bytes / 1024 / 1024));
     }
 
     // 给系统一点时间来反映真实的可用内存
@@ -166,8 +160,8 @@ fn platform_trim_current_process(methods: &mut Vec<String>) {
         // SetProcessWorkingSetSize(hProcess, -1, -1) + EmptyWorkingSet(hProcess)
         // 收缩本进程的物理工作集。然后会在 platform_try_empty_system_caches
         // 里遍历所有进程再做一次。
-        use winapi::um::processthreadsapi::GetCurrentProcess;
         use winapi::shared::minwindef::BOOL;
+        use winapi::um::processthreadsapi::GetCurrentProcess;
         extern "system" {
             fn SetProcessWorkingSetSize(
                 hProcess: *mut winapi::ctypes::c_void,
@@ -203,10 +197,7 @@ fn platform_trim_current_process(methods: &mut Vec<String>) {
         // macOS 上用 malloc_zone_pressure_relief(NULL, 0) 让 malloc
         // 在内存压力下主动放弃未用的区域；不需要额外权限。
         extern "C" {
-            fn malloc_zone_pressure_relief(
-                zone: *mut libc::c_void,
-                goal: usize,
-            ) -> usize;
+            fn malloc_zone_pressure_relief(zone: *mut libc::c_void, goal: usize) -> usize;
         }
         unsafe {
             let n = malloc_zone_pressure_relief(std::ptr::null_mut(), 0);
@@ -291,11 +282,7 @@ fn platform_try_empty_system_caches(methods: &mut Vec<String>) {
 
         // 全部自己 extern 声明，避免依赖 winapi feature
         extern "system" {
-            fn EnumProcesses(
-                lpidProcess: *mut DWORD,
-                cb: DWORD,
-                lpcbNeeded: *mut DWORD,
-            ) -> BOOL;
+            fn EnumProcesses(lpidProcess: *mut DWORD, cb: DWORD, lpcbNeeded: *mut DWORD) -> BOOL;
             fn OpenProcess(
                 dwDesiredAccess: DWORD,
                 bInheritHandle: BOOL,
@@ -331,10 +318,14 @@ fn platform_try_empty_system_caches(methods: &mut Vec<String>) {
                 let my_pid = GetCurrentProcessId();
                 let mut success_count: u32 = 0;
                 for &pid in &pids {
-                    if pid == 0 || pid == my_pid { continue; }
+                    if pid == 0 || pid == my_pid {
+                        continue;
+                    }
                     let access = PROCESS_SET_QUOTA | PROCESS_QUERY_INFORMATION | PROCESS_VM_READ;
                     let handle = OpenProcess(access, FALSE as i32, pid);
-                    if handle.is_null() { continue; }
+                    if handle.is_null() {
+                        continue;
+                    }
                     // 只要没 ACCESS_DENIED，就一定会成功把工作集丢到 standby
                     EmptyWorkingSet(handle);
                     success_count += 1;
@@ -471,8 +462,11 @@ fn startup_minecraft_paths() -> Vec<String> {
     #[cfg(target_os = "macos")]
     let config_file = {
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        std::path::PathBuf::from(format!("{}/Library/Application Support/RTLauncher/config", home))
-            .join("launcher.json")
+        std::path::PathBuf::from(format!(
+            "{}/Library/Application Support/RTLauncher/config",
+            home
+        ))
+        .join("launcher.json")
     };
     #[cfg(not(target_os = "macos"))]
     let config_file = std::path::PathBuf::from("./RTL/config").join("launcher.json");
@@ -490,7 +484,9 @@ fn startup_minecraft_paths() -> Vec<String> {
             }
             if let Ok(cfg) = serde_json::from_str::<PartialConfig>(&text) {
                 if let Some(list) = cfg.minecraft_paths {
-                    for p in list { paths.insert(p); }
+                    for p in list {
+                        paths.insert(p);
+                    }
                 }
                 if let Some(p) = cfg.selected_minecraft_path {
                     paths.insert(p);
@@ -527,13 +523,16 @@ pub fn ensure_launcher_profiles_on_startup() {
         }
 
         let mut profiles_map = std::collections::BTreeMap::new();
-        profiles_map.insert("RTL".to_string(), LauncherProfile {
-            icon: "Grass".to_string(),
-            name: "RTL".to_string(),
-            lastVersionId: "latest-release".to_string(),
-            typ: "latest-release".to_string(),
-            lastUsed: now_unix,
-        });
+        profiles_map.insert(
+            "RTL".to_string(),
+            LauncherProfile {
+                icon: "Grass".to_string(),
+                name: "RTL".to_string(),
+                lastVersionId: "latest-release".to_string(),
+                typ: "latest-release".to_string(),
+                lastUsed: now_unix,
+            },
+        );
 
         let lp = LauncherProfiles {
             profiles: profiles_map,

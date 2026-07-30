@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   ArrowLeft,
@@ -10,6 +10,7 @@ import {
   Plus,
   Trash2,
   Save,
+  Download,
   Folder,
   Loader2,
   CheckCircle2,
@@ -22,16 +23,30 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useRouter } from "next/navigation";
 import {
   ModrinthFileEntry,
   CurseforgeFileEntry,
   getModpackDir,
   saveInstance,
+  exportInstance,
   formatTimestamp,
 } from "@/components/modpack/modpack-api";
 import { useMinecraftVersions } from "@/hooks/use-minecraft-versions";
 import { useI18n } from "@/components/i18n/use-i18n";
+import {
+  CURSEFORGE_MOD_LOADER_TYPES,
+  CurseforgeApiFile,
+  buildCurseforgeFilesUrl,
+  filterCurseforgeFilesByGameVersion,
+} from "@/components/modpack/curseforge-api";
 
 // =============================================================================
 // 搜索结果数据结构
@@ -52,6 +67,8 @@ interface SearchHit {
   source: "modrinth" | "curseforge";
   project_type?: string;
   external_url?: string;
+  client_side?: "required" | "optional" | "unsupported";
+  server_side?: "required" | "optional" | "unsupported";
 }
 
 // =============================================================================
@@ -71,6 +88,7 @@ const MODRINTH_HEADERS = {
 
 interface ParsedModrinthVersion {
   id: string;
+  project_id: string;
   version_number: string;
   game_versions: string[];
   loaders: string[];
@@ -83,6 +101,11 @@ interface ParsedModrinthVersion {
   }>;
   date_published: string;
   version_type: string;
+  dependencies: Array<{
+    version_id?: string | null;
+    project_id?: string | null;
+    dependency_type: string;
+  }>;
 }
 
 function pickPrimaryFile(v: any): ParsedModrinthVersion["files"][number] | null {
@@ -99,6 +122,30 @@ function defaultSubfolderForCategory(cat: CategoryId, projectType?: string): str
   if (t.startsWith("datapack") || t === "data pack") return "datapacks";
   if (t.startsWith("world")) return "saves";
   return "mods";
+}
+
+function parseModrinthVersion(v: any): ParsedModrinthVersion | null {
+  const primary = pickPrimaryFile(v);
+  if (!primary || !v?.id) return null;
+  return {
+    id: String(v.id),
+    project_id: String(v.project_id || ""),
+    version_number: String(v.version_number || ""),
+    game_versions: Array.isArray(v.game_versions) ? v.game_versions : [],
+    loaders: Array.isArray(v.loaders) ? v.loaders : [],
+    files: [primary],
+    date_published: String(v.date_published || ""),
+    version_type: String(v.version_type || "release"),
+    dependencies: Array.isArray(v.dependencies) ? v.dependencies : [],
+  };
+}
+
+function environmentRequirementLabel(
+  value: "required" | "optional" | "unsupported",
+): string {
+  if (value === "required") return "必须";
+  if (value === "optional") return "可选";
+  return "不支持";
 }
 
 // =============================================================================
@@ -139,6 +186,9 @@ export function ModpackBuilder({
   gameVersion,
   existingFiles,
   initialLoader,
+  initialLoaderVersion,
+  initialPackVersion,
+  initialAuthor,
   initialOptifine,
   initialOptifineVersion,
   initialCrossLoader,
@@ -148,6 +198,9 @@ export function ModpackBuilder({
   gameVersion?: string;
   existingFiles?: (ModrinthFileEntry | CurseforgeFileEntry)[];
   initialLoader?: string;
+  initialLoaderVersion?: string;
+  initialPackVersion?: string;
+  initialAuthor?: string;
   initialOptifine?: boolean;
   initialOptifineVersion?: string;
   initialCrossLoader?: boolean;
@@ -156,6 +209,8 @@ export function ModpackBuilder({
   const { t } = useI18n();
   // 顶部元数据
   const [name, setName] = useState(initialName || "");
+  const [packVersion, setPackVersion] = useState(initialPackVersion || "1.0.0");
+  const [author, setAuthor] = useState(initialAuthor || "");
   const [gameVer, setGameVer] = useState(gameVersion || "");
   const [category, setCategory] = useState<CategoryId>("mod");
   const [query, setQuery] = useState("");
@@ -168,6 +223,10 @@ export function ModpackBuilder({
       ? initialLoader
       : "forge",
   );
+  const [loaderVersion, setLoaderVersion] = useState(initialLoaderVersion || "");
+  const [loaderVersionOptions, setLoaderVersionOptions] = useState<string[]>([]);
+  const [loaderVersionsLoading, setLoaderVersionsLoading] = useState(false);
+  const [loaderVersionsError, setLoaderVersionsError] = useState<string | null>(null);
 
   // OptiFine
   const [useOptifine, setUseOptifine] = useState<boolean>(initialOptifine || false);
@@ -195,10 +254,13 @@ export function ModpackBuilder({
   const [activeHit, setActiveHit] = useState<SearchHit | null>(null);
   const [activeLoading, setActiveLoading] = useState(false);
   const [activeError, setActiveError] = useState<string | null>(null);
+  const [addError, setAddError] = useState<string | null>(null);
+  const [addingFileKey, setAddingFileKey] = useState<string | null>(null);
   const [modrinthVersions, setModrinthVersions] = useState<ParsedModrinthVersion[]>([]);
-  const [curseforgeFiles, setCurseforgeFiles] = useState<any[]>([]);
+  const [curseforgeFiles, setCurseforgeFiles] = useState<CurseforgeApiFile[]>([]);
   const [curseforgeProjectId, setCurseforgeProjectId] = useState<number | null>(null);
   const [curseforgeDisplayName, setCurseforgeDisplayName] = useState<string>("");
+  const detailsRef = useRef<HTMLDivElement>(null);
 
   // 已选文件（兼容旧格式：client/server 顶层字段 → env 嵌套字段）
   const [selectedModrinth, setSelectedModrinth] = useState<ModrinthFileEntry[]>(
@@ -239,6 +301,70 @@ export function ModpackBuilder({
 
   const mcVersionValid = matchedVersion !== null;
 
+  // 使用下载器现有的后端接口读取真实加载器版本，制作器只允许从列表选择。
+  useEffect(() => {
+    if (!matchedVersion?.id) {
+      setLoaderVersionOptions([]);
+      setLoaderVersionsError(null);
+      return;
+    }
+
+    let cancelled = false;
+    const command =
+      selectedLoader === "forge"
+        ? "get_forge_versions"
+        : selectedLoader === "neoforge"
+          ? "get_neoforge_versions"
+          : selectedLoader === "fabric"
+            ? "get_fabric_loader_versions"
+            : selectedLoader === "quilt"
+              ? "get_quilt_loader_versions"
+              : "get_liteloader_versions";
+
+    (async () => {
+      setLoaderVersionsLoading(true);
+      setLoaderVersionsError(null);
+      setLoaderVersionOptions([]);
+      try {
+        const result = await invoke<{ id: string; version: string }[]>(command, {
+          mcVersion: matchedVersion.id,
+          ...(selectedLoader === "fabric" ? { useMirror: true } : {}),
+        });
+        if (cancelled) return;
+        const prefix = `${matchedVersion.id}-`;
+        const versions = Array.from(
+          new Set(
+            (result || [])
+              .map((item) => String(item.version || item.id || "").trim())
+              .map((version) =>
+                (selectedLoader === "forge" || selectedLoader === "neoforge") &&
+                version.startsWith(prefix)
+                  ? version.slice(prefix.length)
+                  : version,
+              )
+              .filter(Boolean),
+          ),
+        );
+        setLoaderVersionOptions(versions);
+        setLoaderVersion((current) => (versions.includes(current) ? current : ""));
+        if (versions.length === 0) {
+          setLoaderVersionsError("当前 Minecraft 版本没有对应的加载器版本");
+        }
+      } catch (error: any) {
+        if (!cancelled) {
+          setLoaderVersionOptions([]);
+          setLoaderVersionsError(error?.message || String(error));
+        }
+      } finally {
+        if (!cancelled) setLoaderVersionsLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [matchedVersion?.id, selectedLoader]);
+
   useEffect(() => {
     getModpackDir().then(setDir);
   }, []);
@@ -274,9 +400,6 @@ export function ModpackBuilder({
     };
   }, [useOptifine, matchedVersion?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const hasSelection =
-    (format === "modrinth" ? selectedModrinth.length : selectedCurseforge.length) > 0;
-
   // ===========================================================================
   // 搜索（带 MC 版本 + 加载器过滤）
   // ===========================================================================
@@ -309,12 +432,17 @@ export function ModpackBuilder({
         // 仅对 mod 类别做加载器过滤；其余类别（shader/resourcepack/datapack/worlds/modpack）一律不过滤 loader
         // 若开启信雅互联，则 mod 类别也解除 loader 限制（同时搜索 forge+fabric+neoforge+quilt+liteloader）
         const needLoaderFilter = category === "mod" && !crossLoader;
-        const facetsBase = `[["project_type:${modrinthProjectType}"],["versions:${targetMcVersion}"]`;
-        const facets = encodeURIComponent(
-          needLoaderFilter
-            ? `${facetsBase},["categories:${selectedLoader}"]]`
-            : `${facetsBase}]`,
-        );
+        // 搜索整合包时先展示完整的关键词结果，再在版本列表中标出与当前
+        // 工程 MC 版本的兼容性；否则 Better MC 一类项目会在搜索阶段被排除，
+        // Modrinth 的模糊搜索反而可能只留下名称无关的结果。
+        const facetGroups: string[][] = [[`project_type:${modrinthProjectType}`]];
+        if (category !== "modpack") {
+          facetGroups.push([`versions:${targetMcVersion}`]);
+        }
+        if (needLoaderFilter) {
+          facetGroups.push([`categories:${selectedLoader}`]);
+        }
+        const facets = encodeURIComponent(JSON.stringify(facetGroups));
         const url = `https://api.modrinth.com/v2/search?query=${encodeURIComponent(q)}&limit=30&facets=${facets}`;
         const res = await fetch(url, { headers: MODRINTH_HEADERS, cache: "no-store" });
         if (res.ok) {
@@ -332,6 +460,12 @@ export function ModpackBuilder({
               author: hit.author,
               source: "modrinth",
               project_type: hit.project_type,
+              client_side: ["required", "optional", "unsupported"].includes(hit.client_side)
+                ? hit.client_side
+                : undefined,
+              server_side: ["required", "optional", "unsupported"].includes(hit.server_side)
+                ? hit.server_side
+                : undefined,
               external_url: `https://modrinth.com/${hit.project_type || "mod"}/${hit.slug}`,
             });
           }
@@ -342,27 +476,22 @@ export function ModpackBuilder({
       if (format === "curseforge") {
         const classIdMap: Record<CategoryId, number> = {
           mod: 6,
-          modpack: 4473,
+          modpack: 4471,
           resourcepack: 12,
           shaders: 6552,
           datapack: 6949,
           worlds: 17,
         };
         // CurseForge: modLoaderType 只对 mod 类别有用
-        // 0=Forge 1=Fabric 2=Rift 3=LiteLoader 4=ModLoader 5=Quilt 6=NeoForge 7=Optifine
-        const loaderToCf: Record<string, number> = {
-          forge: 0,
-          fabric: 1,
-          liteloader: 3,
-          quilt: 5,
-          neoforge: 6,
-        };
         // 仅对 mod 类别做加载器过滤；信雅互联模式下解除限制
         const needLoaderFilter = category === "mod" && !crossLoader;
         const modLoaderType =
-          needLoaderFilter ? loaderToCf[selectedLoader] : undefined;
+          needLoaderFilter ? CURSEFORGE_MOD_LOADER_TYPES[selectedLoader] : undefined;
         const url =
-          `https://api.curseforge.com/v1/mods/search?gameId=432&searchFilter=${encodeURIComponent(q)}&pageSize=30&sortField=5&sortOrder=desc&classId=${classIdMap[category]}&gameVersion=${encodeURIComponent(targetMcVersion)}` +
+          `https://api.curseforge.com/v1/mods/search?gameId=432&searchFilter=${encodeURIComponent(q)}&pageSize=30&sortField=5&sortOrder=desc&classId=${classIdMap[category]}` +
+          (category === "modpack"
+            ? ""
+            : `&gameVersion=${encodeURIComponent(targetMcVersion)}`) +
           (modLoaderType !== undefined ? `&modLoaderType=${modLoaderType}` : "");
         const res = await fetch(url, { headers: CURSEFORGE_HEADERS, cache: "no-store" });
         if (res.ok) {
@@ -390,7 +519,10 @@ export function ModpackBuilder({
         }
       }
 
-      hits.sort((a, b) => (b.downloads || 0) - (a.downloads || 0));
+      // 整合包搜索保留平台返回的关键词相关度顺序；其他资源继续按下载量排列。
+      if (category !== "modpack") {
+        hits.sort((a, b) => (b.downloads || 0) - (a.downloads || 0));
+      }
       setResults(hits);
       if (hits.length === 0) {
         const filterDesc =
@@ -398,7 +530,9 @@ export function ModpackBuilder({
             ? crossLoader
               ? `${targetMcVersion} (${t({ "zh-CN": "已解除加载器限制", "en-US": "loader restriction removed" })})`
               : `${targetMcVersion} + ${selectedLoader}`
-            : targetMcVersion;
+            : category === "modpack"
+              ? t({ "zh-CN": `关键词“${q}”`, "en-US": `keyword “${q}”` })
+              : targetMcVersion;
         setSearchError(t({ "zh-CN": `未找到匹配 ${filterDesc} 的项目`, "en-US": `No projects match ${filterDesc}` }));
       }
     } catch (e: any) {
@@ -415,6 +549,7 @@ export function ModpackBuilder({
     setActiveHit(hit);
     setActiveLoading(true);
     setActiveError(null);
+    setAddError(null);
     setModrinthVersions([]);
     setCurseforgeFiles([]);
 
@@ -433,7 +568,7 @@ export function ModpackBuilder({
         const list: ParsedModrinthVersion[] = [];
         if (Array.isArray(json)) {
           for (const v of json) {
-            if (targetMcVersion) {
+            if (targetMcVersion && category !== "modpack") {
               const gv: string[] = Array.isArray(v.game_versions) ? v.game_versions : [];
               if (!gv.includes(targetMcVersion)) continue;
             }
@@ -444,17 +579,8 @@ export function ModpackBuilder({
               const loaders: string[] = Array.isArray(v.loaders) ? v.loaders : [];
               if (!loaders.includes(selectedLoader)) continue;
             }
-            const primary = pickPrimaryFile(v);
-            if (!primary) continue;
-            list.push({
-              id: v.id,
-              version_number: v.version_number || "",
-              game_versions: v.game_versions || [],
-              loaders: v.loaders || [],
-              files: [primary],
-              date_published: v.date_published || "",
-              version_type: v.version_type || "release",
-            });
+            const parsed = parseModrinthVersion(v);
+            if (parsed) list.push(parsed);
           }
         }
         setModrinthVersions(list);
@@ -472,40 +598,28 @@ export function ModpackBuilder({
         }
         setCurseforgeProjectId(proj.projectId);
         setCurseforgeDisplayName(proj.projectName);
-        const rawFiles = await fetchCurseforgeFiles(proj.projectId);
-        let filtered = rawFiles;
-        if (targetMcVersion) {
-          filtered = rawFiles.filter((f: any) => {
-            const gv: string[] = Array.isArray(f.game_versions) ? f.game_versions : [];
-            return gv.includes(targetMcVersion);
-          });
-          if (filtered.length === 0) {
-            filtered = rawFiles;
-          }
-        }
-        // CurseForge: 仅对 mod 类别按 modLoaderType 过滤；信雅互联模式下解除限制
-        if (category === "mod" && !crossLoader) {
-          const loaderToCf: Record<string, number> = {
-            forge: 0,
-            fabric: 1,
-            liteloader: 3,
-            quilt: 5,
-            neoforge: 6,
-          };
-          const wantType = loaderToCf[selectedLoader];
-          if (wantType !== undefined) {
-            const byLoader = filtered.filter(
-              (f: any) => f.modLoaderType === wantType,
-            );
-            if (byLoader.length > 0) filtered = byLoader;
-          }
-        }
-        setCurseforgeFiles(filtered);
+        // 让 CurseForge 在服务端按 MC 版本/加载器筛选文件，避免依赖 File
+        // 响应中不存在的 modLoaderType 字段。信雅互联模式仅取消加载器限制。
+        const modLoaderType =
+          category === "mod" && !crossLoader
+            ? CURSEFORGE_MOD_LOADER_TYPES[selectedLoader]
+            : undefined;
+        const files = await fetchCurseforgeFiles(
+          proj.projectId,
+          category === "modpack" ? undefined : targetMcVersion,
+          modLoaderType,
+        );
+        setCurseforgeFiles(files);
       }
     } catch (e: any) {
       setActiveError(e?.message || String(e));
     } finally {
       setActiveLoading(false);
+      // 版本选择区位于搜索结果列表下方。项目加载完成后自动滚动过去，
+      // 避免点击结果后看起来毫无反应。
+      window.setTimeout(() => {
+        detailsRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }, 0);
     }
   };
 
@@ -521,23 +635,61 @@ export function ModpackBuilder({
     return { projectId: first.id, projectName: first.name || slug };
   }
 
-  async function fetchCurseforgeFiles(projectId: number): Promise<any[]> {
-    const url = `https://api.curseforge.com/v1/mods/${projectId}/files?pageSize=50`;
-    const res = await fetch(url, { headers: CURSEFORGE_HEADERS, cache: "no-store" });
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data?.data || [];
+  async function fetchCurseforgeFiles(
+    projectId: number,
+    gameVersion?: string,
+    modLoaderType?: number,
+    readAllPages = true,
+  ): Promise<CurseforgeApiFile[]> {
+    const files: CurseforgeApiFile[] = [];
+    let index = 0;
+    const visitedIndexes = new Set<number>();
+
+    // CurseForge 单页最多返回 50 个文件，持续翻页直到读取完整版本列表。
+    while (!visitedIndexes.has(index)) {
+      visitedIndexes.add(index);
+      const url = buildCurseforgeFilesUrl(
+        projectId,
+        gameVersion,
+        modLoaderType,
+        index,
+      );
+      const res = await fetch(url, {
+        headers: CURSEFORGE_HEADERS,
+        cache: "no-store",
+      });
+      if (!res.ok) break;
+      const data = await res.json();
+      const page: CurseforgeApiFile[] = Array.isArray(data?.data) ? data.data : [];
+      files.push(...page);
+      if (!readAllPages) break;
+
+      const pagination = data?.pagination;
+      const resultCount = Number(pagination?.resultCount ?? page.length);
+      const totalCount = Number(pagination?.totalCount ?? files.length);
+      if (resultCount <= 0 || files.length >= totalCount) break;
+      index = Number(pagination?.index ?? index) + resultCount;
+    }
+
+    // API 返回字段是 gameVersions（camelCase）。再做一层本地校验，
+    // 防止服务端返回其他 MC 版本的文件；筛选为空时不再回退到全部文件。
+    return filterCurseforgeFilesByGameVersion(files, gameVersion);
   }
 
   // ===========================================================================
   // 加入已选
   // ===========================================================================
-  const addModrinthFile = (hit: SearchHit, v: ParsedModrinthVersion) => {
+  const createModrinthEntry = (
+    hit: SearchHit,
+    v: ParsedModrinthVersion,
+    isDependency: boolean,
+  ): ModrinthFileEntry => {
     const primary = v.files[0];
-    if (!primary) return;
-    const subfolder = defaultSubfolderForCategory(category, hit.project_type);
+    if (!primary) throw new Error(`版本 ${v.version_number || v.id} 缺少下载文件`);
+    const entryCategory = isDependency ? "mod" : category;
+    const subfolder = defaultSubfolderForCategory(entryCategory, hit.project_type);
     const path = subfolder ? `${subfolder}/${primary.filename}` : primary.filename;
-    const entry: ModrinthFileEntry = {
+    return {
       path,
       hashes: {
         sha1: primary.hashes.sha1,
@@ -545,56 +697,242 @@ export function ModpackBuilder({
         sha256: primary.hashes.sha256,
       },
       env: {
-        client: "required",
-        server: "required",
+        client: hit.client_side || "required",
+        server: hit.server_side || "required",
       },
       downloads: [primary.url],
       fileSize: primary.size || 0,
-      display_name: `${hit.title} — ${v.version_number}`,
+      display_name: `${hit.title} — ${v.version_number}${isDependency ? "（依赖）" : ""}`,
     };
-    setSelectedModrinth((prev) => {
-      const exists = prev.some(
-        (p) => p.path === entry.path && p.hashes.sha1 === entry.hashes.sha1,
-      );
-      if (exists) return prev;
-      return [...prev, entry];
-    });
   };
 
-  const addCurseforgeFile = (f: any) => {
-    if (!curseforgeProjectId) return;
-    const entry: CurseforgeFileEntry = {
-      projectID: curseforgeProjectId,
-      fileID: f.id,
-      display_name: `${curseforgeDisplayName || activeHit?.title} — ${f.displayName || f.fileName || f.id}`,
-      required: true,
-    };
-    setSelectedCurseforge((prev) => {
-      const exists = prev.some(
-        (p) => p.projectID === entry.projectID && p.fileID === entry.fileID,
-      );
-      if (exists) return prev;
-      return [...prev, entry];
-    });
+  const fetchModrinthVersion = async (versionId: string) => {
+    const response = await fetch(
+      `https://api.modrinth.com/v2/version/${encodeURIComponent(versionId)}`,
+      { headers: MODRINTH_HEADERS, cache: "no-store" },
+    );
+    if (!response.ok) {
+      throw new Error(`读取 Modrinth 依赖版本失败 (${response.status})`);
+    }
+    const parsed = parseModrinthVersion(await response.json());
+    if (!parsed) throw new Error(`Modrinth 依赖版本 ${versionId} 没有可下载文件`);
+    return parsed;
   };
 
-  // 修改 Modrinth 侧/端状态
-  const updateModrinthSide = (
-    idx: number,
-    side: "client" | "server",
-    value: string,
+  const fetchModrinthProjectHit = async (
+    projectId: string,
+    fallbackTitle: string,
+  ): Promise<SearchHit> => {
+    const response = await fetch(
+      `https://api.modrinth.com/v2/project/${encodeURIComponent(projectId)}`,
+      { headers: MODRINTH_HEADERS, cache: "no-store" },
+    );
+    if (!response.ok) {
+      throw new Error(`读取 Modrinth 依赖项目失败 (${response.status})`);
+    }
+    const project = await response.json();
+    return {
+      slug: String(project.slug || project.id || projectId),
+      title: String(project.title || fallbackTitle || projectId),
+      source: "modrinth",
+      project_type: String(project.project_type || "mod"),
+      client_side: ["required", "optional", "unsupported"].includes(project.client_side)
+        ? project.client_side
+        : "required",
+      server_side: ["required", "optional", "unsupported"].includes(project.server_side)
+        ? project.server_side
+        : "required",
+    };
+  };
+
+  const fetchCompatibleModrinthVersion = async (
+    projectId: string,
+    parentVersion: ParsedModrinthVersion,
   ) => {
-    setSelectedModrinth((prev) => {
-      const next = [...prev];
-      next[idx] = {
-        ...next[idx],
-        env: {
-          ...next[idx].env,
-          [side]: value as "required" | "optional" | "unsupported",
-        },
-      };
-      return next;
+    const params = new URLSearchParams();
+    const targetMcVersion = matchedVersion?.id;
+    if (targetMcVersion) params.set("game_versions", JSON.stringify([targetMcVersion]));
+    const compatibleLoaders = parentVersion.loaders.filter(Boolean);
+    if (compatibleLoaders.length > 0) {
+      params.set("loaders", JSON.stringify(compatibleLoaders));
+    }
+    const queryString = params.toString();
+    const response = await fetch(
+      `https://api.modrinth.com/v2/project/${encodeURIComponent(projectId)}/version${queryString ? `?${queryString}` : ""}`,
+      { headers: MODRINTH_HEADERS, cache: "no-store" },
+    );
+    if (!response.ok) {
+      throw new Error(`读取 Modrinth 依赖文件失败 (${response.status})`);
+    }
+    const versions = await response.json();
+    const parsed = Array.isArray(versions)
+      ? versions.map(parseModrinthVersion).find(Boolean)
+      : null;
+    if (!parsed) {
+      throw new Error(`依赖项目 ${projectId} 没有适配当前 Minecraft/加载器的版本`);
+    }
+    return parsed as ParsedModrinthVersion;
+  };
+
+  const collectModrinthFiles = async (
+    hit: SearchHit,
+    version: ParsedModrinthVersion,
+    isDependency: boolean,
+    visited: Set<string>,
+  ): Promise<ModrinthFileEntry[]> => {
+    if (visited.has(version.id)) return [];
+    if (visited.size >= 200) throw new Error("Modrinth 依赖数量超过 200 个");
+    visited.add(version.id);
+
+    const entries = [createModrinthEntry(hit, version, isDependency)];
+    if (!isDependency && category === "modpack") return entries;
+
+    for (const dependency of version.dependencies) {
+      if (dependency.dependency_type !== "required") continue;
+      const dependencyVersion = dependency.version_id
+        ? await fetchModrinthVersion(dependency.version_id)
+        : dependency.project_id
+          ? await fetchCompatibleModrinthVersion(dependency.project_id, version)
+          : null;
+      if (!dependencyVersion) continue;
+      const projectId = dependency.project_id || dependencyVersion.project_id;
+      if (!projectId) throw new Error("Modrinth 必需依赖缺少项目 ID");
+      const dependencyHit = await fetchModrinthProjectHit(
+        projectId,
+        dependencyVersion.version_number,
+      );
+      entries.push(
+        ...(await collectModrinthFiles(
+          dependencyHit,
+          dependencyVersion,
+          true,
+          visited,
+        )),
+      );
+    }
+    return entries;
+  };
+
+  const addModrinthFile = async (hit: SearchHit, version: ParsedModrinthVersion) => {
+    const addingKey = `modrinth:${version.id}`;
+    setAddingFileKey(addingKey);
+    setAddError(null);
+    try {
+      const collected = await collectModrinthFiles(hit, version, false, new Set());
+      const byPath = new Map<string, ModrinthFileEntry>();
+      for (const entry of [...selectedModrinth, ...collected]) {
+        const key = entry.path.toLowerCase();
+        const existing = byPath.get(key);
+        if (existing && existing.hashes.sha1 !== entry.hashes.sha1) {
+          throw new Error(`目标路径存在不同版本：${entry.path}，请先移除旧版本`);
+        }
+        byPath.set(key, existing || entry);
+      }
+      setSelectedModrinth(Array.from(byPath.values()));
+    } catch (error: any) {
+      setAddError(error?.message || String(error));
+    } finally {
+      setAddingFileKey(null);
+    }
+  };
+
+  const fetchCurseforgeProject = async (projectId: number) => {
+    const response = await fetch(`https://api.curseforge.com/v1/mods/${projectId}`, {
+      headers: CURSEFORGE_HEADERS,
+      cache: "no-store",
     });
+    if (!response.ok) {
+      throw new Error(`读取 CurseForge 依赖项目失败 (${response.status})`);
+    }
+    const project = (await response.json())?.data;
+    if (!project) throw new Error(`CurseForge 依赖项目 ${projectId} 缺少数据`);
+    return project;
+  };
+
+  const inferCurseforgeLoaderType = (file: CurseforgeApiFile) => {
+    const versions = (file.gameVersions || []).map((value) => value.toLowerCase());
+    const matchedLoader = Object.keys(CURSEFORGE_MOD_LOADER_TYPES).find((loader) =>
+      versions.some((value) => value === loader || value.includes(loader)),
+    );
+    return CURSEFORGE_MOD_LOADER_TYPES[matchedLoader || selectedLoader];
+  };
+
+  const collectCurseforgeFiles = async (
+    projectId: number,
+    projectName: string,
+    file: CurseforgeApiFile,
+    isDependency: boolean,
+    visited: Set<number>,
+  ): Promise<CurseforgeFileEntry[]> => {
+    if (visited.has(projectId)) return [];
+    if (visited.size >= 200) throw new Error("CurseForge 依赖数量超过 200 个");
+    visited.add(projectId);
+
+    const entries: CurseforgeFileEntry[] = [
+      {
+        projectID: projectId,
+        fileID: file.id,
+        display_name: `${projectName} — ${file.displayName || file.fileName || file.id}${isDependency ? "（依赖）" : ""}`,
+        required: true,
+        category: isDependency ? "mod" : category,
+      },
+    ];
+    if (!isDependency && category === "modpack") return entries;
+
+    for (const dependency of file.dependencies || []) {
+      if (dependency.relationType !== 3 || !dependency.modId) continue;
+      if (visited.has(dependency.modId)) continue;
+      const dependencyProject = await fetchCurseforgeProject(dependency.modId);
+      const compatibleFiles = await fetchCurseforgeFiles(
+        dependency.modId,
+        matchedVersion?.id,
+        inferCurseforgeLoaderType(file),
+        false,
+      );
+      const dependencyFile = compatibleFiles[0];
+      if (!dependencyFile) {
+        throw new Error(`依赖 ${dependencyProject.name || dependency.modId} 没有适配当前 Minecraft/加载器的文件`);
+      }
+      entries.push(
+        ...(await collectCurseforgeFiles(
+          dependency.modId,
+          String(dependencyProject.name || dependency.modId),
+          dependencyFile,
+          true,
+          visited,
+        )),
+      );
+    }
+    return entries;
+  };
+
+  const addCurseforgeFile = async (file: CurseforgeApiFile) => {
+    if (!curseforgeProjectId) return;
+    const addingKey = `curseforge:${file.id}`;
+    setAddingFileKey(addingKey);
+    setAddError(null);
+    try {
+      const collected = await collectCurseforgeFiles(
+        curseforgeProjectId,
+        curseforgeDisplayName || activeHit?.title || String(curseforgeProjectId),
+        file,
+        false,
+        new Set(),
+      );
+      setSelectedCurseforge((previous) => {
+        const byProject = new Map(previous.map((entry) => [entry.projectID, entry]));
+        collected.forEach((entry, index) => {
+          if (index === 0 || !byProject.has(entry.projectID)) {
+            byProject.set(entry.projectID, entry);
+          }
+        });
+        return Array.from(byProject.values());
+      });
+    } catch (error: any) {
+      setAddError(error?.message || String(error));
+    } finally {
+      setAddingFileKey(null);
+    }
   };
 
   const toggleCurseforgeRequired = (idx: number) => {
@@ -625,6 +963,34 @@ export function ModpackBuilder({
       }
       return false;
     }
+    if (!packVersion.trim()) {
+      if (!silent) {
+        setSaveStatus("error");
+        setSaveMessage("请填写整合包版本，例如 1.0.0");
+      }
+      return false;
+    }
+    if (!loaderVersion.trim() || loaderVersion.trim().toLowerCase() === "latest") {
+      if (!silent) {
+        setSaveStatus("error");
+        setSaveMessage("请填写加载器的具体版本，不能使用 latest");
+      }
+      return false;
+    }
+    if (format === "curseforge" && !author.trim()) {
+      if (!silent) {
+        setSaveStatus("error");
+        setSaveMessage("CurseForge 整合包需要填写作者");
+      }
+      return false;
+    }
+    if (format === "modrinth" && selectedLoader === "liteloader") {
+      if (!silent) {
+        setSaveStatus("error");
+        setSaveMessage("Modrinth mrpack 规范不支持 LiteLoader 依赖");
+      }
+      return false;
+    }
     if (!mcVersionValid) {
       if (!silent) {
         setSaveStatus("error");
@@ -641,18 +1007,18 @@ export function ModpackBuilder({
           minecraft: string;
           "fabric-loader"?: string;
           forge?: string;
-          "neoforge-loader"?: string;
+          neoforge?: string;
           "quilt-loader"?: string;
         } = { minecraft: matchedVersion!.id };
-        if (selectedLoader === "fabric") deps["fabric-loader"] = "latest";
-        else if (selectedLoader === "forge") deps.forge = "latest";
-        else if (selectedLoader === "neoforge") deps["neoforge-loader"] = "latest";
-        else if (selectedLoader === "quilt") deps["quilt-loader"] = "latest";
+        if (selectedLoader === "fabric") deps["fabric-loader"] = loaderVersion.trim();
+        else if (selectedLoader === "forge") deps.forge = loaderVersion.trim();
+        else if (selectedLoader === "neoforge") deps.neoforge = loaderVersion.trim();
+        else if (selectedLoader === "quilt") deps["quilt-loader"] = loaderVersion.trim();
 
         await saveInstance({
           formatVersion: 1,
           game: "minecraft",
-          versionId: matchedVersion!.id,
+          versionId: packVersion.trim(),
           name: trimmed,
           summary: `RTLauncher Modrinth ${t({ "zh-CN": "整合包", "en-US": "modpack" })} - ${matchedVersion!.id}`,
           format: "modrinth",
@@ -666,6 +1032,8 @@ export function ModpackBuilder({
           })),
           dependencies: deps,
           loader: selectedLoader,
+          loader_version: loaderVersion.trim(),
+          author: author.trim() || undefined,
           optifine: useOptifine,
           optifine_version: useOptifine ? selectedOptifineVersion || null : null,
           cross_loader: crossLoader,
@@ -676,8 +1044,11 @@ export function ModpackBuilder({
         await saveInstance({
           format: "curseforge",
           name: trimmed,
+          version: packVersion.trim(),
+          author: author.trim(),
           game_version: matchedVersion!.id,
           loader: selectedLoader,
+          loader_version: loaderVersion.trim(),
           optifine: useOptifine,
           optifine_version: useOptifine ? selectedOptifineVersion || null : null,
           cross_loader: crossLoader,
@@ -702,10 +1073,51 @@ export function ModpackBuilder({
     }
   };
 
+  const handleExport = async () => {
+    if (exportBlockers.length > 0) {
+      setSaveStatus("error");
+      setSaveMessage(`导出前请处理：${exportBlockers.join("；")}`);
+      return;
+    }
+    if (!(await handleSave(false))) return;
+
+    try {
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      const extension = format === "modrinth" ? "mrpack" : "zip";
+      const outputPath = await save({
+        title: `导出 ${formatLabel}`,
+        defaultPath: `${name.trim().replace(/[\\/:*?"<>|]/g, "_")}.${extension}`,
+        filters: [
+          {
+            name: formatLabel,
+            extensions: [extension],
+          },
+        ],
+      });
+      if (!outputPath) return;
+
+      setSaveStatus("saving");
+      setSaveMessage("正在生成标准整合包...");
+      const exportedPath = await exportInstance(name.trim(), outputPath);
+      setSaveStatus("saved");
+      setSaveMessage(`导出完成：${exportedPath}`);
+    } catch (e: any) {
+      setSaveStatus("error");
+      setSaveMessage(`导出失败: ${e?.message || e}`);
+    }
+  };
+
   // 点击"返回"按钮：先自动保存再跳转
   const handleBack = async () => {
-    if (name.trim() && mcVersionValid) {
-      await handleSave(true);
+    const canAutoSave =
+      name.trim() &&
+      mcVersionValid &&
+      packVersion.trim() &&
+      loaderVersion.trim() &&
+      (format !== "curseforge" || author.trim());
+    if (canAutoSave) {
+      const saved = await handleSave(false);
+      if (!saved) return;
     }
     router.push("/tools");
   };
@@ -715,13 +1127,11 @@ export function ModpackBuilder({
   // ===========================================================================
   const versionCandidates = useMemo(() => {
     if (!gameVer.trim()) {
-      // 没输入时，显示最新的 12 个 release
-      return mcVersions.filter((v) => v.type === "release").slice(0, 12);
+      // 下拉框自身滚动，正式版、快照、愚人节版和远古版全部可直接选择。
+      return mcVersions;
     }
     const q = gameVer.trim().toLowerCase();
-    return mcVersions
-      .filter((v) => v.id.toLowerCase().includes(q))
-      .slice(0, 16);
+    return mcVersions.filter((v) => v.id.toLowerCase().includes(q));
   }, [gameVer, mcVersions]);
 
   // ===========================================================================
@@ -731,6 +1141,22 @@ export function ModpackBuilder({
   const formatLabel = format === "modrinth" ? "Modrinth mrpack" : `CurseForge ${t({ "zh-CN": "整合包", "en-US": "modpack" })}`;
   const total =
     format === "modrinth" ? selectedModrinth.length : selectedCurseforge.length;
+  const exportBlockers: string[] = [];
+  if (!name.trim()) exportBlockers.push(t({ "zh-CN": "填写整合包名称", "en-US": "enter a modpack name" }));
+  if (!packVersion.trim()) exportBlockers.push(t({ "zh-CN": "填写整合包版本", "en-US": "enter a modpack version" }));
+  if (!loaderVersion.trim()) {
+    exportBlockers.push(t({ "zh-CN": "填写加载器具体版本", "en-US": "select an exact loader version" }));
+  } else if (loaderVersion.trim().toLowerCase() === "latest") {
+    exportBlockers.push(t({ "zh-CN": "加载器版本填写具体版本号", "en-US": "replace latest with an exact loader version" }));
+  }
+  if (!mcVersionValid) exportBlockers.push(t({ "zh-CN": "选择有效的 Minecraft 版本", "en-US": "select a valid Minecraft version" }));
+  if (format === "curseforge" && !author.trim()) exportBlockers.push(t({ "zh-CN": "填写作者", "en-US": "enter an author" }));
+  if (format === "modrinth" && selectedLoader === "liteloader") {
+    exportBlockers.push(t({ "zh-CN": "Modrinth 格式移除 LiteLoader", "en-US": "remove LiteLoader from the Modrinth format" }));
+  }
+  if (crossLoader) exportBlockers.push(t({ "zh-CN": "关闭信雅互联模式", "en-US": "disable cross-loader mode" }));
+  if (useOptifine) exportBlockers.push(t({ "zh-CN": "关闭 OptiFine（文件未进入标准清单）", "en-US": "disable OptiFine because it is not in the standard manifest" }));
+  if (total === 0) exportBlockers.push(t({ "zh-CN": "至少添加一个文件", "en-US": "add at least one file" }));
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-background">
@@ -764,13 +1190,33 @@ export function ModpackBuilder({
         </div>
 
         {/* 元数据输入 */}
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
           <div className="flex flex-col gap-1">
             <label className="text-xs text-muted-foreground">{t({ "zh-CN": "整合包名称", "en-US": "Modpack name" })} *</label>
             <Input
               placeholder={t({ "zh-CN": "如：My Fantastic Pack", "en-US": "e.g. My Fantastic Pack" })}
               value={name}
               onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground">整合包版本 *</label>
+            <Input
+              placeholder="如：1.0.0"
+              value={packVersion}
+              onChange={(e) => setPackVersion(e.target.value)}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-muted-foreground">
+              作者 {format === "curseforge" ? "*" : "（工程信息）"}
+            </label>
+            <Input
+              placeholder="如：PlayerName"
+              value={author}
+              onChange={(e) => setAuthor(e.target.value)}
             />
           </div>
 
@@ -787,6 +1233,7 @@ export function ModpackBuilder({
                 value={gameVer}
                 onChange={(e) => {
                   setGameVer(e.target.value);
+                  setLoaderVersion("");
                   setVersionDropdownOpen(true);
                 }}
                 onFocus={() => setVersionDropdownOpen(true)}
@@ -829,6 +1276,7 @@ export function ModpackBuilder({
                       onMouseDown={(e) => {
                         e.preventDefault();
                         setGameVer(v.id);
+                        setLoaderVersion("");
                         setVersionDropdownOpen(false);
                       }}
                     >
@@ -877,10 +1325,16 @@ export function ModpackBuilder({
               )}
             </label>
             <div className="flex flex-wrap gap-1.5">
-              {["forge", "neoforge", "fabric", "quilt", "liteloader"].map((loader) => (
+              {(format === "modrinth"
+                ? ["forge", "neoforge", "fabric", "quilt"]
+                : ["forge", "neoforge", "fabric", "quilt", "liteloader"]
+              ).map((loader) => (
                 <Badge
                   key={loader}
-                  onClick={() => setSelectedLoader(loader)}
+                  onClick={() => {
+                    if (loader !== selectedLoader) setLoaderVersion("");
+                    setSelectedLoader(loader);
+                  }}
                   variant={selectedLoader === loader ? "default" : "outline"}
                   className={`cursor-pointer text-[11px] py-0.5 px-2 capitalize select-none ${crossLoader ? "opacity-60" : "hover:brightness-110"}`}
                 >
@@ -890,6 +1344,30 @@ export function ModpackBuilder({
                 </Badge>
               ))}
             </div>
+            <Select value={loaderVersion} onValueChange={setLoaderVersion}>
+              <SelectTrigger className="w-full" disabled={loaderVersionsLoading || !mcVersionValid}>
+                <SelectValue
+                  placeholder={
+                    loaderVersionsLoading
+                      ? "正在加载版本列表..."
+                      : "点击选择加载器具体版本"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent className="max-h-72">
+                {loaderVersionOptions.map((version) => (
+                  <SelectItem key={version} value={version}>
+                    {version}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {loaderVersionsError && (
+              <span className="text-[11px] text-red-500 flex items-center gap-1">
+                <AlertCircle className="size-3 shrink-0" /> 加载器版本加载失败：
+                {loaderVersionsError}
+              </span>
+            )}
             <label className="text-[11px] text-muted-foreground flex items-center gap-2 mt-1">
               <input
                 type="checkbox"
@@ -952,29 +1430,49 @@ export function ModpackBuilder({
             )}
           </div>
 
-          <div className="flex items-end justify-end gap-2">
-            <Button
-              size="sm"
-              onClick={() => handleSave(false)}
-              disabled={
-                !name.trim() ||
-                !mcVersionValid ||
-                saveStatus === "saving" ||
-                (useOptifine && optifineVersions.length > 0 && !selectedOptifineVersion)
-              }
-              className="gap-1"
-            >
-              {saveStatus === "saving" ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : saveStatus === "saved" ? (
-                <CheckCircle2 className="size-4 text-green-500" />
-              ) : saveStatus === "error" ? (
-                <AlertCircle className="size-4 text-red-500" />
-              ) : (
-                <Save className="size-4" />
-              )}
-              {t({ "zh-CN": "手动保存", "en-US": "Save" })}
-            </Button>
+          <div className="flex flex-col items-end justify-end gap-1">
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleExport}
+                disabled={saveStatus === "saving"}
+                className="gap-1"
+              >
+                <Download className="size-4" />
+                {t({ "zh-CN": "导出标准包", "en-US": "Export standard pack" })}
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => handleSave(false)}
+                disabled={
+                  !name.trim() ||
+                  !packVersion.trim() ||
+                  !loaderVersion.trim() ||
+                  !mcVersionValid ||
+                  (format === "curseforge" && !author.trim()) ||
+                  saveStatus === "saving" ||
+                  (useOptifine && optifineVersions.length > 0 && !selectedOptifineVersion)
+                }
+                className="gap-1"
+              >
+                {saveStatus === "saving" ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : saveStatus === "saved" ? (
+                  <CheckCircle2 className="size-4 text-green-500" />
+                ) : saveStatus === "error" ? (
+                  <AlertCircle className="size-4 text-red-500" />
+                ) : (
+                  <Save className="size-4" />
+                )}
+                {t({ "zh-CN": "手动保存", "en-US": "Save" })}
+              </Button>
+            </div>
+            {exportBlockers.length > 0 && (
+              <div className="max-w-[32rem] text-right text-[11px] text-amber-600">
+                {t({ "zh-CN": "导出前：", "en-US": "Before export: " })}{exportBlockers.join(t({ "zh-CN": "；", "en-US": "; " }))}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1029,7 +1527,6 @@ export function ModpackBuilder({
                 </Button>
               ))}
             </div>
-
             <div className="flex gap-2">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
@@ -1105,12 +1602,17 @@ export function ModpackBuilder({
                           {hit.source}
                         </Badge>
                         <Badge variant="outline" className="text-[10px] py-0">
-                          MC {matchedVersion?.id}
+                          {category === "modpack"
+                            ? `支持 ${hit.game_versions?.join(", ") || "未知 MC 版本"}`
+                            : `MC ${matchedVersion?.id}`}
                         </Badge>
                         <span>{hit.downloads?.toLocaleString()} {t({ "zh-CN": "下载", "en-US": "downloads" })}</span>
                         {hit.author && <span>· {hit.author}</span>}
                       </div>
                     </div>
+                    <span className="shrink-0 text-xs font-medium text-primary flex items-center gap-1">
+                      选择版本 <ChevronDown className="size-3.5" />
+                    </span>
                   </button>
                 ))}
               </div>
@@ -1119,7 +1621,7 @@ export function ModpackBuilder({
 
           {/* 项目详情 + 文件选择 */}
           {activeHit && (
-            <div className="rounded-xl border border-border p-4">
+            <div ref={detailsRef} className="rounded-xl border border-border p-4 scroll-mt-4">
               <div className="flex items-center justify-between mb-3">
                 <div className="font-medium text-sm flex items-center gap-2">
                   <Package className="size-4 text-primary" /> {activeHit.title}
@@ -1128,6 +1630,14 @@ export function ModpackBuilder({
                   {activeHit.source}
                 </Badge>
               </div>
+              <div className="text-xs text-muted-foreground mb-3">
+                在下面选择需要的版本，然后点击右侧“添加”。
+              </div>
+              {addError && (
+                <div className="mb-3 rounded-md border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-500 flex items-center gap-1">
+                  <AlertCircle className="size-3 shrink-0" /> {addError}
+                </div>
+              )}
 
               {activeLoading ? (
                 <div className="py-4 flex items-center gap-2 text-xs text-muted-foreground">
@@ -1141,47 +1651,54 @@ export function ModpackBuilder({
                 <div className="space-y-2 max-h-[38vh] overflow-y-auto">
                   {modrinthVersions.length === 0 ? (
                     <div className="text-xs text-muted-foreground py-2">
-                      {t({ "zh-CN": `无可用版本（该项目没有适配 MC ${matchedVersion?.id}）`, "en-US": `No versions are available for MC ${matchedVersion?.id}` })}
+                      {category === "modpack"
+                        ? t({ "zh-CN": "该项目暂时没有可下载版本", "en-US": "This project currently has no downloadable versions" })
+                        : t({ "zh-CN": `无可用版本（该项目没有适配 MC ${matchedVersion?.id}）`, "en-US": `No versions are available for MC ${matchedVersion?.id}` })}
                     </div>
                   ) : (
-                    modrinthVersions.map((v) => {
-                      const primary = v.files[0];
+                    modrinthVersions.map((version) => {
+                      const primary = version.files[0];
+                      const isAdding = addingFileKey === `modrinth:${version.id}`;
                       const already = selectedModrinth.some(
-                        (f) => f.hashes.sha1 === primary?.hashes.sha1,
+                        (file) => file.hashes.sha1 === primary?.hashes.sha1,
                       );
                       return (
                         <div
-                          key={v.id}
+                          key={version.id}
                           className="border border-border rounded-lg p-3 hover:border-primary/50 transition-colors"
                         >
-                          <div className="flex items-center justify-between">
+                          <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0">
                               <div className="font-medium text-sm truncate">
-                                {v.version_number || v.id}
+                                {version.version_number || version.id}
                               </div>
                               <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-1">
-                                {v.loaders.length > 0 && (
+                                {version.loaders.length > 0 && (
                                   <Badge variant="outline" className="text-[10px]">
-                                    {v.loaders.join(", ")}
+                                    {version.loaders.join(", ")}
                                   </Badge>
                                 )}
                                 <Badge variant="outline" className="text-[10px]">
-                                  MC {matchedVersion?.id}
+                                  MC {version.game_versions.join(", ") || "未知"}
                                 </Badge>
                                 <span className="text-[10px]">
                                   {(primary?.size || 0) > 0
                                     ? `${(primary!.size / 1024).toFixed(1)} KB`
                                     : ""}
                                 </span>
-                                <span className="text-[10px]">· {v.version_type}</span>
+                                <span className="text-[10px]">· {version.version_type}</span>
                               </div>
                             </div>
                             <Button
                               size="sm"
-                              onClick={() => addModrinthFile(activeHit, v)}
-                              disabled={already}
+                              onClick={() => addModrinthFile(activeHit, version)}
+                              disabled={already || addingFileKey !== null}
                             >
-                              {already ? (
+                              {isAdding ? (
+                                <>
+                                  <Loader2 className="size-4 mr-1 animate-spin" /> 添加依赖中
+                                </>
+                              ) : already ? (
                                 <>
                                   <CheckCircle2 className="size-4 mr-1 text-green-500" />
                                   {t({ "zh-CN": "已添加", "en-US": "Added" })}
@@ -1202,48 +1719,58 @@ export function ModpackBuilder({
                 <div className="space-y-2 max-h-[38vh] overflow-y-auto">
                   {curseforgeFiles.length === 0 ? (
                     <div className="text-xs text-muted-foreground py-2">
-                      {t({ "zh-CN": `无可用文件（该项目没有适配 MC ${matchedVersion?.id}）`, "en-US": `No files are available for MC ${matchedVersion?.id}` })}
+                      {category === "modpack"
+                        ? t({ "zh-CN": "该项目暂时没有可下载文件", "en-US": "This project currently has no downloadable files" })
+                        : t({ "zh-CN": `无可用文件（该项目没有适配 MC ${matchedVersion?.id}）`, "en-US": `No files are available for MC ${matchedVersion?.id}` })}
                     </div>
                   ) : (
-                    curseforgeFiles.map((f) => {
+                    curseforgeFiles.map((file) => {
+                      const isAdding = addingFileKey === `curseforge:${file.id}`;
                       const already = selectedCurseforge.some(
-                        (p) =>
-                          p.projectID === curseforgeProjectId && p.fileID === f.id,
+                        (selected) =>
+                          selected.projectID === curseforgeProjectId &&
+                          selected.fileID === file.id,
                       );
                       return (
                         <div
-                          key={f.id}
+                          key={file.id}
                           className="border border-border rounded-lg p-3 hover:border-primary/50 transition-colors"
                         >
-                          <div className="flex items-center justify-between">
+                          <div className="flex items-center justify-between gap-3">
                             <div className="min-w-0">
                               <div className="font-medium text-sm truncate">
-                                {f.displayName || f.fileName || `File #${f.id}`}
+                                {file.displayName || file.fileName || `File #${file.id}`}
                               </div>
-                              <div className="text-xs text-muted-foreground flex flex-wrap gap-1">
+                              <div className="text-xs text-muted-foreground flex flex-wrap items-center gap-1">
                                 <Badge variant="outline" className="text-[10px]">
-                                  MC {matchedVersion?.id}
+                                  MC {(file.gameVersions || []).join(", ") || "未知"}
                                 </Badge>
                                 <Badge variant="outline" className="text-[10px]">
-                                  {f.releaseType === 1
+                                  {file.releaseType === 1
                                     ? t({ "zh-CN": "正式版", "en-US": "Release" })
-                                    : f.releaseType === 2
+                                    : file.releaseType === 2
                                       ? "Beta"
                                       : "Alpha"}
                                 </Badge>
-                                {f.fileDate && (
+                                {file.fileDate && (
                                   <span className="text-[10px]">
-                                    · {formatTimestamp(Math.floor(new Date(f.fileDate).getTime() / 1000))}
+                                    · {formatTimestamp(
+                                      Math.floor(new Date(file.fileDate).getTime() / 1000),
+                                    )}
                                   </span>
                                 )}
                               </div>
                             </div>
                             <Button
                               size="sm"
-                              onClick={() => addCurseforgeFile(f)}
-                              disabled={already}
+                              onClick={() => addCurseforgeFile(file)}
+                              disabled={already || addingFileKey !== null}
                             >
-                              {already ? (
+                              {isAdding ? (
+                                <>
+                                  <Loader2 className="size-4 mr-1 animate-spin" /> 添加依赖中
+                                </>
+                              ) : already ? (
                                 <>
                                   <CheckCircle2 className="size-4 mr-1 text-green-500" />
                                   {t({ "zh-CN": "已添加", "en-US": "Added" })}
@@ -1301,33 +1828,13 @@ export function ModpackBuilder({
                       </Button>
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-xs">
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-2 py-1.5">
                         <Monitor className="size-3 text-muted-foreground" />
-                        <select
-                          className="flex-1 bg-background border border-border rounded-md px-1.5 py-1 text-xs"
-                          value={f.env.client}
-                          onChange={(e) =>
-                            updateModrinthSide(idx, "client", e.target.value)
-                          }
-                        >
-                          <option value="required">{t({ "zh-CN": "客户端：必须", "en-US": "Client: Required" })}</option>
-                          <option value="optional">{t({ "zh-CN": "客户端：可选", "en-US": "Client: Optional" })}</option>
-                          <option value="unsupported">{t({ "zh-CN": "客户端：不支持", "en-US": "Client: Unsupported" })}</option>
-                        </select>
+                        <span>{t({ "zh-CN": "客户端：", "en-US": "Client: " })}{environmentRequirementLabel(f.env.client)}</span>
                       </div>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-2 rounded-md border border-border bg-muted/30 px-2 py-1.5">
                         <Server className="size-3 text-muted-foreground" />
-                        <select
-                          className="flex-1 bg-background border border-border rounded-md px-1.5 py-1 text-xs"
-                          value={f.env.server}
-                          onChange={(e) =>
-                            updateModrinthSide(idx, "server", e.target.value)
-                          }
-                        >
-                          <option value="required">{t({ "zh-CN": "服务端：必须", "en-US": "Server: Required" })}</option>
-                          <option value="optional">{t({ "zh-CN": "服务端：可选", "en-US": "Server: Optional" })}</option>
-                          <option value="unsupported">{t({ "zh-CN": "服务端：不支持", "en-US": "Server: Unsupported" })}</option>
-                        </select>
+                        <span>{t({ "zh-CN": "服务端：", "en-US": "Server: " })}{environmentRequirementLabel(f.env.server)}</span>
                       </div>
                     </div>
                     <div className="mt-2 text-[10px] text-muted-foreground font-mono truncate">

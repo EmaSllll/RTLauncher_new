@@ -132,7 +132,7 @@ export default function ToolsPage() {
                 </div>
                 <h3 className="font-semibold text-base">{t({ "zh-CN": "制作 Modrinth 整合包", "en-US": "Create a Modrinth modpack" })}</h3>
                 <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                  {t({ "zh-CN": "通过 Modrinth API 搜索并添加文件，自动收集 path、sha1、sha256、fileSize、downloadUrl；可指定每个文件的客户端/服务端依赖级别。", "en-US": "Search and add files with the Modrinth API. Collects path, sha1, sha256, fileSize, and downloadUrl, with client/server dependency settings per file." })}
+                  {t({ "zh-CN": "通过 Modrinth API 搜索并添加文件，自动收集 path、SHA-1、SHA-512、fileSize 与下载地址，并导出标准 .mrpack。", "en-US": "Search and add files with the Modrinth API, collect path, SHA-1, SHA-512, fileSize, and download URL, and export a standard .mrpack." })}
                 </p>
                 <Button
                   className="mt-4 w-full gap-2"
@@ -160,7 +160,7 @@ export default function ToolsPage() {
                 </div>
                 <h3 className="font-semibold text-base">{t({ "zh-CN": "制作 CurseForge 整合包", "en-US": "Create a CurseForge modpack" })}</h3>
                 <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                  {t({ "zh-CN": "通过 CurseForge API 搜索，收集 projectID 与 fileID 对；可勾选每个文件是否为必须安装。", "en-US": "Search with the CurseForge API, collect projectID and fileID pairs, and choose whether each file is required." })}
+                  {t({ "zh-CN": "通过 CurseForge API 搜索，收集 projectID 与 fileID，生成标准 manifest.json 并导出 ZIP。", "en-US": "Search with the CurseForge API, collect projectID and fileID, generate a standard manifest.json, and export a ZIP." })}
                 </p>
                 <Button
                   className="mt-4 w-full gap-2"

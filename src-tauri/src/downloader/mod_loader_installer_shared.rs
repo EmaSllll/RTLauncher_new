@@ -94,12 +94,23 @@ fn runtime_java_executable(runtime_dir: &Path) -> Option<PathBuf> {
 }
 
 fn required_java_major_for_mc(mc_version: &str) -> i32 {
+    // 25w 快照仍使用 Java 21；26.x（以及 26w 快照）已切换到
+    // java-runtime-epsilon / Java 25。
+    if let Some(snapshot_year) = mc_version
+        .split_once('w')
+        .and_then(|(year, _)| year.parse::<i32>().ok())
+    {
+        return if snapshot_year >= 26 { 25 } else { 21 };
+    }
     let parts: Vec<&str> = mc_version.split('.').collect();
     let major = parts
         .first()
         .and_then(|s| s.parse::<i32>().ok())
         .unwrap_or(1);
     // Minecraft 已改用以年份为基础的版本号（例如 26.2）。
+    if major >= 26 {
+        return 25;
+    }
     if major >= 25 {
         return 21;
     }
@@ -107,7 +118,10 @@ fn required_java_major_for_mc(mc_version: &str) -> i32 {
         .get(1)
         .and_then(|s| s.parse::<i32>().ok())
         .unwrap_or(0);
-    let patch = parts.get(2).and_then(|s| s.parse::<i32>().ok()).unwrap_or(0);
+    let patch = parts
+        .get(2)
+        .and_then(|s| s.parse::<i32>().ok())
+        .unwrap_or(0);
     if minor <= 16 {
         8
     } else if minor == 17 {
@@ -132,10 +146,7 @@ pub fn pick_java_executable(mc_version: &str) -> String {
         let exact_key = required.to_string();
         if let Some(info) = java_installations.get(&exact_key) {
             if is_executable_file(Path::new(&info.path)) {
-                println!(
-                    "[JavaPicker] 使用精确匹配 Java {}: {}",
-                    required, info.path
-                );
+                println!("[JavaPicker] 使用精确匹配 Java {}: {}", required, info.path);
                 return info.path.clone();
             }
         }
@@ -247,7 +258,8 @@ fn maven_to_relative_path(coord: &str) -> Result<String> {
     Ok(format!("{}{}", base, fname))
 }
 fn sha1_of_file(path: &Path) -> Result<String> {
-    let mut f = fs::File::open(path).with_context(|| format!("打开文件失败: {}", path.display()))?;
+    let mut f =
+        fs::File::open(path).with_context(|| format!("打开文件失败: {}", path.display()))?;
     let mut hasher = Sha1::new();
     let mut buf = [0u8; 64 * 1024];
     loop {
@@ -267,28 +279,29 @@ struct RawLibrary {
     _size: Option<u64>,
 }
 fn parse_library(v: &Value) -> RawLibrary {
-    let name = v.get("name").and_then(|x| x.as_str()).map(|s| s.to_string());
-    let (path, url, sha1, size) = if let Some(artifact) = v
-        .get("downloads")
-        .and_then(|d| d.get("artifact"))
-    {
-        let path = artifact
-            .get("path")
-            .and_then(|x| x.as_str())
-            .map(|s| s.to_string());
-        let url = artifact
-            .get("url")
-            .and_then(|x| x.as_str())
-            .map(|s| s.to_string());
-        let sha1 = artifact
-            .get("sha1")
-            .and_then(|x| x.as_str())
-            .map(|s| s.to_string());
-        let size = artifact.get("size").and_then(|x| x.as_u64());
-        (path, url, sha1, size)
-    } else {
-        (None, None, None, None)
-    };
+    let name = v
+        .get("name")
+        .and_then(|x| x.as_str())
+        .map(|s| s.to_string());
+    let (path, url, sha1, size) =
+        if let Some(artifact) = v.get("downloads").and_then(|d| d.get("artifact")) {
+            let path = artifact
+                .get("path")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string());
+            let url = artifact
+                .get("url")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string());
+            let sha1 = artifact
+                .get("sha1")
+                .and_then(|x| x.as_str())
+                .map(|s| s.to_string());
+            let size = artifact.get("size").and_then(|x| x.as_u64());
+            (path, url, sha1, size)
+        } else {
+            (None, None, None, None)
+        };
     if path.is_none() && name.is_some() {
         let nm = name.as_ref().unwrap();
         if let Ok(rel) = maven_to_relative_path(nm) {
@@ -312,7 +325,13 @@ fn parse_library(v: &Value) -> RawLibrary {
             };
         }
     }
-    RawLibrary { name, path, url, sha1, _size: size }
+    RawLibrary {
+        name,
+        path,
+        url,
+        sha1,
+        _size: size,
+    }
 }
 struct ProcessorEntry {
     jar: String,
@@ -446,10 +465,7 @@ fn read_main_class_from_jar(jar_path: &Path) -> Result<String> {
             }
         }
     }
-    bail!(
-        "MANIFEST.MF 中未找到 Main-Class: {}",
-        jar_path.display()
-    )
+    bail!("MANIFEST.MF 中未找到 Main-Class: {}", jar_path.display())
 }
 async fn install_legacy_forge(
     archive: &mut ZipArchive<fs::File>,
@@ -468,7 +484,10 @@ async fn install_legacy_forge(
         }
         None
     }
-    fn read_entry_bytes(archive: &mut ZipArchive<fs::File>, idx: usize) -> std::io::Result<Vec<u8>> {
+    fn read_entry_bytes(
+        archive: &mut ZipArchive<fs::File>,
+        idx: usize,
+    ) -> std::io::Result<Vec<u8>> {
         let mut entry = archive.by_index(idx)?;
         let mut buf = Vec::new();
         entry.read_to_end(&mut buf)?;
@@ -476,7 +495,9 @@ async fn install_legacy_forge(
     }
     fn parse_maven_name(name: &str) -> Option<(String, String, String)> {
         let parts: Vec<&str> = name.split(':').collect();
-        if parts.len() < 3 { return None; }
+        if parts.len() < 3 {
+            return None;
+        }
         let group_path = parts[0].replace('.', "/");
         let artifact = parts[1].to_string();
         let version = parts[2].to_string();
@@ -494,8 +515,13 @@ async fn install_legacy_forge(
     };
     let ip_model: Value = serde_json::from_str(&ip_text)
         .with_context(|| "[Legacy] 解析 install_profile.json 失败")?;
-    println!("[Legacy] install_profile.json 顶层键: {:?}",
-        ip_model.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>()).unwrap_or_default());
+    println!(
+        "[Legacy] install_profile.json 顶层键: {:?}",
+        ip_model
+            .as_object()
+            .map(|o| o.keys().cloned().collect::<Vec<_>>())
+            .unwrap_or_default()
+    );
     let version_info_val = if let Some(vi) = ip_model.get("versionInfo") {
         vi.clone()
     } else if ip_model.get("id").is_some() && ip_model.get("libraries").is_some() {
@@ -514,14 +540,18 @@ async fn install_legacy_forge(
         for lib in libs {
             if let Some(name) = lib.get("name").and_then(|n| n.as_str()) {
                 let parts: Vec<&str> = name.split(':').collect();
-                if parts.len() >= 3 && parts[0].eq_ignore_ascii_case("net.minecraftforge") && parts[1].eq_ignore_ascii_case("forge") {
+                if parts.len() >= 3
+                    && parts[0].eq_ignore_ascii_case("net.minecraftforge")
+                    && parts[1].eq_ignore_ascii_case("forge")
+                {
                     forge_version_str = Some(parts[2].to_string());
                     break;
                 }
             }
         }
     }
-    let forge_ver = forge_version_str.clone()
+    let forge_ver = forge_version_str
+        .clone()
         .unwrap_or_else(|| cfg.mc_version.clone());
     println!("[Legacy] forge version from libraries: {}", forge_ver);
     let mut universal_jar_idx: Option<usize> = None;
@@ -551,8 +581,8 @@ async fn install_legacy_forge(
             }
         }
     }
-    let universal_jar_idx = universal_jar_idx
-        .ok_or_else(|| anyhow!("[Legacy] 未找到 forge-*-universal.jar"))?;
+    let universal_jar_idx =
+        universal_jar_idx.ok_or_else(|| anyhow!("[Legacy] 未找到 forge-*-universal.jar"))?;
     let target_jar_path = {
         let mut path: Option<PathBuf> = None;
         if let Some(libs) = version_info_val.get("libraries").and_then(|l| l.as_array()) {
@@ -575,7 +605,10 @@ async fn install_legacy_forge(
         }
         path.ok_or_else(|| anyhow!("[Legacy] 未能从 libraries 解析 forge 库路径"))?
     };
-    println!("[Legacy] 将 universal jar 写入: {}", target_jar_path.display());
+    println!(
+        "[Legacy] 将 universal jar 写入: {}",
+        target_jar_path.display()
+    );
     if let Some(parent) = target_jar_path.parent() {
         fs::create_dir_all(parent).ok();
     }
@@ -586,7 +619,10 @@ async fn install_legacy_forge(
     }
     println!("[Legacy] 开始下载 libraries");
     let mc_version = &cfg.mc_version;
-    let vanilla_json_path = root.join("versions").join(mc_version).join(format!("{}.json", mc_version));
+    let vanilla_json_path = root
+        .join("versions")
+        .join(mc_version)
+        .join(format!("{}.json", mc_version));
     let mut vanilla_lib_names: std::collections::HashSet<String> = std::collections::HashSet::new();
     if vanilla_json_path.exists() {
         match std::fs::read_to_string(&vanilla_json_path) {
@@ -599,12 +635,20 @@ async fn install_legacy_forge(
                                 if parts.len() >= 3 {
                                     let artifact = parts[1];
                                     let version = parts[2];
-                                    vanilla_lib_names.insert(format!("{}-{}.jar", artifact, version));
-                                    if let Some(natives_obj) = lib.get("natives").and_then(|n| n.as_object()) {
+                                    vanilla_lib_names
+                                        .insert(format!("{}-{}.jar", artifact, version));
+                                    if let Some(natives_obj) =
+                                        lib.get("natives").and_then(|n| n.as_object())
+                                    {
                                         let os_keys = ["windows", "osx", "linux"];
                                         for os_key in os_keys {
-                                            if let Some(classifier) = natives_obj.get(os_key).and_then(|v| v.as_str()) {
-                                                vanilla_lib_names.insert(format!("{}-{}-{}.jar", artifact, version, classifier));
+                                            if let Some(classifier) =
+                                                natives_obj.get(os_key).and_then(|v| v.as_str())
+                                            {
+                                                vanilla_lib_names.insert(format!(
+                                                    "{}-{}-{}.jar",
+                                                    artifact, version, classifier
+                                                ));
                                             }
                                         }
                                     }
@@ -618,7 +662,11 @@ async fn install_legacy_forge(
         }
     }
     if !vanilla_lib_names.is_empty() {
-        println!("[Legacy] 从原版 {} 读取到 {} 个库（跳过重复下载）", mc_version, vanilla_lib_names.len());
+        println!(
+            "[Legacy] 从原版 {} 读取到 {} 个库（跳过重复下载）",
+            mc_version,
+            vanilla_lib_names.len()
+        );
     }
     let mut all_libs: Vec<Value> = Vec::new();
     if let Some(libs) = version_info_val.get("libraries").and_then(|v| v.as_array()) {
@@ -632,7 +680,10 @@ async fn install_legacy_forge(
     if all_libs.is_empty() {
         bail!("[Legacy] install_profile.json 中找不到任何 libraries 字段");
     }
-    println!("[Legacy] install_profile 中共 {} 个库条目（含 forge 自身和去重前）", all_libs.len());
+    println!(
+        "[Legacy] install_profile 中共 {} 个库条目（含 forge 自身和去重前）",
+        all_libs.len()
+    );
     let mut download_tasks: Vec<concurrent_download::DownloadTask> = Vec::new();
     let libraries_dir = root.join("libraries");
     let mut seen_file_names: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -652,7 +703,10 @@ async fn install_legacy_forge(
             None => continue,
         };
         let parts: Vec<&str> = name.split(':').collect();
-        if parts.len() >= 2 && parts[0].eq_ignore_ascii_case("net.minecraftforge") && parts[1].eq_ignore_ascii_case("forge") {
+        if parts.len() >= 2
+            && parts[0].eq_ignore_ascii_case("net.minecraftforge")
+            && parts[1].eq_ignore_ascii_case("forge")
+        {
             continue;
         }
         if let Some(clientreq) = lib.get("clientreq").and_then(|v| v.as_bool()) {
@@ -675,7 +729,10 @@ async fn install_legacy_forge(
             }
         };
         let has_natives = lib.get("natives").is_some();
-        let custom_url = lib.get("url").and_then(|u| u.as_str()).map(|u| u.trim_end_matches('/').to_string());
+        let custom_url = lib
+            .get("url")
+            .and_then(|u| u.as_str())
+            .map(|u| u.trim_end_matches('/').to_string());
         let mut base_urls: Vec<String> = Vec::new();
         if let Some(cu) = &custom_url {
             base_urls.push(cu.clone());
@@ -698,17 +755,31 @@ async fn install_legacy_forge(
                 println!("[Legacy] 跳过（原版已含）: {}", file_name);
                 continue;
             }
-            let urls: Vec<String> = base_urls.iter().map(|base| {
-                format!("{}/{}/{}/{}/{}", base, group_path, artifact, version, file_name)
-            }).collect();
+            let urls: Vec<String> = base_urls
+                .iter()
+                .map(|base| {
+                    format!(
+                        "{}/{}/{}/{}/{}",
+                        base, group_path, artifact, version, file_name
+                    )
+                })
+                .collect();
             let full_path = target_dir.join(&file_name);
-            let needs_download = !full_path.exists() || match std::fs::metadata(&full_path) {
-                Ok(m) => m.len() == 0,
-                Err(_) => true,
-            };
+            let needs_download = !full_path.exists()
+                || match std::fs::metadata(&full_path) {
+                    Ok(m) => m.len() == 0,
+                    Err(_) => true,
+                };
             if needs_download {
-                println!("[Legacy] 准备下载: {} (尝试 {} 个镜像源)", file_name, urls.len());
-                println!("[Legacy]   → 首个 URL: {}", urls.first().unwrap_or(&"".to_string()));
+                println!(
+                    "[Legacy] 准备下载: {} (尝试 {} 个镜像源)",
+                    file_name,
+                    urls.len()
+                );
+                println!(
+                    "[Legacy]   → 首个 URL: {}",
+                    urls.first().unwrap_or(&"".to_string())
+                );
                 download_tasks.push(concurrent_download::DownloadTask {
                     file_name: file_name.clone(),
                     target_dir: target_dir.clone(),
@@ -750,16 +821,27 @@ async fn install_legacy_forge(
                     println!("[Legacy] 跳过（原版已含 natives）: {}", file_name);
                     continue;
                 }
-                let urls: Vec<String> = base_urls.iter().map(|base| {
-                    format!("{}/{}/{}/{}/{}", base, group_path, artifact, version, file_name)
-                }).collect();
+                let urls: Vec<String> = base_urls
+                    .iter()
+                    .map(|base| {
+                        format!(
+                            "{}/{}/{}/{}/{}",
+                            base, group_path, artifact, version, file_name
+                        )
+                    })
+                    .collect();
                 let full_path = target_dir.join(&file_name);
-                let needs_download = !full_path.exists() || match std::fs::metadata(&full_path) {
-                    Ok(m) => m.len() == 0,
-                    Err(_) => true,
-                };
+                let needs_download = !full_path.exists()
+                    || match std::fs::metadata(&full_path) {
+                        Ok(m) => m.len() == 0,
+                        Err(_) => true,
+                    };
                 if needs_download {
-                    println!("[Legacy] 准备下载 natives: {} (尝试 {} 个镜像源)", file_name, urls.len());
+                    println!(
+                        "[Legacy] 准备下载 natives: {} (尝试 {} 个镜像源)",
+                        file_name,
+                        urls.len()
+                    );
                     download_tasks.push(concurrent_download::DownloadTask {
                         file_name: file_name.clone(),
                         target_dir: target_dir.clone(),
@@ -773,7 +855,11 @@ async fn install_legacy_forge(
     println!("[Legacy] 实际需要下载 {} 个库", download_tasks.len());
     if !download_tasks.is_empty() {
         let result = concurrent_download::download_all(download_tasks, None).await;
-        println!("[Legacy] 下载完成: 成功 {} / 失败 {}", result.success_count, result.failures.len());
+        println!(
+            "[Legacy] 下载完成: 成功 {} / 失败 {}",
+            result.success_count,
+            result.failures.len()
+        );
         for f in &result.failures {
             println!("[Legacy] 失败: {} ({})", f.file_name, f.error);
             if !f.urls_tried.is_empty() {
@@ -784,16 +870,23 @@ async fn install_legacy_forge(
             }
         }
         if !result.failures.is_empty() {
-            println!("[Legacy] 警告: 有 {} 个库下载失败，启动时可能报'找不到主类'", result.failures.len());
+            println!(
+                "[Legacy] 警告: 有 {} 个库下载失败，启动时可能报'找不到主类'",
+                result.failures.len()
+            );
         }
     }
     let mut final_version_json = version_info_val.clone();
     {
-        let obj = final_version_json.as_object_mut()
+        let obj = final_version_json
+            .as_object_mut()
             .ok_or_else(|| anyhow!("[Legacy] VersionInfo 不是 JSON 对象"))?;
         obj.insert("id".to_string(), Value::String(id.clone()));
         if !obj.contains_key("inheritsFrom") {
-            obj.insert("inheritsFrom".to_string(), Value::String(cfg.mc_version.clone()));
+            obj.insert(
+                "inheritsFrom".to_string(),
+                Value::String(cfg.mc_version.clone()),
+            );
         }
         if !obj.contains_key("mainClass") {
             obj.insert(
@@ -827,8 +920,7 @@ pub async fn install(
     let installer_jar_full = cfg.installer_jar_path.canonicalize()?;
     let archive_file = fs::File::open(&installer_jar_full)
         .with_context(|| format!("打开安装器 JAR 失败: {}", installer_jar_full.display()))?;
-    let mut archive = ZipArchive::new(archive_file)
-        .context("解析安装器 JAR (ZIP) 失败")?;
+    let mut archive = ZipArchive::new(archive_file).context("解析安装器 JAR (ZIP) 失败")?;
     println!("=== installer JAR 内容 (前 50 项) ===");
     for (i, name) in archive.file_names().enumerate().take(50) {
         println!("  [{:3}] {}", i, name);
@@ -843,7 +935,10 @@ pub async fn install(
         }
         None
     }
-    fn read_entry_bytes(archive: &mut ZipArchive<fs::File>, idx: usize) -> std::io::Result<Vec<u8>> {
+    fn read_entry_bytes(
+        archive: &mut ZipArchive<fs::File>,
+        idx: usize,
+    ) -> std::io::Result<Vec<u8>> {
         let mut entry = archive.by_index(idx)?;
         let mut buf = Vec::new();
         entry.read_to_end(&mut buf)?;
@@ -852,7 +947,15 @@ pub async fn install(
     let has_version_json = find_entry_idx(&mut archive, "version.json").is_some();
     if !has_version_json {
         println!("检测到 Legacy 模式（低版本 Forge，无 version.json）");
-        return install_legacy_forge(&mut archive, &installer_jar_full, root, cfg, progress_tx, wait_for_original).await;
+        return install_legacy_forge(
+            &mut archive,
+            &installer_jar_full,
+            root,
+            cfg,
+            progress_tx,
+            wait_for_original,
+        )
+        .await;
     }
     if !cfg.java_executable_path.exists() {
         bail!(
@@ -928,7 +1031,8 @@ pub async fn install(
     } else {
         String::from_utf8_lossy(&ip_buf).to_string()
     };
-    let ip_model: Value = serde_json::from_str(&ip_text).context("解析 install_profile.json 失败")?;
+    let ip_model: Value =
+        serde_json::from_str(&ip_text).context("解析 install_profile.json 失败")?;
     if ip_model.is_null() {
         bail!("install_profile.json 内容为空");
     }
@@ -936,28 +1040,56 @@ pub async fn install(
         let keys: Vec<&String> = obj.keys().collect();
         println!("  install_profile.json 顶层键: {:?}", keys);
         if let Some(args) = obj.get("arguments") {
-            let type_str = if args.is_object() { "Object" } else if args.is_array() { "Array" } else { "Other" };
-            let content = serde_json::to_string_pretty(args).unwrap_or_else(|_| "<序列化失败>".to_string());
+            let type_str = if args.is_object() {
+                "Object"
+            } else if args.is_array() {
+                "Array"
+            } else {
+                "Other"
+            };
+            let content =
+                serde_json::to_string_pretty(args).unwrap_or_else(|_| "<序列化失败>".to_string());
             println!("  [顶层 arguments] 类型={}", type_str);
-            println!("    内容: {}", content.chars().take(800).collect::<String>());
+            println!(
+                "    内容: {}",
+                content.chars().take(800).collect::<String>()
+            );
         }
         if let Some(procs) = obj.get("processors").and_then(|p| p.as_array()) {
             println!("  processors 共 {} 个:", procs.len());
             for (i, p) in procs.iter().enumerate() {
                 let jar = p.get("jar").and_then(|j| j.as_str()).unwrap_or("<无 jar>");
-                let sides = p.get("sides").and_then(|s| s.as_array())
+                let sides = p
+                    .get("sides")
+                    .and_then(|s| s.as_array())
                     .map(|a| a.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>())
                     .unwrap_or_default();
                 let (args_type, args_str) = match p.get("arguments") {
-                    Some(a) if a.is_object() => ("Object".to_string(),
-                        serde_json::to_string_pretty(a).unwrap_or_else(|_| "<序列化失败>".to_string())),
-                    Some(a) if a.is_array() => ("Array".to_string(),
-                        serde_json::to_string_pretty(a).unwrap_or_else(|_| "<序列化失败>".to_string())),
+                    Some(a) if a.is_object() => (
+                        "Object".to_string(),
+                        serde_json::to_string_pretty(a)
+                            .unwrap_or_else(|_| "<序列化失败>".to_string()),
+                    ),
+                    Some(a) if a.is_array() => (
+                        "Array".to_string(),
+                        serde_json::to_string_pretty(a)
+                            .unwrap_or_else(|_| "<序列化失败>".to_string()),
+                    ),
                     Some(a) => ("Other".to_string(), a.to_string()),
                     None => ("None".to_string(), "<无 arguments>".to_string()),
                 };
-                println!("    [{}/{}] jar={}, sides={:?}, args_type={}", i + 1, procs.len(), jar, sides, args_type);
-                println!("      args={}", args_str.chars().take(500).collect::<String>());
+                println!(
+                    "    [{}/{}] jar={}, sides={:?}, args_type={}",
+                    i + 1,
+                    procs.len(),
+                    jar,
+                    sides,
+                    args_type
+                );
+                println!(
+                    "      args={}",
+                    args_str.chars().take(500).collect::<String>()
+                );
             }
         } else {
             println!("  未找到 processors 字段!");
@@ -1078,7 +1210,10 @@ pub async fn install(
         if universal_jar_idx.is_none() {
             for (i, name) in &names {
                 if name.starts_with("maven/")
-                    && name.ends_with(&format!("{}-{}-universal.jar", maven_artifact, forge_version))
+                    && name.ends_with(&format!(
+                        "{}-{}-universal.jar",
+                        maven_artifact, forge_version
+                    ))
                 {
                     universal_jar_idx = Some(*i);
                     println!("  [宽松匹配] universal jar: {}", name);
@@ -1199,9 +1334,12 @@ pub async fn install(
     let mut is_mojmap_downloaded = false;
     if let Some(data) = ip_model_mut.get("data") {
         if let Some(data_obj) = data.as_object() {
-            if let Some(mojmaps) = data_obj.get("MOJMAPS").or_else(|| data_obj.iter()
-                .find(|(k, _)| k.eq_ignore_ascii_case("MOJMAPS"))
-                .map(|(_, v)| v)) {
+            if let Some(mojmaps) = data_obj.get("MOJMAPS").or_else(|| {
+                data_obj
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case("MOJMAPS"))
+                    .map(|(_, v)| v)
+            }) {
                 let client_val = mojmaps
                     .get("Client")
                     .or_else(|| mojmaps.get("client"))
@@ -1266,10 +1404,7 @@ pub async fn install(
     let library_dir = root.join("libraries");
     variables.insert("SIDE".to_string(), "client".to_string());
     variables.insert("ROOT".to_string(), root.to_string_lossy().to_string());
-    variables.insert(
-        "MINECRAFT_VERSION".to_string(),
-        cfg.mc_version.clone(),
-    );
+    variables.insert("MINECRAFT_VERSION".to_string(), cfg.mc_version.clone());
     variables.insert(
         "INSTALLER".to_string(),
         installer_jar_full.to_string_lossy().to_string(),
@@ -1328,10 +1463,7 @@ pub async fn install(
     }
     for proc in raw_processors {
         if !proc.sides.is_empty() {
-            let has_client = proc
-                .sides
-                .iter()
-                .any(|s| s.eq_ignore_ascii_case("client"));
+            let has_client = proc.sides.iter().any(|s| s.eq_ignore_ascii_case("client"));
             if !has_client {
                 continue;
             }
@@ -1494,8 +1626,14 @@ pub async fn install(
                         } else {
                             rel
                         };
-                        urls.push(format!("https://maven.neoforged.net/releases/{}", neoforge_rel));
-                        urls.push(format!("https://bmclapi2.bangbang93.com/maven/{}", neoforge_rel));
+                        urls.push(format!(
+                            "https://maven.neoforged.net/releases/{}",
+                            neoforge_rel
+                        ));
+                        urls.push(format!(
+                            "https://bmclapi2.bangbang93.com/maven/{}",
+                            neoforge_rel
+                        ));
                     }
                 }
             }
@@ -1578,7 +1716,11 @@ pub async fn install(
         cmd.current_dir(root);
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
-        println!("  Java: {} -cp \"...\" {} <args...>", cfg.java_executable_path.display(), main_class);
+        println!(
+            "  Java: {} -cp \"...\" {} <args...>",
+            cfg.java_executable_path.display(),
+            main_class
+        );
         for (i, a) in args.iter().enumerate() {
             println!("    Arg[{}]: {}", i, a);
         }
@@ -1594,7 +1736,13 @@ pub async fn install(
             fs::write(&log_path, stdout.as_bytes()).ok();
             println!(
                 "  stdout (last): {}",
-                stdout.lines().last().unwrap_or("").chars().take(80).collect::<String>()
+                stdout
+                    .lines()
+                    .last()
+                    .unwrap_or("")
+                    .chars()
+                    .take(80)
+                    .collect::<String>()
             );
         }
         if !stderr.trim().is_empty() {
@@ -1602,7 +1750,13 @@ pub async fn install(
             fs::write(&err_path, stderr.as_bytes()).ok();
             eprintln!(
                 "  stderr (first): {}",
-                stderr.lines().next().unwrap_or("").chars().take(80).collect::<String>()
+                stderr
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .chars()
+                    .take(80)
+                    .collect::<String>()
             );
         }
         if !output.status.success() {
@@ -1616,11 +1770,7 @@ pub async fn install(
                 stderr
             );
         }
-        println!(
-            "[Processor {}/{}] ✓ 成功",
-            idx + 1,
-            proc_list.len()
-        );
+        println!("[Processor {}/{}] ✓ 成功", idx + 1, proc_list.len());
     }
     // 确保 options.txt 存在并设置语言为中文
     let versions_dir = root.join("versions").join(&id);

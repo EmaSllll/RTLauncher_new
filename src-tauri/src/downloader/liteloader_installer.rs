@@ -17,17 +17,17 @@ const LITELOADER_VERSIONS_URL: &str = "https://dl.liteloader.com/versions/versio
 /// 单个库的定义
 #[derive(Debug, Clone)]
 struct LibraryDef {
-    name: String,           // maven 格式：group:artifact:version
+    name: String,             // maven 格式：group:artifact:version
     repo_url: Option<String>, // 自定义仓库 URL（空 = 用默认）
 }
 
 #[derive(Debug, Clone)]
 struct LiteLoaderInfo {
-    file: String,           // e.g. "liteloader-1.12.2-SNAPSHOT.jar"
-    version: String,        // e.g. "1.12.2-SNAPSHOT"
-    tweak_class: String,    // e.g. "com.mumfrey.liteloader.launch.LiteLoaderTweaker"
+    file: String,               // e.g. "liteloader-1.12.2-SNAPSHOT.jar"
+    version: String,            // e.g. "1.12.2-SNAPSHOT"
+    tweak_class: String,        // e.g. "com.mumfrey.liteloader.launch.LiteLoaderTweaker"
     libraries: Vec<LibraryDef>, // 依赖的库，包含 section 级和 artifact 级
-    repo_url: String,       // 主 Maven repo URL
+    repo_url: String,           // 主 Maven repo URL
 }
 
 /// 从官方 versions.json 获取指定 MC 版本可用的 LiteLoader 子版本列表
@@ -43,7 +43,10 @@ async fn fetch_versions_from_json(mc_version: &str) -> Result<Vec<String>> {
         .await
         .context("请求 LiteLoader versions.json 失败")?;
     if !resp.status().is_success() {
-        bail!("请求 LiteLoader versions.json 失败，状态码: {}", resp.status());
+        bail!(
+            "请求 LiteLoader versions.json 失败，状态码: {}",
+            resp.status()
+        );
     }
     let text = resp.text().await.context("读取 versions.json 失败")?;
     let root: Value = serde_json::from_str(&text).context("解析 versions.json 失败")?;
@@ -113,7 +116,10 @@ fn parse_library_entries(libs_arr: &[Value]) -> Vec<LibraryDef> {
     let mut result: Vec<LibraryDef> = Vec::new();
     for lib in libs_arr {
         if let Some(name) = lib.get("name").and_then(|v| v.as_str()) {
-            let url = lib.get("url").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let url = lib
+                .get("url")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
             result.push(LibraryDef {
                 name: name.to_string(),
                 repo_url: url,
@@ -135,7 +141,10 @@ async fn fetch_liteloader_info(mc_version: &str, lite_version: &str) -> Result<L
         .await
         .context("请求 LiteLoader versions.json 失败")?;
     if !resp.status().is_success() {
-        bail!("请求 LiteLoader versions.json 失败，状态码: {}", resp.status());
+        bail!(
+            "请求 LiteLoader versions.json 失败，状态码: {}",
+            resp.status()
+        );
     }
     let text = resp.text().await.context("读取 versions.json 失败")?;
     let root: Value = serde_json::from_str(&text).context("解析 versions.json 失败")?;
@@ -200,9 +209,8 @@ async fn fetch_liteloader_info(mc_version: &str, lite_version: &str) -> Result<L
         }
     }
 
-    let info_obj = info_obj.ok_or_else(|| {
-        anyhow!("versions.json 中未找到 LiteLoader 版本 {}", lite_version)
-    })?;
+    let info_obj = info_obj
+        .ok_or_else(|| anyhow!("versions.json 中未找到 LiteLoader 版本 {}", lite_version))?;
 
     // 解析 tweakClass
     let tweak_class = info_obj
@@ -309,16 +317,25 @@ async fn resolve_snapshot_jar_name(
                 Err(_) => return Ok(None),
             };
             // 查找 <timestamp> 和 <buildNumber>
-            let ts = text.find("<timestamp>")
-                .and_then(|i| text[i + 11..].find("</timestamp>").map(|j| text[i + 11..i + 11 + j].trim().to_string()));
-            let bn = text.find("<buildNumber>")
-                .and_then(|i| text[i + 13..].find("</buildNumber>").map(|j| text[i + 13..i + 13 + j].trim().to_string()));
+            let ts = text.find("<timestamp>").and_then(|i| {
+                text[i + 11..]
+                    .find("</timestamp>")
+                    .map(|j| text[i + 11..i + 11 + j].trim().to_string())
+            });
+            let bn = text.find("<buildNumber>").and_then(|i| {
+                text[i + 13..]
+                    .find("</buildNumber>")
+                    .map(|j| text[i + 13..i + 13 + j].trim().to_string())
+            });
 
             match (ts, bn) {
                 (Some(ts_val), Some(bn_val)) => {
                     let base = version.trim_end_matches("-SNAPSHOT");
                     let full_jar = format!("{}-{}-{}-{}.jar", artifact, base, ts_val, bn_val);
-                    println!("[LiteLoader] snapshot 解析: timestamp={}, buildNumber={}", ts_val, bn_val);
+                    println!(
+                        "[LiteLoader] snapshot 解析: timestamp={}, buildNumber={}",
+                        ts_val, bn_val
+                    );
                     return Ok(Some(full_jar));
                 }
                 _ => {}
@@ -348,10 +365,10 @@ fn get_runtime_jar_urls(mc_version: &str, file_name: &str) -> Vec<String> {
 /// 单个库的实际文件信息（用于生成 version.json 的 downloads.artifact）
 #[derive(Debug, Clone)]
 struct ResolvedLibrary {
-    name: String,           // maven 坐标
-    repo_url: String,       // 下载仓库 URL
-    jar_file_name: String,  // 实际 jar 文件名（SNAPSHOT 已解析为实际文件名）
-    jar_url: String,        // 完整下载 URL
+    name: String,          // maven 坐标
+    repo_url: String,      // 下载仓库 URL
+    jar_file_name: String, // 实际 jar 文件名（SNAPSHOT 已解析为实际文件名）
+    jar_url: String,       // 完整下载 URL
 }
 
 impl ResolvedLibrary {
@@ -412,13 +429,8 @@ async fn resolve_all_library_filenames(
             }
             // fallback: 尝试 lite 主 repo
             if resolved_name.is_none() {
-                if let Ok(Some(name)) = resolve_snapshot_jar_name(
-                    &info.repo_url,
-                    &group,
-                    &artifact,
-                    &version,
-                )
-                .await
+                if let Ok(Some(name)) =
+                    resolve_snapshot_jar_name(&info.repo_url, &group, &artifact, &version).await
                 {
                     resolved_name = Some(name);
                 }
@@ -467,11 +479,7 @@ async fn resolve_all_library_filenames(
         );
         // LiteLoader 的 file 字段已经是实际文件名
         let jar_file_name = info.file.clone();
-        let jar_url = format!(
-            "{}{}",
-            lite_repo_url.trim_end_matches('/'),
-            jar_file_name
-        );
+        let jar_url = format!("{}{}", lite_repo_url.trim_end_matches('/'), jar_file_name);
         resolved.push(ResolvedLibrary {
             name,
             repo_url: lite_repo_url,
@@ -480,10 +488,7 @@ async fn resolve_all_library_filenames(
         });
     }
 
-    println!(
-        "[LiteLoader] 已解析 {} 个库的实际文件名:",
-        resolved.len()
-    );
+    println!("[LiteLoader] 已解析 {} 个库的实际文件名:", resolved.len());
     for r in &resolved {
         println!("  - {} -> {}", r.name, r.jar_file_name);
     }
@@ -555,8 +560,14 @@ async fn download_all_libraries(
         let (group, artifact, version, _) = parse_maven_coords(&r.name)?;
         if r.name.starts_with("net.minecraft") {
             let jar_name = format!("{}-{}.jar", artifact, version);
-            urls.push(format!("https://libraries.minecraft.net/{}/{}/{}/{}", group, artifact, version, jar_name));
-            urls.push(format!("https://bmclapi2.bangbang93.com/maven/{}/{}/{}/{}", group, artifact, version, jar_name));
+            urls.push(format!(
+                "https://libraries.minecraft.net/{}/{}/{}/{}",
+                group, artifact, version, jar_name
+            ));
+            urls.push(format!(
+                "https://bmclapi2.bangbang93.com/maven/{}/{}/{}/{}",
+                group, artifact, version, jar_name
+            ));
         } else if r.name.starts_with("org.spongepowered") && version.contains("SNAPSHOT") {
             // SNAPSHOT: 添加常见 fallback timestamps
             let base = version.trim_end_matches("-SNAPSHOT");
@@ -598,7 +609,9 @@ async fn download_all_libraries(
 
         println!(
             "[LiteLoader] 下载: {} -> {} ({} 个源)",
-            r.name, r.jar_file_name, urls.len()
+            r.name,
+            r.jar_file_name,
+            urls.len()
         );
         for (i, url) in urls.iter().enumerate() {
             println!("  [{}/{}] {}", i + 1, urls.len(), url);
@@ -611,10 +624,7 @@ async fn download_all_libraries(
         });
     }
 
-    println!(
-        "[LiteLoader] 总共需要下载 {} 个文件",
-        tasks.len()
-    );
+    println!("[LiteLoader] 总共需要下载 {} 个文件", tasks.len());
 
     let res = concurrent_download::download_all(tasks, None).await;
     println!(
@@ -689,8 +699,8 @@ pub async fn install_liteloader(
 
     let version_json = build_version_json(mc_version, lite_version, &info, &resolved_libs);
     let json_path = versions_dir.join(format!("{}.json", version_id));
-    let json_str = serde_json::to_string_pretty(&version_json)
-        .context("序列化 version.json 失败")?;
+    let json_str =
+        serde_json::to_string_pretty(&version_json).context("序列化 version.json 失败")?;
     fs::write(&json_path, &json_str)
         .with_context(|| format!("写入 version.json 失败: {:?}", json_path))?;
     println!("[LiteLoader] version.json 已生成: {:?}", json_path);

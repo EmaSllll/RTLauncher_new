@@ -171,8 +171,16 @@ impl DynamicScheduler {
         }
         if self.throughput_samples.len() >= 2 {
             let window_bytes: u64 = self.throughput_samples.iter().map(|(_, b)| *b).sum();
-            let first_t = self.throughput_samples.front().map(|(t, _)| *t).unwrap_or(now);
-            let last_t = self.throughput_samples.back().map(|(t, _)| *t).unwrap_or(now);
+            let first_t = self
+                .throughput_samples
+                .front()
+                .map(|(t, _)| *t)
+                .unwrap_or(now);
+            let last_t = self
+                .throughput_samples
+                .back()
+                .map(|(t, _)| *t)
+                .unwrap_or(now);
             let elapsed = last_t.duration_since(first_t).as_secs_f64().max(0.5);
             self.current_throughput = (window_bytes as f64 / elapsed) as u64;
         }
@@ -292,7 +300,8 @@ impl DynamicScheduler {
     }
 
     fn mark_done(&mut self, start: u64, end: u64) {
-        self.in_flight.retain(|c| !(c.range.start == start && c.range.end == end));
+        self.in_flight
+            .retain(|c| !(c.range.start == start && c.range.end == end));
         if start == self.alloc_cursor {
             self.alloc_cursor = end + 1;
         }
@@ -330,10 +339,7 @@ impl DynamicScheduler {
     }
 
     fn total_failures(&self) -> u32 {
-        self.in_flight
-            .iter()
-            .map(|c| c.attempts)
-            .sum::<u32>()
+        self.in_flight.iter().map(|c| c.attempts).sum::<u32>()
     }
 
     fn is_done(&self) -> bool {
@@ -344,9 +350,7 @@ impl DynamicScheduler {
         if self.in_flight.is_empty() {
             return false;
         }
-        self.in_flight
-            .iter()
-            .all(|c| c.attempts >= 2)
+        self.in_flight.iter().all(|c| c.attempts >= 2)
     }
 
     fn remaining_ratio(&self) -> f64 {
@@ -393,7 +397,10 @@ impl TempFileGuard {
         }
         let part_path = self.target_path.with_extension(format!(
             "{}.part",
-            self.target_path.extension().and_then(|e| e.to_str()).unwrap_or("download")
+            self.target_path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("download")
         ));
         if part_path.exists() {
             let _ = fs::remove_file(&part_path);
@@ -411,7 +418,10 @@ impl Drop for TempFileGuard {
 }
 
 fn generate_temp_path(target: &Path) -> PathBuf {
-    let base_name = target.file_name().map(|s| s.to_string_lossy()).unwrap_or_default();
+    let base_name = target
+        .file_name()
+        .map(|s| s.to_string_lossy())
+        .unwrap_or_default();
     let parent = target.parent().unwrap_or_else(|| Path::new("."));
     parent.join(format!(".downloading_{}", base_name))
 }
@@ -441,25 +451,36 @@ pub async fn download_file(
         task.file_name.clone()
     };
     
-    println!("[Download] ═══ 开始下载: {} | URL数: {} | 整体超时: {}s ═══", 
-        file_name_for_log, task.urls.len(), overall_timeout.as_secs());
+    println!(
+        "[Download] ═══ 开始下载: {} | URL数: {} | 整体超时: {}s ═══",
+        file_name_for_log,
+        task.urls.len(),
+        overall_timeout.as_secs()
+    );
     
     let task_clone = task.clone();
     let cancel_clone = cancel.clone();
     
     let result = tokio::time::timeout(overall_timeout, async move {
         download_file_internal(&task_clone, progress_tx, cancel_clone).await
-    }).await;
+    })
+    .await;
     
     match result {
         Ok(r) => {
-            println!("[Download] ═══ 结束: {} | 总耗时: {:.1}s ═══", 
-                file_name_for_log, total_start.elapsed().as_secs_f64());
+            println!(
+                "[Download] ═══ 结束: {} | 总耗时: {:.1}s ═══",
+                file_name_for_log,
+                total_start.elapsed().as_secs_f64()
+            );
             r
         }
         Err(_) => {
-            println!("[Download] ═══ 超时: {} | 已等待超过 {}s, 清理残留文件 ═══", 
-                file_name_for_log, overall_timeout.as_secs());
+            println!(
+                "[Download] ═══ 超时: {} | 已等待超过 {}s, 清理残留文件 ═══",
+                file_name_for_log,
+                overall_timeout.as_secs()
+            );
             
             let target = task.target_dir.join(if task.file_name.is_empty() {
                 "unknown.bin"
@@ -470,7 +491,10 @@ pub async fn download_file(
             let _ = fs::remove_file(&temp_path);
             let part_path = target.with_extension(format!(
                 "{}.part",
-                target.extension().and_then(|e| e.to_str()).unwrap_or("download")
+                target
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("download")
             ));
             let _ = fs::remove_file(&part_path);
             
@@ -497,7 +521,10 @@ async fn download_file_internal(
         
         if is_cf_api_url(&first_url) {
             if let Some((pid, fid)) = extract_cf_ids(&first_url) {
-                println!("[Download] 识别为 CurseForge: pid={}, fid={}, 开始解析真实文件名...", pid, fid);
+                println!(
+                    "[Download] 识别为 CurseForge: pid={}, fid={}, 开始解析真实文件名...",
+                    pid, fid
+                );
 
                 if let Some((cf_file_name, cf_sha1, cdn_url)) =
                     resolve_cf_download_info(pid, fid).await
@@ -509,15 +536,24 @@ async fn download_file_internal(
                     if !cdn_url.is_empty() {
                         url_pool.insert(0, cdn_url.clone());
                     }
-                    println!("[Download] CurseForge 解析完成: 文件名={}, CDN={}", resolved_file_name, cdn_url);
+                    println!(
+                        "[Download] CurseForge 解析完成: 文件名={}, CDN={}",
+                        resolved_file_name, cdn_url
+                    );
                 } else {
                     // 兜底: 使用 format!("mod_{}.jar", fid)
                     let first4 = fid / 1000;
                     let last3 = fid % 1000;
-                    let fallback_cdn = format!("https://edge.forgecdn.net/files/{}/{:03}/mod.jar", first4, last3);
+                    let fallback_cdn = format!(
+                        "https://edge.forgecdn.net/files/{}/{:03}/mod.jar",
+                        first4, last3
+                    );
                     url_pool.insert(0, fallback_cdn);
                     resolved_file_name = format!("mod_{}.jar", fid);
-                    println!("[Download] CurseForge 解析失败, 使用兜底文件名: {}", resolved_file_name);
+                    println!(
+                        "[Download] CurseForge 解析失败, 使用兜底文件名: {}",
+                        resolved_file_name
+                    );
                 }
             }
         }
@@ -550,7 +586,12 @@ async fn download_file_internal(
     let target = task.target_dir.join(&resolved_file_name);
     let cancel_arc = cancel.unwrap_or_else(|| Arc::new(AtomicBool::new(false)));
     
-    println!("[Download] 开始: {} | 目标: {} | URL数: {}", resolved_file_name, target.display(), url_pool.len());
+    println!(
+        "[Download] 开始: {} | 目标: {} | URL数: {}",
+        resolved_file_name,
+        target.display(),
+        url_pool.len()
+    );
     for (i, u) in url_pool.iter().enumerate() {
         println!("[Download]   [{}] {}", i, u);
     }
@@ -567,7 +608,10 @@ async fn download_file_internal(
         if let Some(sha) = &resolved_sha1 {
             if verify_sha1(&target, sha) {
                 let size = fs::metadata(&target).map(|m| m.len()).unwrap_or(0);
-                println!("[Download] ✓ 已存在 (SHA1匹配): {} ({} bytes)", resolved_file_name, size);
+                println!(
+                    "[Download] ✓ 已存在 (SHA1匹配): {} ({} bytes)",
+                    resolved_file_name, size
+                );
                 return SingleDownloadResult::Success {
                     path: target,
                     used_url: "(已存在)".to_string(),
@@ -575,11 +619,17 @@ async fn download_file_internal(
                     size,
                 };
             }
-            println!("[Download] ! 文件存在但SHA1不匹配, 重新下载: {}", resolved_file_name);
+            println!(
+                "[Download] ! 文件存在但SHA1不匹配, 重新下载: {}",
+                resolved_file_name
+            );
             let _ = fs::remove_file(&target);
         } else {
             let size = fs::metadata(&target).map(|m| m.len()).unwrap_or(0);
-            println!("[Download] ✓ 已存在 (无SHA1校验): {} ({} bytes)", resolved_file_name, size);
+            println!(
+                "[Download] ✓ 已存在 (无SHA1校验): {} ({} bytes)",
+                resolved_file_name, size
+            );
             return SingleDownloadResult::Success {
                 path: target,
                 used_url: "(已存在)".to_string(),
@@ -604,11 +654,25 @@ async fn download_file_internal(
         let url = url_pool[url_idx % url_pool.len()].clone();
         urls_tried.push(url.clone());
         
-        println!("[Download] [{}] 尝试URL[{}]: {} | 文件: {}", 
-            attempt + 1, url_idx % url_pool.len(), url, resolved_file_name);
+        println!(
+            "[Download] [{}] 尝试URL[{}]: {} | 文件: {}",
+            attempt + 1,
+            url_idx % url_pool.len(),
+            url,
+            resolved_file_name
+        );
         url_idx += 1;
         
-        match try_download_to_temp(&url, &temp_path, &target, &resolved_sha1, progress_tx.clone(), cancel_arc.clone()).await {
+        match try_download_to_temp(
+            &url,
+            &temp_path,
+            &target,
+            &resolved_sha1,
+            progress_tx.clone(),
+            cancel_arc.clone(),
+        )
+        .await
+        {
             Ok(()) => {
                 if let Err(e) = finalize_download(&temp_path, &target) {
                     last_err = Some(format!("文件最终化失败: {}", e));
@@ -616,14 +680,20 @@ async fn download_file_internal(
                     let _ = fs::remove_file(&temp_path);
                     let part_path = target.with_extension(format!(
                         "{}.part",
-                        target.extension().and_then(|e| e.to_str()).unwrap_or("download")
+                        target
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("download")
                     ));
                     let _ = fs::remove_file(&part_path);
                     continue;
                 }
                 
                 let size = fs::metadata(&target).map(|m| m.len()).unwrap_or(0);
-                println!("[Download] ✓ 成功: {} ({} bytes) | URL: {}", resolved_file_name, size, url);
+                println!(
+                    "[Download] ✓ 成功: {} ({} bytes) | URL: {}",
+                    resolved_file_name, size, url
+                );
                 return SingleDownloadResult::Success {
                     path: target,
                     used_url: url,
@@ -637,18 +707,28 @@ async fn download_file_internal(
                 let _ = fs::remove_file(&temp_path);
                 let part_path = target.with_extension(format!(
                     "{}.part",
-                    target.extension().and_then(|e| e.to_str()).unwrap_or("download")
+                    target
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("download")
                 ));
                 let _ = fs::remove_file(&part_path);
             }
         }
     }
     
-    println!("[Download] ✗ 全部URL失败: {} | 最后错误: {}", resolved_file_name, last_err.as_ref().unwrap_or(&String::new()));
+    println!(
+        "[Download] ✗ 全部URL失败: {} | 最后错误: {}",
+        resolved_file_name,
+        last_err.as_ref().unwrap_or(&String::new())
+    );
     let _ = fs::remove_file(&temp_path);
     let part_path = target.with_extension(format!(
         "{}.part",
-        target.extension().and_then(|e| e.to_str()).unwrap_or("download")
+        target
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("download")
     ));
     let _ = fs::remove_file(&part_path);
     
@@ -670,14 +750,29 @@ async fn try_download_to_temp(
     
     // CurseForge: 尝试多个 CDN 备用地址
     let mut curseforge_urls: Vec<String> = Vec::new();
-    if url.contains("curseforge.com") || url.contains("edge.forgecdn.net") || url.contains("files-cf.curseforge.com") {
+    if url.contains("curseforge.com")
+        || url.contains("edge.forgecdn.net")
+        || url.contains("files-cf.curseforge.com")
+    {
         if let Some((pid, fid)) = extract_cf_ids(url) {
             let first4 = fid / 1000;
             let last3 = fid % 1000;
-            curseforge_urls.push(format!("https://edge.forgecdn.net/files/{}/{:03}/", first4, last3));
-            curseforge_urls.push(format!("https://files-cf.curseforge.com/file/curseforge-files/{}/{:03}/", first4, last3));
-            curseforge_urls.push(format!("https://www.curseforge.com/minecraft/mc-mods/{}/download/{}/file", pid, fid));
-            curseforge_urls.push(format!("https://www.curseforge.com/api/v1/mods/{}/files/{}/download", pid, fid));
+            curseforge_urls.push(format!(
+                "https://edge.forgecdn.net/files/{}/{:03}/",
+                first4, last3
+            ));
+            curseforge_urls.push(format!(
+                "https://files-cf.curseforge.com/file/curseforge-files/{}/{:03}/",
+                first4, last3
+            ));
+            curseforge_urls.push(format!(
+                "https://www.curseforge.com/minecraft/mc-mods/{}/download/{}/file",
+                pid, fid
+            ));
+            curseforge_urls.push(format!(
+                "https://www.curseforge.com/api/v1/mods/{}/files/{}/download",
+                pid, fid
+            ));
         }
     }
     
@@ -689,14 +784,23 @@ async fn try_download_to_temp(
                 let first4 = fid / 1000;
                 let last3 = fid % 1000;
                 curseforge_urls.push(cdn);
-                curseforge_urls.push(format!("https://edge.forgecdn.net/files/{}/{:03}/", first4, last3));
-                curseforge_urls.push(format!("https://files-cf.curseforge.com/file/curseforge-files/{}/{:03}/", first4, last3));
+                curseforge_urls.push(format!(
+                    "https://edge.forgecdn.net/files/{}/{:03}/",
+                    first4, last3
+                ));
+                curseforge_urls.push(format!(
+                    "https://files-cf.curseforge.com/file/curseforge-files/{}/{:03}/",
+                    first4, last3
+                ));
             }
         }
     }
     
     // 处理 Modrinth CDN 重定向
-    if url_to_use.contains("cdn.modrinth.com") || url_to_use.contains("github.com") || url_to_use.contains("//cdn") {
+    if url_to_use.contains("cdn.modrinth.com")
+        || url_to_use.contains("github.com")
+        || url_to_use.contains("//cdn")
+    {
         if let Ok(resolved) = crate::http_client::resolve_redirect_url(&url_to_use).await {
             if resolved != url_to_use {
                 println!("[Download]   解析重定向: {} -> {}", url_to_use, resolved);
@@ -708,7 +812,15 @@ async fn try_download_to_temp(
     // Modrinth CDN
     if url_to_use.contains("cdn.modrinth.com") {
         println!("[Download]   使用浏览器风格下载 (Modrinth CDN)");
-        return browser_style_download(&url_to_use, temp_path, sha1, progress_tx, cancel, "modrinth").await;
+        return browser_style_download(
+            &url_to_use,
+            temp_path,
+            sha1,
+            progress_tx,
+            cancel,
+            "modrinth",
+        )
+        .await;
     }
     
     // CurseForge 多 CDN 容错：逐个尝试不同的 CDN 地址
@@ -716,7 +828,16 @@ async fn try_download_to_temp(
         let mut last_err: Option<String> = None;
         for (i, cdn_url) in curseforge_urls.iter().enumerate() {
             println!("[Download]   尝试 CurseForge CDN [{}]: {}", i + 1, cdn_url);
-            match browser_style_download(cdn_url, temp_path, sha1, progress_tx.clone(), cancel.clone(), "curseforge").await {
+            match browser_style_download(
+                cdn_url,
+                temp_path,
+                sha1,
+                progress_tx.clone(),
+                cancel.clone(),
+                "curseforge",
+            )
+            .await
+            {
                 Ok(()) => return Ok(()),
                 Err(e) => {
                     last_err = Some(e.to_string());
@@ -725,14 +846,24 @@ async fn try_download_to_temp(
                 }
             }
         }
-        return Err(anyhow!("所有 CurseForge CDN 均失败: {}", last_err.unwrap_or_else(|| "未知错误".to_string())));
+        return Err(anyhow!(
+            "所有 CurseForge CDN 均失败: {}",
+            last_err.unwrap_or_else(|| "未知错误".to_string())
+        ));
     }
     
     if url_to_use.contains("curseforge.com") || url_to_use.contains("edge.forgecdn.net") {
         println!("[Download]   使用浏览器风格下载 (CurseForge)");
-        return browser_style_download(&url_to_use, temp_path, sha1, progress_tx, cancel, "curseforge").await;
+        return browser_style_download(
+            &url_to_use,
+            temp_path,
+            sha1,
+            progress_tx,
+            cancel,
+            "curseforge",
+        )
+        .await;
     }
-
 
     let is_maven_repo = url_to_use.contains("maven.neoforged.net/releases/")
         || url_to_use.contains("files.minecraftforge.net/maven/")
@@ -742,16 +873,23 @@ async fn try_download_to_temp(
     if is_maven_repo {
         println!("[Download]   使用单线程下载 (Maven 仓库)");
         let client = crate::http_client::shared_client().await;
-        return single_threaded_download(&client, &url_to_use, temp_path, progress_tx, cancel).await;
+        return single_threaded_download(&client, &url_to_use, temp_path, progress_tx, cancel)
+            .await;
     }
 
     let client = crate::http_client::shared_client().await;
     let first_range_end = (MEDIUM_CHUNK - 1).min(u32::MAX as u64);
     
-    println!("[Download]   探测 Range请求: bytes=0-{} | URL: {}", first_range_end, url_to_use);
+    println!(
+        "[Download]   探测 Range请求: bytes=0-{} | URL: {}",
+        first_range_end, url_to_use
+    );
     let probe_resp = client
         .get(&url_to_use)
-        .header(reqwest::header::RANGE, format!("bytes=0-{}", first_range_end))
+        .header(
+            reqwest::header::RANGE,
+            format!("bytes=0-{}", first_range_end),
+        )
         .timeout(Duration::from_secs(10))
         .send()
         .await;
@@ -760,7 +898,10 @@ async fn try_download_to_temp(
         Ok(resp) => {
             let status = resp.status().as_u16();
             let final_url = resp.url().to_string();
-            println!("[Download]   探测响应: HTTP {} | 最终URL: {}", status, final_url);
+            println!(
+                "[Download]   探测响应: HTTP {} | 最终URL: {}",
+                status, final_url
+            );
             
             if status == 206 {
                 let size = resp
@@ -775,25 +916,53 @@ async fn try_download_to_temp(
                 
                 if size > 0 && body.is_empty() {
                     println!("[Download]   ! Range请求返回空body，回退到单线程下载");
-                    return single_threaded_download(&client, &url_to_use, temp_path, progress_tx, cancel).await;
+                    return single_threaded_download(
+                        &client,
+                        &url_to_use,
+                        temp_path,
+                        progress_tx,
+                        cancel,
+                    )
+                    .await;
                 }
                 (size, Some(body.to_vec()))
             } else if status == 200 {
                 let size = resp.content_length().unwrap_or(0);
-                println!("[Download]   ! 不支持Range (HTTP 200) | 文件大小: {} bytes | 改用单线程下载", size);
+                println!(
+                    "[Download]   ! 不支持Range (HTTP 200) | 文件大小: {} bytes | 改用单线程下载",
+                    size
+                );
                 drop(resp);
-                return single_threaded_download(&client, &url_to_use, temp_path, progress_tx, cancel).await;
+                return single_threaded_download(
+                    &client,
+                    &url_to_use,
+                    temp_path,
+                    progress_tx,
+                    cancel,
+                )
+                .await;
             } else if (300..400).contains(&status) {
-                println!("[Download]   ! 重定向响应 (HTTP {})，改用单线程下载", status);
+                println!(
+                    "[Download]   ! 重定向响应 (HTTP {})，改用单线程下载",
+                    status
+                );
                 drop(resp);
-                return single_threaded_download(&client, &url_to_use, temp_path, progress_tx, cancel).await;
+                return single_threaded_download(
+                    &client,
+                    &url_to_use,
+                    temp_path,
+                    progress_tx,
+                    cancel,
+                )
+                .await;
             } else {
                 return Err(anyhow!("HTTP {}", status));
             }
         }
         Err(e) => {
             println!("[Download]   ✗ 探测请求失败: {} | 改用单线程下载", e);
-            return single_threaded_download(&client, &url_to_use, temp_path, progress_tx, cancel).await;
+            return single_threaded_download(&client, &url_to_use, temp_path, progress_tx, cancel)
+                .await;
         }
     };
     
@@ -817,12 +986,17 @@ async fn try_download_to_temp(
             }
         }
         println!("[Download]   走单线程下载");
-        return single_threaded_download(&client, &url_to_use, temp_path, progress_tx, cancel).await;
+        return single_threaded_download(&client, &url_to_use, temp_path, progress_tx, cancel)
+            .await;
     }
     
     if total_size < CHUNKED_THRESHOLD {
-        println!("[Download]   文件小于 CHUNKED_THRESHOLD ({} bytes), 走单线程下载", total_size);
-        return single_threaded_download(&client, &url_to_use, temp_path, progress_tx, cancel).await;
+        println!(
+            "[Download]   文件小于 CHUNKED_THRESHOLD ({} bytes), 走单线程下载",
+            total_size
+        );
+        return single_threaded_download(&client, &url_to_use, temp_path, progress_tx, cancel)
+            .await;
     }
     
     if let Err(e) = preallocate_file(temp_path, total_size) {
@@ -830,7 +1004,10 @@ async fn try_download_to_temp(
     }
     
     let bw = workers_for_size(total_size);
-    println!("[Download]   分片模式下载 | 总大小: {} bytes | base_workers: {}", total_size, bw);
+    println!(
+        "[Download]   分片模式下载 | 总大小: {} bytes | base_workers: {}",
+        total_size, bw
+    );
     
     let (writer_tx, mut writer_rx): (
         mpsc::UnboundedSender<(u64, Vec<u8>)>,
@@ -948,7 +1125,9 @@ async fn try_download_to_temp(
                     s.is_done()
                 };
                 
-                if done_sched && Instant::now().duration_since(last_report) > Duration::from_millis(400) {
+                if done_sched
+                    && Instant::now().duration_since(last_report) > Duration::from_millis(400)
+                {
                     break;
                 }
                 
@@ -995,7 +1174,9 @@ async fn try_download_to_temp(
         loop {
             tokio::time::sleep(Duration::from_millis(1500)).await;
             
-            if state_clone.cancel.load(Ordering::SeqCst) || state_clone.failed.load(Ordering::SeqCst) {
+            if state_clone.cancel.load(Ordering::SeqCst)
+                || state_clone.failed.load(Ordering::SeqCst)
+            {
                 break;
             }
             
@@ -1028,7 +1209,8 @@ async fn try_download_to_temp(
                 (
                     s.in_flight_count(),
                     s.alloc_cursor >= s.total_size,
-                    s.total_size.saturating_sub(s.total_downloaded.load(Ordering::Relaxed)),
+                    s.total_size
+                        .saturating_sub(s.total_downloaded.load(Ordering::Relaxed)),
                 )
             };
             
@@ -1113,11 +1295,7 @@ async fn try_download_to_temp(
     
     let actual = state.total_downloaded.load(Ordering::Relaxed);
     if actual < state.total_size {
-        return Err(anyhow!(
-            "下载未完成: {}/{} 字节",
-            actual,
-            state.total_size
-        ));
+        return Err(anyhow!("下载未完成: {}/{} 字节", actual, state.total_size));
     }
     
     if let Some(sha) = sha1 {
@@ -1203,8 +1381,10 @@ async fn worker_loop(
             let elapsed = start.elapsed().as_secs();
             let done_bytes = state.total_downloaded.load(Ordering::Relaxed);
             let pct = done_bytes as f64 / state.total_size as f64 * 100.0;
-            println!("[Download]   worker 活跃: 已运行 {}s, 进度 {:.1}% ({}/{} bytes)",
-                elapsed, pct, done_bytes, state.total_size);
+            println!(
+                "[Download]   worker 活跃: 已运行 {}s, 进度 {:.1}% ({}/{} bytes)",
+                elapsed, pct, done_bytes, state.total_size
+            );
         }
         
         match download_chunk(&client, &url, &writer, range, &state, &chunk).await {
@@ -1212,13 +1392,25 @@ async fn worker_loop(
                 let mut s = scheduler.lock().await;
                 s.mark_done(range.start, range.end);
                 let elapsed = chunk_start.elapsed().as_secs_f64();
-                println!("[Download]     ✓ chunk {}-{} 完成 (尝试 {}次, {:.1}s, {} bytes)",
-                    range.start, range.end, attempt + 1, elapsed, range.size());
+                println!(
+                    "[Download]     ✓ chunk {}-{} 完成 (尝试 {}次, {:.1}s, {} bytes)",
+                    range.start,
+                    range.end,
+                    attempt + 1,
+                    elapsed,
+                    range.size()
+                );
             }
             Err(e) => {
                 let elapsed = chunk_start.elapsed().as_secs_f64();
-                println!("[Download]     ✗ chunk {}-{} 失败 (尝试 {}次, {:.1}s, 错误: {})",
-                    range.start, range.end, attempt + 1, elapsed, e);
+                println!(
+                    "[Download]     ✗ chunk {}-{} 失败 (尝试 {}次, {:.1}s, 错误: {})",
+                    range.start,
+                    range.end,
+                    attempt + 1,
+                    elapsed,
+                    e
+                );
                 let mut s = scheduler.lock().await;
                 s.mark_chunk_failed(range.start, range.end);
             }
@@ -1288,42 +1480,48 @@ async fn download_chunk(
                     return Err(anyhow!("chunk 读取超时 (连续 {} 次无数据)", MAX_ERRORS));
                 }
                 let sleep_ms = 200u64 + (error_count as u64) * 100;
-                println!("[Download]     ! chunk {}-{} 读取超时 ({}/{}), 等待 {}ms...",
-                    range.start, range.end, error_count, MAX_ERRORS, sleep_ms);
+                println!(
+                    "[Download]     ! chunk {}-{} 读取超时 ({}/{}), 等待 {}ms...",
+                    range.start, range.end, error_count, MAX_ERRORS, sleep_ms
+                );
                 tokio::time::sleep(Duration::from_millis(sleep_ms)).await;
                 continue;
             }
             Ok(None) => break,
-            Ok(Some(chunk_data)) => {
-                match chunk_data {
-                    Ok(data) => {
-                        error_count = 0;
-                        if data.is_empty() { continue; }
-                        let data_len = data.len() as u64;
-                        buffer.extend_from_slice(&data);
-                        offset += data_len;
-                        downloaded_meter.fetch_add(data_len, Ordering::Relaxed);
-                        state.total_downloaded.fetch_add(data_len, Ordering::Relaxed);
-                        if offset > last_offset {
-                            last_offset = offset;
-                            last_bytes_time = Instant::now();
-                        } else if last_bytes_time.elapsed() > read_timeout * 2 {
-                            return Err(anyhow!("chunk 下载停滞"));
-                        }
-                    }
-                    Err(e) => {
-                        error_count += 1;
-                        if error_count > MAX_ERRORS {
-                            return Err(anyhow!("chunk 读取错误 (连续 {} 次): {}", MAX_ERRORS, e));
-                        }
-                        let sleep_ms = 200u64 + (error_count as u64) * 100;
-                        println!("[Download]     ! chunk {}-{} 错误 ({}/{}): {}, 等待 {}ms...",
-                            range.start, range.end, error_count, MAX_ERRORS, e, sleep_ms);
-                        tokio::time::sleep(Duration::from_millis(sleep_ms)).await;
+            Ok(Some(chunk_data)) => match chunk_data {
+                Ok(data) => {
+                    error_count = 0;
+                    if data.is_empty() {
                         continue;
                     }
+                    let data_len = data.len() as u64;
+                    buffer.extend_from_slice(&data);
+                    offset += data_len;
+                    downloaded_meter.fetch_add(data_len, Ordering::Relaxed);
+                    state
+                        .total_downloaded
+                        .fetch_add(data_len, Ordering::Relaxed);
+                    if offset > last_offset {
+                        last_offset = offset;
+                        last_bytes_time = Instant::now();
+                    } else if last_bytes_time.elapsed() > read_timeout * 2 {
+                        return Err(anyhow!("chunk 下载停滞"));
+                    }
                 }
-            }
+                Err(e) => {
+                    error_count += 1;
+                    if error_count > MAX_ERRORS {
+                        return Err(anyhow!("chunk 读取错误 (连续 {} 次): {}", MAX_ERRORS, e));
+                    }
+                    let sleep_ms = 200u64 + (error_count as u64) * 100;
+                    println!(
+                        "[Download]     ! chunk {}-{} 错误 ({}/{}): {}, 等待 {}ms...",
+                        range.start, range.end, error_count, MAX_ERRORS, e, sleep_ms
+                    );
+                    tokio::time::sleep(Duration::from_millis(sleep_ms)).await;
+                    continue;
+                }
+            },
         }
         
         if last_progress_time.elapsed() > Duration::from_millis(5000) {
@@ -1400,7 +1598,8 @@ async fn single_threaded_download(
     const READ_TIMEOUT_SECS: u64 = 90;
     
     loop {
-        let chunk_with_timeout = tokio::time::timeout(Duration::from_secs(READ_TIMEOUT_SECS), stream.next()).await;
+        let chunk_with_timeout =
+            tokio::time::timeout(Duration::from_secs(READ_TIMEOUT_SECS), stream.next()).await;
         
         match chunk_with_timeout {
             Err(_) => {
@@ -1409,8 +1608,10 @@ async fn single_threaded_download(
                     return Err(anyhow!("读取超时 (连续 {} 次无数据)", MAX_CHUNK_TIMEOUTS));
                 }
                 let sleep_ms = 300u64 + (chunk_timeout_count as u64) * 100;
-                println!("[Download]   ! chunk {}s无响应 ({}/{}), 等待 {}ms 后继续...", 
-                    READ_TIMEOUT_SECS, chunk_timeout_count, MAX_CHUNK_TIMEOUTS, sleep_ms);
+                println!(
+                    "[Download]   ! chunk {}s无响应 ({}/{}), 等待 {}ms 后继续...",
+                    READ_TIMEOUT_SECS, chunk_timeout_count, MAX_CHUNK_TIMEOUTS, sleep_ms
+                );
                 tokio::time::sleep(Duration::from_millis(sleep_ms)).await;
                 continue;
             }
@@ -1429,11 +1630,17 @@ async fn single_threaded_download(
                     Err(e) => {
                         chunk_error_count += 1;
                         if chunk_error_count > MAX_CHUNK_ERRORS {
-                            return Err(anyhow!("读取字节流失败 (连续 {} 次错误): {}", MAX_CHUNK_ERRORS, e));
+                            return Err(anyhow!(
+                                "读取字节流失败 (连续 {} 次错误): {}",
+                                MAX_CHUNK_ERRORS,
+                                e
+                            ));
                         }
                         let sleep_ms = 300u64 + (chunk_error_count as u64) * 150;
-                        println!("[Download]   ! chunk错误 ({}/{}): {}, 等待 {}ms 后继续...", 
-                            chunk_error_count, MAX_CHUNK_ERRORS, e, sleep_ms);
+                        println!(
+                            "[Download]   ! chunk错误 ({}/{}): {}, 等待 {}ms 后继续...",
+                            chunk_error_count, MAX_CHUNK_ERRORS, e, sleep_ms
+                        );
                         tokio::time::sleep(Duration::from_millis(sleep_ms)).await;
                         continue;
                     }
@@ -1455,11 +1662,18 @@ async fn single_threaded_download(
                         let _ = tx.try_send((received, total_size));
                     }
                     
-                    let pct = if total_size > 0 { received as f64 / total_size as f64 * 100.0 } else { 0.0 };
-                    let speed_kb = received as f64 / 1024.0 / start.elapsed().as_secs_f64().max(0.1);
+                    let pct = if total_size > 0 {
+                        received as f64 / total_size as f64 * 100.0
+                    } else {
+                        0.0
+                    };
+                    let speed_kb =
+                        received as f64 / 1024.0 / start.elapsed().as_secs_f64().max(0.1);
                     
-                    println!("[Download]     ↓ 单线程进度: {:.1}% ({}/{} bytes) | 速度: {:.0} KB/s",
-                        pct, received, total_size, speed_kb);
+                    println!(
+                        "[Download]     ↓ 单线程进度: {:.1}% ({}/{} bytes) | 速度: {:.0} KB/s",
+                        pct, received, total_size, speed_kb
+                    );
                     
                     reporter_tick = Instant::now();
                 }
@@ -1478,7 +1692,11 @@ async fn single_threaded_download(
     drop(file);
     
     if total_size > 0 && received != total_size {
-        return Err(anyhow!("大小不匹配: 期望 {}, 实际 {}", total_size, received));
+        return Err(anyhow!(
+            "大小不匹配: 期望 {}, 实际 {}",
+            total_size,
+            received
+        ));
     }
     
     println!("[Download]   ✓ 单线程下载完成: {} bytes", received);
@@ -1503,7 +1721,8 @@ async fn browser_style_download(
         .build()
         .with_context(|| "创建浏览器风格客户端失败")?;
     
-    let mut request = client.get(url)
+    let mut request = client
+        .get(url)
         .header("Accept", "*/*")
         .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
         .header("Accept-Encoding", "identity")
@@ -1516,8 +1735,7 @@ async fn browser_style_download(
         "modrinth" => request
             .header("Referer", "https://modrinth.com/")
             .header("Origin", "https://modrinth.com"),
-        _ => request
-            .header("Referer", "https://www.google.com/"),
+        _ => request.header("Referer", "https://www.google.com/"),
     };
     
     let resp = request
@@ -1550,7 +1768,8 @@ async fn browser_style_download(
     const READ_TIMEOUT_SECS: u64 = 120;
     
     loop {
-        let chunk_with_timeout = tokio::time::timeout(Duration::from_secs(READ_TIMEOUT_SECS), stream.next()).await;
+        let chunk_with_timeout =
+            tokio::time::timeout(Duration::from_secs(READ_TIMEOUT_SECS), stream.next()).await;
         
         match chunk_with_timeout {
             Err(_) => {
@@ -1559,8 +1778,10 @@ async fn browser_style_download(
                     return Err(anyhow!("读取超时 (连续 {} 次无数据)", MAX_CHUNK_TIMEOUTS));
                 }
                 let sleep_ms = 300u64 + (chunk_timeout_count as u64) * 100;
-                println!("[Download]   ! chunk {}s无响应 ({}/{}), 等待 {}ms 后继续...", 
-                    READ_TIMEOUT_SECS, chunk_timeout_count, MAX_CHUNK_TIMEOUTS, sleep_ms);
+                println!(
+                    "[Download]   ! chunk {}s无响应 ({}/{}), 等待 {}ms 后继续...",
+                    READ_TIMEOUT_SECS, chunk_timeout_count, MAX_CHUNK_TIMEOUTS, sleep_ms
+                );
                 tokio::time::sleep(Duration::from_millis(sleep_ms)).await;
                 continue;
             }
@@ -1582,11 +1803,17 @@ async fn browser_style_download(
                     Err(e) => {
                         chunk_error_count += 1;
                         if chunk_error_count > MAX_CHUNK_ERRORS {
-                            return Err(anyhow!("读取字节流失败 (连续 {} 次错误): {}", MAX_CHUNK_ERRORS, e));
+                            return Err(anyhow!(
+                                "读取字节流失败 (连续 {} 次错误): {}",
+                                MAX_CHUNK_ERRORS,
+                                e
+                            ));
                         }
                         let sleep_ms = 300u64 + (chunk_error_count as u64) * 150;
-                        println!("[Download]   ! chunk错误 ({}/{}): {}, 等待 {}ms 后继续...", 
-                            chunk_error_count, MAX_CHUNK_ERRORS, e, sleep_ms);
+                        println!(
+                            "[Download]   ! chunk错误 ({}/{}): {}, 等待 {}ms 后继续...",
+                            chunk_error_count, MAX_CHUNK_ERRORS, e, sleep_ms
+                        );
                         tokio::time::sleep(Duration::from_millis(sleep_ms)).await;
                         continue;
                     }
@@ -1608,11 +1835,18 @@ async fn browser_style_download(
                         let _ = tx.try_send((received, total_size));
                     }
                     
-                    let pct = if total_size > 0 { received as f64 / total_size as f64 * 100.0 } else { 0.0 };
-                    let speed_kb = received as f64 / 1024.0 / start.elapsed().as_secs_f64().max(0.1);
+                    let pct = if total_size > 0 {
+                        received as f64 / total_size as f64 * 100.0
+                    } else {
+                        0.0
+                    };
+                    let speed_kb =
+                        received as f64 / 1024.0 / start.elapsed().as_secs_f64().max(0.1);
                     
-                    println!("[Download]     ↓ 浏览器风格进度: {:.1}% ({}/{} bytes) | 速度: {:.0} KB/s",
-                        pct, received, total_size, speed_kb);
+                    println!(
+                        "[Download]     ↓ 浏览器风格进度: {:.1}% ({}/{} bytes) | 速度: {:.0} KB/s",
+                        pct, received, total_size, speed_kb
+                    );
                     
                     reporter_tick = Instant::now();
                 }
@@ -1631,7 +1865,11 @@ async fn browser_style_download(
     drop(file);
     
     if total_size > 0 && received != total_size {
-        return Err(anyhow!("大小不匹配: 期望 {}, 实际 {}", total_size, received));
+        return Err(anyhow!(
+            "大小不匹配: 期望 {}, 实际 {}",
+            total_size,
+            received
+        ));
     }
     
     if let Some(sha) = sha1 {
@@ -1670,7 +1908,10 @@ fn finalize_download(temp_path: &Path, target: &Path) -> Result<()> {
     
     let part_path = target.with_extension(format!(
         "{}.part",
-        target.extension().and_then(|e| e.to_str()).unwrap_or("download")
+        target
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("download")
     ));
     
     if part_path.exists() {
@@ -1725,7 +1966,10 @@ fn extract_cf_ids(url: &str) -> Option<(u64, u64)> {
     None
 }
 
-pub async fn resolve_cf_download_info(pid: u64, fid: u64) -> Option<(String, Option<String>, String)> {
+pub async fn resolve_cf_download_info(
+    pid: u64,
+    fid: u64,
+) -> Option<(String, Option<String>, String)> {
     use serde_json::Value;
     let first4 = fid / 1000;
     let last3 = fid % 1000;
@@ -1739,19 +1983,30 @@ pub async fn resolve_cf_download_info(pid: u64, fid: u64) -> Option<(String, Opt
     let api_url = format!("https://api.curseforge.com/v1/mods/{}/files/{}", pid, fid);
     let resp = match client
         .get(&api_url)
-        .header("x-api-key", "$2a$10$VTAFCxje5a1Jkqv0aGWjQ.fULedAEPctDqppOkNMRvV.edVnG7KQ6")
+        .header(
+            "x-api-key",
+            "$2a$10$VTAFCxje5a1Jkqv0aGWjQ.fULedAEPctDqppOkNMRvV.edVnG7KQ6",
+        )
         .send()
         .await
     {
         Ok(r) => r,
         Err(e) => {
-            println!("[Download] CF-API 请求失败: pid={}, fid={}, error={}", pid, fid, e);
+            println!(
+                "[Download] CF-API 请求失败: pid={}, fid={}, error={}",
+                pid, fid, e
+            );
             return None;
         }
     };
 
     if !resp.status().is_success() {
-        println!("[Download] CF-API 返回状态 {}: pid={}, fid={}", resp.status(), pid, fid);
+        println!(
+            "[Download] CF-API 返回状态 {}: pid={}, fid={}",
+            resp.status(),
+            pid,
+            fid
+        );
         return None;
     }
 
@@ -1790,7 +2045,10 @@ pub async fn resolve_cf_download_info(pid: u64, fid: u64) -> Option<(String, Opt
     match file_name {
         Some(name) => {
             let cdn = download_url.unwrap_or_else(|| {
-                format!("https://edge.forgecdn.net/files/{}/{:03}/{}", first4, last3, name)
+                format!(
+                    "https://edge.forgecdn.net/files/{}/{:03}/{}",
+                    first4, last3, name
+                )
             });
             println!("[Download] CF-API: pid={}, fid={}, name={}", pid, fid, name);
             Some((name, None, cdn))
@@ -1805,7 +2063,10 @@ pub async fn download_all_with_file_info(
 ) -> DownloadResult {
     let total = tasks.len();
     if total == 0 {
-        return DownloadResult { success_count: 0, failures: Vec::new() };
+        return DownloadResult {
+            success_count: 0,
+            failures: Vec::new(),
+        };
     }
     
     let done_counter = Arc::new(AtomicU64::new(0));
@@ -1820,9 +2081,13 @@ pub async fn download_all_with_file_info(
             }
         },
         Option::<fn(f64) -> ()>::None,
-    ).await;
+    )
+    .await;
     
-    DownloadResult { success_count, failures }
+    DownloadResult {
+        success_count,
+        failures,
+    }
 }
 
 pub async fn download_all(
@@ -1831,7 +2096,10 @@ pub async fn download_all(
 ) -> DownloadResult {
     let total = tasks.len();
     if total == 0 {
-        return DownloadResult { success_count: 0, failures: Vec::new() };
+        return DownloadResult {
+            success_count: 0,
+            failures: Vec::new(),
+        };
     }
 
     let done_counter = Arc::new(AtomicU64::new(0));
@@ -1846,9 +2114,13 @@ pub async fn download_all(
                 let _ = tx.try_send(percent);
             }
         }),
-    ).await;
+    )
+    .await;
 
-    DownloadResult { success_count, failures }
+    DownloadResult {
+        success_count,
+        failures,
+    }
 }
 
 pub async fn download_one(task: DownloadTask) -> Result<PathBuf> {
@@ -1916,7 +2188,8 @@ async fn spawn_adaptive_tuner(sem: AdaptiveSemaphore) {
                 low_count += 1;
                 if low_count >= 3 {
                     let new_target = (target as f64 * 0.85).max(4.0) as usize;
-                    sem.target_permits.store(new_target as u64, Ordering::SeqCst);
+                    sem.target_permits
+                        .store(new_target as u64, Ordering::SeqCst);
                     low_count = 0;
                 }
             } else if avg_bps > STALL_BYTES_PER_SEC * 5 && current_permits == 0 {
@@ -1930,9 +2203,11 @@ async fn spawn_adaptive_tuner(sem: AdaptiveSemaphore) {
                     } else {
                         1.25
                     };
-                    let new_target = (target as f64 * multiplier).min(MAX_CONCURRENT_FILES as f64) as usize;
+                    let new_target =
+                        (target as f64 * multiplier).min(MAX_CONCURRENT_FILES as f64) as usize;
                     if new_target > target {
-                        sem.target_permits.store(new_target as u64, Ordering::SeqCst);
+                        sem.target_permits
+                            .store(new_target as u64, Ordering::SeqCst);
                     }
                     stable_high_count = 0;
                 }
@@ -2002,13 +2277,19 @@ async fn smart_batch_download(
             let done = done_counter_clone.fetch_add(1, Ordering::SeqCst) + 1;
             on_any_done_clone(done as usize, total, fname.clone());
             if let Some(ref pt) = percent_tx {
-                pt(if total > 0 { (done as f64 / total as f64) * 100.0 } else { 100.0 });
+                pt(if total > 0 {
+                    (done as f64 / total as f64) * 100.0
+                } else {
+                    100.0
+                });
             }
             if success {
                 successes_clone.fetch_add(1, Ordering::SeqCst);
                 if let Ok(mut rr) = recent_clone.lock() {
                     rr.push_back(true);
-                    if rr.len() > SMART_ADJUST_BATCH * 2 { rr.pop_front(); }
+                    if rr.len() > SMART_ADJUST_BATCH * 2 {
+                        rr.pop_front();
+                    }
                 }
             } else {
                 if is_server_overload_error(&err) {
@@ -2016,7 +2297,9 @@ async fn smart_batch_download(
                 }
                 if let Ok(mut rr) = recent_clone.lock() {
                     rr.push_back(false);
-                    if rr.len() > SMART_ADJUST_BATCH * 2 { rr.pop_front(); }
+                    if rr.len() > SMART_ADJUST_BATCH * 2 {
+                        rr.pop_front();
+                    }
                 }
                 if let Ok(mut fails) = failures_clone.lock() {
                     fails.push(DownloadFailure {
@@ -2031,8 +2314,10 @@ async fn smart_batch_download(
 
     let last_adjust_done = Arc::new(AtomicU64::new(0));
 
-    println!("[SmartDownload] 初始化: 并发={}, 总文件={}, 每{}个调整一次",
-        SMART_INITIAL_CONCURRENCY, total_tasks, SMART_ADJUST_BATCH);
+    println!(
+        "[SmartDownload] 初始化: 并发={}, 总文件={}, 每{}个调整一次",
+        SMART_INITIAL_CONCURRENCY, total_tasks, SMART_ADJUST_BATCH
+    );
 
     let mut spawn_count: u64 = 0;
     loop {
@@ -2051,9 +2336,13 @@ async fn smart_batch_download(
         }
 
         let adjust_delta = done_count as u64 - last_adjust_done.load(Ordering::SeqCst);
-        if adjust_delta >= SMART_ADJUST_BATCH as u64 || (adjust_delta > 0 && overload_detected.swap(false, Ordering::SeqCst)) {
+        if adjust_delta >= SMART_ADJUST_BATCH as u64
+            || (adjust_delta > 0 && overload_detected.swap(false, Ordering::SeqCst))
+        {
             last_adjust_done.store(done_count as u64, Ordering::SeqCst);
-            let recent = recent_results.lock().ok()
+            let recent = recent_results
+                .lock()
+                .ok()
                 .map(|q| q.iter().cloned().collect::<Vec<bool>>())
                 .unwrap_or_default();
             let recent_count = recent.len().max(1);
@@ -2075,8 +2364,15 @@ async fn smart_batch_download(
             };
             if new_conc != current_concurrency {
                 concurrency.store(new_conc as u64, Ordering::SeqCst);
-                println!("[SmartDownload] 调整并发: {} → {} | 最近{}个成功率={:.0}% | 已完成{}/{}",
-                    current_concurrency, new_conc, recent_count, success_rate * 100.0, done_count, total_tasks);
+                println!(
+                    "[SmartDownload] 调整并发: {} → {} | 最近{}个成功率={:.0}% | 已完成{}/{}",
+                    current_concurrency,
+                    new_conc,
+                    recent_count,
+                    success_rate * 100.0,
+                    done_count,
+                    total_tasks
+                );
             }
         }
 
@@ -2102,9 +2398,16 @@ async fn smart_batch_download(
 
                     match result {
                         SingleDownloadResult::Success { .. } => {
-                            let _ = done_tx_clone.send((true, fname.clone(), String::new(), Vec::new()));
+                            let _ = done_tx_clone.send((
+                                true,
+                                fname.clone(),
+                                String::new(),
+                                Vec::new(),
+                            ));
                         }
-                        SingleDownloadResult::Failed { error, urls_tried, .. } => {
+                        SingleDownloadResult::Failed {
+                            error, urls_tried, ..
+                        } => {
                             let _ = done_tx_clone.send((false, fname.clone(), error, urls_tried));
                         }
                     }

@@ -1,18 +1,18 @@
-use serde::{Deserialize, Serialize};
+use crate::http_client::{
+    curseforge_class_ids, curseforge_client, get_with_retry, global_semaphore, modrinth_client,
+    shared_client, RetryConfig,
+};
+use futures::future::join_all;
 use scraper::{Html, Selector};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tauri::{AppHandle, Emitter};
+use std::fs::{self, File};
+use std::io::BufReader;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::path::{Path, PathBuf};
-use futures::future::join_all;
-use std::io::BufReader;
-use std::fs::{self, File};
+use tauri::{AppHandle, Emitter};
 use zip::ZipArchive;
-use crate::http_client::{
-    curseforge_client, modrinth_client, shared_client,
-    get_with_retry, curseforge_class_ids, global_semaphore, RetryConfig
-};
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ModLink {
     pub name: String,
@@ -24,36 +24,35 @@ pub async fn get_mod_links(modId: String) -> Result<String, String> {
     let client = shared_client().await;
     let links_to_resolve: Vec<(String, String)> = {
         match client.get(&url).send().await {
-            Ok(response) => {
-                match response.text().await {
-                    Ok(html) => {
-                        let document = Html::parse_document(&html);
-                        let ul_selector_str = String::from("ul.common-link-icon-frame");
-                        let ul_selector = Selector::parse(&ul_selector_str).unwrap();
-                        let mut links = Vec::new();
-                        for ul in document.select(&ul_selector) {
-                            let li_selector = Selector::parse("li").unwrap();
-                            for li in ul.select(&li_selector) {
-                                let a_selector = Selector::parse("a").unwrap();
-                                for a in li.select(&a_selector) {
-                                    let name = a.text().collect::<String>();
-                                    if let Some(href) = a.value().attr("href") {
-                                        if href.starts_with("/") {
-                                            let full_url = format!("https://www.curseforge.com{}", href);
-                                            links.push((name, full_url));
-                                        }
+            Ok(response) => match response.text().await {
+                Ok(html) => {
+                    let document = Html::parse_document(&html);
+                    let ul_selector_str = String::from("ul.common-link-icon-frame");
+                    let ul_selector = Selector::parse(&ul_selector_str).unwrap();
+                    let mut links = Vec::new();
+                    for ul in document.select(&ul_selector) {
+                        let li_selector = Selector::parse("li").unwrap();
+                        for li in ul.select(&li_selector) {
+                            let a_selector = Selector::parse("a").unwrap();
+                            for a in li.select(&a_selector) {
+                                let name = a.text().collect::<String>();
+                                if let Some(href) = a.value().attr("href") {
+                                    if href.starts_with("/") {
+                                        let full_url =
+                                            format!("https://www.curseforge.com{}", href);
+                                        links.push((name, full_url));
                                     }
                                 }
                             }
                         }
-                        links
                     }
-                    Err(e) => {
-                        eprintln!("Failed to get response text: {}", e);
-                        return Err(format!("Failed to get response text: {}", e));
-                    }
+                    links
                 }
-            }
+                Err(e) => {
+                    eprintln!("Failed to get response text: {}", e);
+                    return Err(format!("Failed to get response text: {}", e));
+                }
+            },
             Err(e) => {
                 eprintln!("Request failed: {}", e);
                 return Err(format!("Request failed: {}", e));
@@ -77,7 +76,7 @@ pub async fn get_mod_links(modId: String) -> Result<String, String> {
     }
     match serde_json::to_string(&links) {
         Ok(json) => Ok(json),
-        Err(e) => Err(format!("Failed to serialize result: {}", e))
+        Err(e) => Err(format!("Failed to serialize result: {}", e)),
     }
 }
 #[tauri::command]
@@ -86,36 +85,35 @@ pub async fn get_curseforge_mod_files(modId: String) -> Result<String, String> {
     let client = shared_client().await;
     let links_to_check: Vec<(String, String)> = {
         match client.get(&url).send().await {
-            Ok(response) => {
-                match response.text().await {
-                    Ok(html) => {
-                        let document = Html::parse_document(&html);
-                        let ul_selector_str = String::from("ul.common-link-icon-frame");
-                        let ul_selector = Selector::parse(&ul_selector_str).unwrap();
-                        let mut links = Vec::new();
-                        for ul in document.select(&ul_selector) {
-                            let li_selector = Selector::parse("li").unwrap();
-                            for li in ul.select(&li_selector) {
-                                let a_selector = Selector::parse("a").unwrap();
-                                for a in li.select(&a_selector) {
-                                    let name = a.text().collect::<String>();
-                                    if let Some(href) = a.value().attr("href") {
-                                        if href.starts_with("/") {
-                                            let full_url = format!("https://www.curseforge.com{}", href);
-                                            links.push((name, full_url));
-                                        }
+            Ok(response) => match response.text().await {
+                Ok(html) => {
+                    let document = Html::parse_document(&html);
+                    let ul_selector_str = String::from("ul.common-link-icon-frame");
+                    let ul_selector = Selector::parse(&ul_selector_str).unwrap();
+                    let mut links = Vec::new();
+                    for ul in document.select(&ul_selector) {
+                        let li_selector = Selector::parse("li").unwrap();
+                        for li in ul.select(&li_selector) {
+                            let a_selector = Selector::parse("a").unwrap();
+                            for a in li.select(&a_selector) {
+                                let name = a.text().collect::<String>();
+                                if let Some(href) = a.value().attr("href") {
+                                    if href.starts_with("/") {
+                                        let full_url =
+                                            format!("https://www.curseforge.com{}", href);
+                                        links.push((name, full_url));
                                     }
                                 }
                             }
                         }
-                        links
                     }
-                    Err(e) => {
-                        eprintln!("Failed to get response text: {}", e);
-                        return Err(format!("Failed to get response text: {}", e));
-                    }
+                    links
                 }
-            }
+                Err(e) => {
+                    eprintln!("Failed to get response text: {}", e);
+                    return Err(format!("Failed to get response text: {}", e));
+                }
+            },
             Err(e) => {
                 eprintln!("Request failed: {}", e);
                 return Err(format!("Request failed: {}", e));
@@ -130,12 +128,10 @@ pub async fn get_curseforge_mod_files(modId: String) -> Result<String, String> {
                     let parts: Vec<&str> = final_url.split('/').collect();
                     if let Some(mod_id) = parts.last() {
                         match get_mod_files(mod_id).await {
-                            Ok(mod_files) => {
-                                match serde_json::to_string(&mod_files) {
-                                    Ok(json) => return Ok(json),
-                                    Err(e) => return Err(format!("Failed to serialize result: {}", e))
-                                }
-                            }
+                            Ok(mod_files) => match serde_json::to_string(&mod_files) {
+                                Ok(json) => return Ok(json),
+                                Err(e) => return Err(format!("Failed to serialize result: {}", e)),
+                            },
                             Err(e) => {
                                 eprintln!("Failed to get mod files: {}", e);
                                 continue;
@@ -158,13 +154,11 @@ pub async fn get_mod_files_by_slug(slug: String) -> Result<String, String> {
         return Err("slug cannot be empty".to_string());
     }
     match get_mod_files(trimmed).await {
-        Ok(mod_files) => {
-            match serde_json::to_string(&mod_files) {
-                Ok(json) => Ok(json),
-                Err(e) => Err(format!("Failed to serialize result: {}", e))
-            }
-        }
-        Err(e) => Err(format!("Failed to get mod files: {}", e))
+        Ok(mod_files) => match serde_json::to_string(&mod_files) {
+            Ok(json) => Ok(json),
+            Err(e) => Err(format!("Failed to serialize result: {}", e)),
+        },
+        Err(e) => Err(format!("Failed to get mod files: {}", e)),
     }
 }
 #[tauri::command]
@@ -174,70 +168,97 @@ pub async fn get_modrinth_mod_files(slug: String) -> Result<String, String> {
         return Err("slug cannot be empty".to_string());
     }
     let client = modrinth_client().await;
-    let versions_url = format!(
-        "https://api.modrinth.com/v2/project/{}/version",
-        trimmed
-    );
-    let files_response = get_with_retry(&client, &versions_url, Some(RetryConfig {
-        max_retries: 3,
-        initial_delay_ms: 600,
-        max_delay_ms: 3000,
-    })).await
-        .map_err(|e| format!("Modrinth version fetch failed (retried 3 times): {}", e))?;
+    let versions_url = format!("https://api.modrinth.com/v2/project/{}/version", trimmed);
+    let files_response = get_with_retry(
+        &client,
+        &versions_url,
+        Some(RetryConfig {
+            max_retries: 3,
+            initial_delay_ms: 600,
+            max_delay_ms: 3000,
+        }),
+    )
+    .await
+    .map_err(|e| format!("Modrinth version fetch failed (retried 3 times): {}", e))?;
     if !files_response.status().is_success() {
         let status = files_response.status();
         if status == reqwest::StatusCode::NOT_FOUND {
             return Err(format!("Project not found on Modrinth: {}", trimmed));
         }
-        return Err(format!("Modrinth version API returned error status: {}", status));
+        return Err(format!(
+            "Modrinth version API returned error status: {}",
+            status
+        ));
     }
-    let files_text = files_response.text().await
+    let files_text = files_response
+        .text()
+        .await
         .map_err(|e| format!("Failed to read version response: {}", e))?;
     let versions_json: serde_json::Value = serde_json::from_str(&files_text)
         .map_err(|e| format!("Failed to parse version JSON: {}", e))?;
-    let versions = versions_json.as_array()
+    let versions = versions_json
+        .as_array()
         .ok_or_else(|| String::from("Array not found in version response"))?;
     if versions.is_empty() {
-        return Err(format!("Modrinth project {} has no available release versions", trimmed));
+        return Err(format!(
+            "Modrinth project {} has no available release versions",
+            trimmed
+        ));
     }
     let mut version_map: HashMap<String, Vec<(Vec<String>, String)>> = HashMap::new();
     for version in versions {
         let files_field = version.get("files").and_then(|f| f.as_array());
         let download_url = files_field.and_then(|files_list| {
-            files_list.iter().find(|file| {
-                file.get("primary").and_then(|p| p.as_bool()).unwrap_or(false)
-            })
-            .or_else(|| files_list.first())
-            .and_then(|f| f.get("url").and_then(|u| u.as_str()))
-            .map(|s| s.to_string())
+            files_list
+                .iter()
+                .find(|file| {
+                    file.get("primary")
+                        .and_then(|p| p.as_bool())
+                        .unwrap_or(false)
+                })
+                .or_else(|| files_list.first())
+                .and_then(|f| f.get("url").and_then(|u| u.as_str()))
+                .map(|s| s.to_string())
         });
         let download_url = match download_url {
             Some(url) => url,
             None => continue,
         };
-        let game_versions: Vec<serde_json::Value> = version.get("game_versions")
+        let game_versions: Vec<serde_json::Value> = version
+            .get("game_versions")
             .and_then(|v| v.as_array())
             .cloned()
             .unwrap_or_default();
-        let version_type = version.get("version_type")
+        let version_type = version
+            .get("version_type")
             .and_then(|t| t.as_str())
             .unwrap_or("release");
-        let version_number = version.get("version_number")
+        let version_number = version
+            .get("version_number")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        let loaders: Vec<serde_json::Value> = version.get("loaders")
+        let loaders: Vec<serde_json::Value> = version
+            .get("loaders")
             .and_then(|l| l.as_array())
             .cloned()
             .unwrap_or_default();
-        let loader_names: Vec<String> = loaders.iter()
-            .filter_map(|l| l.as_str().map(|s| {
-                let s_lower = s.to_lowercase();
-                if s_lower == "fabric" { "Fabric".to_string() }
-                else if s_lower == "neoforge" { "NeoForge".to_string() }
-                else if s_lower == "quilt" { "Quilt".to_string() }
-                else { s.to_string() }
-            }))
+        let loader_names: Vec<String> = loaders
+            .iter()
+            .filter_map(|l| {
+                l.as_str().map(|s| {
+                    let s_lower = s.to_lowercase();
+                    if s_lower == "fabric" {
+                        "Fabric".to_string()
+                    } else if s_lower == "neoforge" {
+                        "NeoForge".to_string()
+                    } else if s_lower == "quilt" {
+                        "Quilt".to_string()
+                    } else {
+                        s.to_string()
+                    }
+                })
+            })
             .collect();
         for gv in game_versions.iter().filter_map(|v| v.as_str()) {
             let mut entry_tags: Vec<String> = Vec::new();
@@ -256,11 +277,18 @@ pub async fn get_modrinth_mod_files(slug: String) -> Result<String, String> {
             let mut dot_count = 0;
             let mut all_digit_or_dot = true;
             for c in gv_str.chars() {
-                if c == '.' { dot_count += 1; }
-                else if !c.is_ascii_digit() { all_digit_or_dot = false; break; }
+                if c == '.' {
+                    dot_count += 1;
+                } else if !c.is_ascii_digit() {
+                    all_digit_or_dot = false;
+                    break;
+                }
             }
             if all_digit_or_dot && (dot_count == 1 || dot_count == 2) {
-                version_map.entry(gv_str).or_insert_with(Vec::new).push((entry_tags, download_url.clone()));
+                version_map
+                    .entry(gv_str)
+                    .or_insert_with(Vec::new)
+                    .push((entry_tags, download_url.clone()));
             }
         }
     }
@@ -269,10 +297,12 @@ pub async fn get_modrinth_mod_files(slug: String) -> Result<String, String> {
     }
     match serde_json::to_string(&version_map) {
         Ok(json) => Ok(json),
-        Err(e) => Err(format!("Failed to serialize result: {}", e))
+        Err(e) => Err(format!("Failed to serialize result: {}", e)),
     }
 }
-async fn get_mod_files(mod_id: &str) -> Result<HashMap<String, Vec<(Vec<String>, String)>>, Box<dyn std::error::Error>> {
+async fn get_mod_files(
+    mod_id: &str,
+) -> Result<HashMap<String, Vec<(Vec<String>, String)>>, Box<dyn std::error::Error>> {
     let client = curseforge_client().await;
     let class_ids = curseforge_class_ids::all();
     let mut search_urls: Vec<String> = Vec::with_capacity(class_ids.len() + 2);
@@ -302,28 +332,45 @@ async fn get_mod_files(mod_id: &str) -> Result<HashMap<String, Vec<(Vec<String>,
         let mod_id = mod_id_owned.clone();
         let sem = Arc::clone(&semaphore);
         async move {
-            let _permit = sem.acquire().await
+            let _permit = sem
+                .acquire()
+                .await
                 .map_err(|e| format!("信号量获取失败: {}", e))?;
             match get_with_retry(&client, &url, Some(retry_cfg)).await {
                 Ok(response) => {
                     if !response.status().is_success() {
-                        return Err(format!("CurseForge API 返回错误状态: {}", response.status()));
+                        return Err(format!(
+                            "CurseForge API 返回错误状态: {}",
+                            response.status()
+                        ));
                     }
-                    let text = response.text().await
+                    let text = response
+                        .text()
+                        .await
                         .map_err(|e| format!("读取响应失败: {}", e))?;
                     let json: serde_json::Value = serde_json::from_str(&text)
                         .map_err(|e| format!("解析 JSON 失败: {}", e))?;
-                    Ok::<Option<(i64, bool)>, String>(json.get("data").and_then(|d| d.as_array()).and_then(|data| {
-                        let exact = data.iter().find(|item| {
-                            item.get("slug").and_then(|s| s.as_str())
-                                .map(|s| s.eq_ignore_ascii_case(&mod_id)).unwrap_or(false)
-                        });
-                        let chosen = exact.or_else(|| data.first());
-                        chosen.and_then(|item| item.get("id").and_then(|i| i.as_i64()))
-                            .map(|id| (id, exact.is_some()))
-                    }))
+                    Ok::<Option<(i64, bool)>, String>(
+                        json.get("data")
+                            .and_then(|d| d.as_array())
+                            .and_then(|data| {
+                                let exact = data.iter().find(|item| {
+                                    item.get("slug")
+                                        .and_then(|s| s.as_str())
+                                        .map(|s| s.eq_ignore_ascii_case(&mod_id))
+                                        .unwrap_or(false)
+                                });
+                                let chosen = exact.or_else(|| data.first());
+                                chosen
+                                    .and_then(|item| item.get("id").and_then(|i| i.as_i64()))
+                                    .map(|id| (id, exact.is_some()))
+                            }),
+                    )
                 }
-                Err(e) => Err(format!("CurseForge API request failed (retried 3 times): {}", e)),
+                Err(e) => Err(format!(
+                    "CurseForge API request failed (retried 3 times): {}",
+                    e
+                )),
             }
         }
     });
@@ -354,20 +401,31 @@ async fn get_mod_files(mod_id: &str) -> Result<HashMap<String, Vec<(Vec<String>,
         }
     };
     let files_url = format!("https://api.curseforge.com/v1/mods/{}/files", cur_mod_id);
-    let files_response = get_with_retry(&client, &files_url, Some(retry_cfg)).await
+    let files_response = get_with_retry(&client, &files_url, Some(retry_cfg))
+        .await
         .map_err(|e| format!("Mod files request failed (retried 3 times): {}", e))?;
     if !files_response.status().is_success() {
-        return Err(format!("Files API returned error status: {}", files_response.status()).into());
+        return Err(format!(
+            "Files API returned error status: {}",
+            files_response.status()
+        )
+        .into());
     }
-    let files_text = files_response.text().await
+    let files_text = files_response
+        .text()
+        .await
         .map_err(|e| format!("Failed to read files response: {}", e))?;
     let files_json: serde_json::Value = serde_json::from_str(&files_text)
         .map_err(|e| format!("Failed to parse files JSON: {}", e))?;
     let mut version_map: HashMap<String, Vec<(Vec<String>, String)>> = HashMap::new();
     fn is_mc_version_like(s: &str) -> bool {
-        if s.is_empty() { return false; }
+        if s.is_empty() {
+            return false;
+        }
         let trimmed = s.trim_end_matches(|c: char| c == 'x' || c == 'X' || c == '.');
-        if trimmed.is_empty() { return false; }
+        if trimmed.is_empty() {
+            return false;
+        }
         let mut dot_count = 0;
         for c in trimmed.chars() {
             if c == '.' {
@@ -380,7 +438,10 @@ async fn get_mod_files(mod_id: &str) -> Result<HashMap<String, Vec<(Vec<String>,
     }
     if let Some(files_data) = files_json.get("data").and_then(|d| d.as_array()) {
         for file in files_data {
-            let download_url_opt = file.get("downloadUrl").and_then(|u| u.as_str()).map(|s| s.to_string());
+            let download_url_opt = file
+                .get("downloadUrl")
+                .and_then(|u| u.as_str())
+                .map(|s| s.to_string());
             let download_url = match download_url_opt {
                 Some(url) if !url.is_empty() => url,
                 _ => {
@@ -399,10 +460,16 @@ async fn get_mod_files(mod_id: &str) -> Result<HashMap<String, Vec<(Vec<String>,
                         (&id_str[..], "")
                     };
                     let suffix_clean = suffix.trim_start_matches('0');
-                    let suffix_final = if suffix_clean.is_empty() { "0" } else { suffix_clean };
+                    let suffix_final = if suffix_clean.is_empty() {
+                        "0"
+                    } else {
+                        suffix_clean
+                    };
                     format!(
                         "https://edge.forgecdn.net/files/{}/{}/{}",
-                        prefix, suffix_final, urlencoding(&file_name)
+                        prefix,
+                        suffix_final,
+                        urlencoding(&file_name)
                     )
                 }
             };
@@ -419,15 +486,16 @@ async fn get_mod_files(mod_id: &str) -> Result<HashMap<String, Vec<(Vec<String>,
                     }
                 }
                 if !mc_versions.is_empty() {
-                    let release_type = if let Some(rt) = file.get("releaseType").and_then(|r| r.as_i64()) {
-                        match rt {
-                            1 => "release",
-                            2 => "beta",
-                            _ => continue,
-                        }
-                    } else {
-                        continue;
-                    };
+                    let release_type =
+                        if let Some(rt) = file.get("releaseType").and_then(|r| r.as_i64()) {
+                            match rt {
+                                1 => "release",
+                                2 => "beta",
+                                _ => continue,
+                            }
+                        } else {
+                            continue;
+                        };
                     let mut versions_with_type = other_versions;
                     versions_with_type.push(release_type.to_string());
                     for mc_ver in &mc_versions {
@@ -464,11 +532,19 @@ struct ModActiveTaskInfo {
 }
 fn mod_active_tasks() -> &'static Mutex<std::collections::HashMap<u64, ModActiveTaskInfo>> {
     use std::collections::HashMap;
-    static TASKS: std::sync::OnceLock<Mutex<HashMap<u64, ModActiveTaskInfo>>> = std::sync::OnceLock::new();
+    static TASKS: std::sync::OnceLock<Mutex<HashMap<u64, ModActiveTaskInfo>>> =
+        std::sync::OnceLock::new();
     TASKS.get_or_init(|| Mutex::new(HashMap::new()))
 }
-fn get_resource_download_dir(resource_kind: &str, mc_version: &str, mod_loader: &str) -> Result<PathBuf, String> {
-    use crate::handler::cache_paths::{CacheResourceKind, ModLoaderKind, get_cache_dir_for_version, get_mod_cache_dir, parse_mod_loader, parse_resource_kind};
+fn get_resource_download_dir(
+    resource_kind: &str,
+    mc_version: &str,
+    mod_loader: &str,
+) -> Result<PathBuf, String> {
+    use crate::handler::cache_paths::{
+        get_cache_dir_for_version, get_mod_cache_dir, parse_mod_loader, parse_resource_kind,
+        CacheResourceKind, ModLoaderKind,
+    };
     let kind = parse_resource_kind(resource_kind).unwrap_or(CacheResourceKind::Mod);
     if kind == CacheResourceKind::Mod {
         let loader = parse_mod_loader(mod_loader).unwrap_or(ModLoaderKind::Vanilla);
@@ -480,12 +556,18 @@ fn get_resource_download_dir(resource_kind: &str, mc_version: &str, mod_loader: 
 fn extract_filename_from_url(url: &str) -> String {
     let cleaned = url.split('?').next().unwrap_or(url);
     let path = PathBuf::from(cleaned);
-    let raw_name = path.file_name()
+    let raw_name = path
+        .file_name()
         .and_then(|s| s.to_str())
         .map(|s| s.to_string())
         .unwrap_or_else(|| {
-            format!("mod-{}.jar", std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_secs())
+            format!(
+                "mod-{}.jar",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()
+            )
         });
     percent_decode(&raw_name)
 }
@@ -535,7 +617,8 @@ fn hex(b: u8) -> Option<u8> {
     }
 }
 fn extract_world_archive(zip_path: &Path, target_dir: &Path) -> Result<PathBuf, String> {
-    let file_name = zip_path.file_name()
+    let file_name = zip_path
+        .file_name()
         .and_then(|n| n.to_str())
         .ok_or_else(|| format!("无效的文件名: {}", zip_path.display()))?
         .to_string();
@@ -562,13 +645,14 @@ fn extract_world_archive(zip_path: &Path, target_dir: &Path) -> Result<PathBuf, 
     }
     fs::create_dir_all(&extract_dir)
         .map_err(|e| format!("创建解压目录失败 {}: {}", extract_dir.display(), e))?;
-    let file = File::open(zip_path)
-        .map_err(|e| format!("打开压缩包 {}: {}", zip_path.display(), e))?;
+    let file =
+        File::open(zip_path).map_err(|e| format!("打开压缩包 {}: {}", zip_path.display(), e))?;
     let reader = BufReader::new(file);
-    let mut archive = ZipArchive::new(reader)
-        .map_err(|e| format!("解析压缩包 {}: {}", zip_path.display(), e))?;
+    let mut archive =
+        ZipArchive::new(reader).map_err(|e| format!("解析压缩包 {}: {}", zip_path.display(), e))?;
     for i in 0..archive.len() {
-        let mut file = archive.by_index(i)
+        let mut file = archive
+            .by_index(i)
             .map_err(|e| format!("读取压缩包内文件[{}]: {}", i, e))?;
         let outpath = match file.enclosed_name() {
             Some(path) => path.to_owned(),
@@ -598,10 +682,7 @@ fn extract_world_archive(zip_path: &Path, target_dir: &Path) -> Result<PathBuf, 
         }
     }
     if let Ok(entries) = fs::read_dir(&extract_dir) {
-        let top_level: Vec<PathBuf> = entries
-            .filter_map(|e| e.ok())
-            .map(|e| e.path())
-            .collect();
+        let top_level: Vec<PathBuf> = entries.filter_map(|e| e.ok()).map(|e| e.path()).collect();
         if top_level.len() == 1 {
             let only_dir = &top_level[0];
             if only_dir.is_dir() {
@@ -637,17 +718,23 @@ pub async fn download_resource_file(
     let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
     {
         let mut tasks = mod_active_tasks().lock().unwrap();
-        tasks.insert(task_id, ModActiveTaskInfo {
-            cancel: cancel.clone(),
-            _download_url: downloadUrl.clone(),
-            _file_name: file_name.clone(),
-        });
+        tasks.insert(
+            task_id,
+            ModActiveTaskInfo {
+                cancel: cancel.clone(),
+                _download_url: downloadUrl.clone(),
+                _file_name: file_name.clone(),
+            },
+        );
     }
     let event_name = "mod-download-progress";
-    let _ = app.emit(event_name, ModDownloadProgressPayload {
-        task_id,
-        percent: 0.0,
-    });
+    let _ = app.emit(
+        event_name,
+        ModDownloadProgressPayload {
+            task_id,
+            percent: 0.0,
+        },
+    );
     let task = crate::downloader::modular_download::DownloadTask {
         file_name,
         target_dir: save_dir,
@@ -668,17 +755,21 @@ pub async fn download_resource_file(
                     downloaded as f64 / 1_000_000.0
                 };
                 let progress_event = "mod-download-progress";
-                    let _ = app2.emit(progress_event, ModDownloadProgressPayload {
+                let _ = app2.emit(
+                    progress_event,
+                    ModDownloadProgressPayload {
                         task_id: tid,
                         percent,
-                    });
+                    },
+                );
             }
         });
         let result = crate::downloader::modular_download::download_file(
             &task,
             Some(progress_tx),
             Some(cancel.clone()),
-        ).await;
+        )
+        .await;
         let _ = progress_forward.await;
         match result {
             crate::downloader::modular_download::SingleDownloadResult::Success { size, .. } => {
@@ -696,20 +787,26 @@ pub async fn download_resource_file(
                     }
                 }
                 let finished_event = "mod-download-finished";
-                    let _ = app_clone.emit(finished_event, ModDownloadFinishedPayload {
+                let _ = app_clone.emit(
+                    finished_event,
+                    ModDownloadFinishedPayload {
                         task_id: task_id_clone,
                         success: true,
                         error: None,
-                });
+                    },
+                );
                 let _ = size;
             }
             crate::downloader::modular_download::SingleDownloadResult::Failed { error, .. } => {
                 let finished_event2 = "mod-download-finished";
-                let _ = app_clone.emit(finished_event2, ModDownloadFinishedPayload {
-                    task_id: task_id_clone,
-                    success: false,
-                    error: Some(error),
-                });
+                let _ = app_clone.emit(
+                    finished_event2,
+                    ModDownloadFinishedPayload {
+                        task_id: task_id_clone,
+                        success: false,
+                        error: Some(error),
+                    },
+                );
             }
         }
     });
@@ -732,7 +829,8 @@ pub async fn download_mod_file(
         mcVersion,
         modLoader,
         downloadUrl,
-    ).await
+    )
+    .await
 }
 #[tauri::command]
 pub fn cancel_mod_download(taskId: u64) -> Result<(), String> {
@@ -782,20 +880,30 @@ pub async fn search_curseforge_projects(
         let client = Arc::clone(&client);
         let sem = Arc::clone(&semaphore);
         async move {
-            let _permit = sem.acquire().await
+            let _permit = sem
+                .acquire()
+                .await
                 .map_err(|e| format!("信号量获取失败: {}", e))?;
             match get_with_retry(&client, &url, Some(retry_cfg)).await {
                 Ok(response) => {
                     if !response.status().is_success() {
-                        return Err(format!("CurseForge API 返回错误状态: {}", response.status()));
+                        return Err(format!(
+                            "CurseForge API 返回错误状态: {}",
+                            response.status()
+                        ));
                     }
-                    let text = response.text().await
+                    let text = response
+                        .text()
+                        .await
                         .map_err(|e| format!("读取响应失败: {}", e))?;
                     let json: serde_json::Value = serde_json::from_str(&text)
                         .map_err(|e| format!("解析 JSON 失败: {}", e))?;
                     Ok::<serde_json::Value, String>(json)
                 }
-                Err(e) => Err(format!("CurseForge API request failed (retried 3 times): {}", e)),
+                Err(e) => Err(format!(
+                    "CurseForge API request failed (retried 3 times): {}",
+                    e
+                )),
             }
         }
     });
@@ -803,10 +911,15 @@ pub async fn search_curseforge_projects(
     let mut all_projects: Vec<serde_json::Value> = Vec::new();
     let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
     for result in results {
-        let Ok(json) = result else { continue; };
-        let Some(data) = json.get("data").and_then(|d| d.as_array()) else { continue; };
+        let Ok(json) = result else {
+            continue;
+        };
+        let Some(data) = json.get("data").and_then(|d| d.as_array()) else {
+            continue;
+        };
         for item in data {
-            let id = item.get("id")
+            let id = item
+                .get("id")
                 .and_then(|v| v.as_u64())
                 .map(|v| v.to_string())
                 .unwrap_or_default();
@@ -816,8 +929,12 @@ pub async fn search_curseforge_projects(
                 }
             }
             if !is_mod_category {
-                let class_id = item.get("classId").and_then(|v| v.as_u64()).map(|v| v as u32);
-                let website_url = item.get("links")
+                let class_id = item
+                    .get("classId")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32);
+                let website_url = item
+                    .get("links")
                     .and_then(|l| l.get("websiteUrl"))
                     .and_then(|w| w.as_str())
                     .unwrap_or("");
@@ -830,17 +947,32 @@ pub async fn search_curseforge_projects(
         }
     }
     all_projects.sort_by(|a, b| {
-        let da = a.get("downloadCount").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let db = b.get("downloadCount").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let da = a
+            .get("downloadCount")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let db = b
+            .get("downloadCount")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
         db.partial_cmp(&da).unwrap_or(std::cmp::Ordering::Equal)
     });
     let total_count = all_projects.len();
     let mut response_data = serde_json::Map::new();
-    response_data.insert("data".to_string(), serde_json::to_value(all_projects).unwrap());
+    response_data.insert(
+        "data".to_string(),
+        serde_json::to_value(all_projects).unwrap(),
+    );
     let mut pagination = serde_json::Map::new();
-    pagination.insert("total".to_string(), serde_json::Value::Number(total_count.into()));
+    pagination.insert(
+        "total".to_string(),
+        serde_json::Value::Number(total_count.into()),
+    );
     pagination.insert("pageSize".to_string(), serde_json::Value::Number(ps.into()));
     pagination.insert("index".to_string(), serde_json::Value::Number(0u32.into()));
-    response_data.insert("pagination".to_string(), serde_json::Value::Object(pagination));
+    response_data.insert(
+        "pagination".to_string(),
+        serde_json::Value::Object(pagination),
+    );
     serde_json::to_string(&response_data).map_err(|_e| "Failed to serialize JSON".to_string())
 }

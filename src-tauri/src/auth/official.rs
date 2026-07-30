@@ -1,15 +1,14 @@
+use regex::Regex;
 use reqwest::Client;
-use sqlite::{State, Connection};
 use serde::{Deserialize, Serialize};
+use sqlite::{Connection, State};
+use std::fs;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::time::sleep;
-use std::fs;
-use regex::Regex;
 
-
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use tokio::time::Instant;
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 use super::AccountInfo;
 
@@ -27,7 +26,6 @@ pub struct DeviceCodeInfo {
     pub interval: u64,
     pub expires_in: u64,
 }
-
 
 #[derive(Serialize, Deserialize, Debug)]
 struct DeviceCodeResponse {
@@ -103,7 +101,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 */
-async fn get_device_code(client: &Client, client_id: &str) -> Result<DeviceCodeResponse, Box<dyn std::error::Error>> {
+async fn get_device_code(
+    client: &Client,
+    client_id: &str,
+) -> Result<DeviceCodeResponse, Box<dyn std::error::Error>> {
     let params = [
         ("client_id", client_id),
         ("scope", "XboxLive.signin offline_access"),
@@ -188,15 +189,22 @@ async fn get_xsts_token(
         // 尝试解析 XSTS 错误响应
         let xsts_err_msg = if let Ok(err_resp) = serde_json::from_str::<XSTSErrorResponse>(&text) {
             match err_resp.x_err {
-                Some(2148916233) => "该 Microsoft 账户未关联 Xbox 账户，请先前往 xbox.com 注册".to_string(),
+                Some(2148916233) => {
+                    "该 Microsoft 账户未关联 Xbox 账户，请先前往 xbox.com 注册".to_string()
+                }
                 Some(2148916235) => "您所在地区不支持 Xbox Live，无法使用正版登录".to_string(),
                 Some(2148916236) | Some(2148916237) => "需要在 Xbox 官网完成成人验证".to_string(),
                 Some(2148916238) => "未成年账户需要家长在 Microsoft Family 中审批".to_string(),
                 Some(code) => format!("XSTS 错误码: {}", code),
-                None => err_resp.message.unwrap_or_else(|| format!("HTTP {}: {}", status, text)),
+                None => err_resp
+                    .message
+                    .unwrap_or_else(|| format!("HTTP {}: {}", status, text)),
             }
         } else if text.is_empty() {
-            format!("XSTS 服务器返回 HTTP {} 且响应体为空，可能是账户权限问题", status)
+            format!(
+                "XSTS 服务器返回 HTTP {} 且响应体为空，可能是账户权限问题",
+                status
+            )
         } else {
             format!("HTTP {}: {}", status, text)
         };
@@ -225,7 +233,10 @@ async fn authenticate_with_minecraft(
     Ok(response)
 }
 
-async fn check_mc_purchase(client: &Client, access_token: &str) -> Result<String, Box<dyn std::error::Error>> {
+async fn check_mc_purchase(
+    client: &Client,
+    access_token: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
     let response = client
         .get("https://api.minecraftservices.com/entitlements/mcstore")
         .bearer_auth(access_token)
@@ -313,7 +324,10 @@ async fn check_account_time(
     client_id: &str,
     username: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let query = format!("SELECT uuid, refresh_token, access_token, time FROM accounts WHERE username = '{}'", username);
+    let query = format!(
+        "SELECT uuid, refresh_token, access_token, time FROM accounts WHERE username = '{}'",
+        username
+    );
     let mut stmt = connection.prepare(query)?;
 
     if let State::Row = stmt.next()? {
@@ -366,7 +380,8 @@ async fn check_account_time(
             // Token is older than 11 hours, refresh it
             println!("Token is older than 11 hours, refreshing access token...");
 
-            let refreshed_token_response = refresh_access_token(client, client_id, &refresh_token).await?;
+            let refreshed_token_response =
+                refresh_access_token(client, client_id, &refresh_token).await?;
 
             save_account_info(
                 connection,
@@ -386,14 +401,20 @@ async fn check_account_time(
 
     Ok(())
 }
-async fn download_player_skin(client: &Client, uuid: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn download_player_skin(
+    client: &Client,
+    uuid: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     // 皮肤存到配置目录下的 skins 子目录
     let profile_dir = format!("{}/skins", super::config_dir());
     fs::create_dir_all(&profile_dir)?;
 
     // Get player profile to check if skin exists
     let profile_response = client
-        .get(&format!("https://sessionserver.mojang.com/session/minecraft/profile/{}", uuid))
+        .get(&format!(
+            "https://sessionserver.mojang.com/session/minecraft/profile/{}",
+            uuid
+        ))
         .send()
         .await?;
 
@@ -402,22 +423,26 @@ async fn download_player_skin(client: &Client, uuid: &str) -> Result<(), Box<dyn
     }
 
     let profile_json: serde_json::Value = profile_response.json().await?;
-    let properties = profile_json["properties"].as_array()
+    let properties = profile_json["properties"]
+        .as_array()
         .ok_or("No properties found in profile")?;
 
     // Find the textures property
-    let textures_property = properties.iter()
+    let textures_property = properties
+        .iter()
         .find(|p| p["name"].as_str() == Some("textures"))
         .ok_or("No textures property found")?;
 
     // Decode the base64 textures value
-    let textures_base64 = textures_property["value"].as_str()
+    let textures_base64 = textures_property["value"]
+        .as_str()
         .ok_or("Textures value is not a string")?;
     let decoded = BASE64.decode(textures_base64)?;
     let textures_json: serde_json::Value = serde_json::from_slice(&decoded)?;
 
     // Get the skin URL
-    let skin_url = textures_json["textures"]["SKIN"]["url"].as_str()
+    let skin_url = textures_json["textures"]["SKIN"]["url"]
+        .as_str()
         .ok_or("No skin URL found in textures")?;
 
     // Download the skin image
@@ -467,7 +492,9 @@ fn get_tid_skin_from_database(uuid: &str) -> Option<i64> {
             
             // 尝试查询 littleskin_user 表
             for current_uuid in &[uuid, &uuid_with_hyphens, &uuid_without_hyphens] {
-                if let Ok(mut stmt) = conn.prepare("SELECT tid_skin FROM littleskin_user WHERE uuid = ?") {
+                if let Ok(mut stmt) =
+                    conn.prepare("SELECT tid_skin FROM littleskin_user WHERE uuid = ?")
+                {
                     if let Ok(_) = stmt.bind((1, *current_uuid)) {
                         while let Ok(State::Row) = stmt.next() {
                             if let Ok(tid) = stmt.read::<i64, _>(0) {
@@ -480,7 +507,9 @@ fn get_tid_skin_from_database(uuid: &str) -> Option<i64> {
                 }
                 
                 // 尝试查询 littleskinuser 表（可能是旧表名）
-                if let Ok(mut stmt) = conn.prepare("SELECT tid_skin FROM littleskinuser WHERE uuid = ?") {
+                if let Ok(mut stmt) =
+                    conn.prepare("SELECT tid_skin FROM littleskinuser WHERE uuid = ?")
+                {
                     if let Ok(_) = stmt.bind((1, *current_uuid)) {
                         while let Ok(State::Row) = stmt.next() {
                             if let Ok(tid) = stmt.read::<i64, _>(0) {
@@ -504,7 +533,9 @@ fn get_tid_skin_from_database(uuid: &str) -> Option<i64> {
 /// 从 LittleSkin skinlib 页面 HTML 中提取纹理 URL
 fn extract_texture_url_from_html(html: &str) -> Option<String> {
     // 匹配纹理图片的 URL 模式
-    if let Ok(texture_re) = Regex::new(r#"<img[^>]+src=(['"])(https://textures\.littleskin\.cn/texture/.*?)\1[^>]+class=(['"])skin-preview\2"#) {
+    if let Ok(texture_re) = Regex::new(
+        r#"<img[^>]+src=(['"])(https://textures\.littleskin\.cn/texture/.*?)\1[^>]+class=(['"])skin-preview\2"#,
+    ) {
         if let Some(captures) = texture_re.captures(html) {
             return Some(captures[2].to_string());
         }
@@ -561,8 +592,10 @@ fn download_skin_from_profile_json(
         None => return Err("玩家信息中没有 properties".to_string()),
     };
 
-    let textures_property = match properties.iter()
-        .find(|p| p["name"].as_str() == Some("textures")) {
+    let textures_property = match properties
+        .iter()
+        .find(|p| p["name"].as_str() == Some("textures"))
+    {
         Some(t) => t,
         None => return Err("没有找到 textures 属性（玩家可能未设置皮肤）".to_string()),
     };
@@ -572,11 +605,12 @@ fn download_skin_from_profile_json(
         None => return Err("textures 值不是字符串".to_string()),
     };
 
-    let decoded = BASE64.decode(textures_base64)
+    let decoded = BASE64
+        .decode(textures_base64)
         .map_err(|e| format!("base64 解码失败: {}", e))?;
 
-    let textures_json: serde_json::Value = serde_json::from_slice(&decoded)
-        .map_err(|e| format!("解析 textures JSON 失败: {}", e))?;
+    let textures_json: serde_json::Value =
+        serde_json::from_slice(&decoded).map_err(|e| format!("解析 textures JSON 失败: {}", e))?;
 
     let skin_url = match textures_json["textures"]["SKIN"]["url"].as_str() {
         Some(url) => url.to_string(),
@@ -586,7 +620,10 @@ fn download_skin_from_profile_json(
     // 如果有 UUID，尝试从 skin_url 提取 tid 并保存到数据库（供后续使用 raw API）
     if let Some(uuid) = uuid_for_tid_save {
         if let Some(tid) = extract_tid_from_texture_url(&skin_url) {
-            eprintln!("[LittleSkin皮肤] 从 textures URL 提取到 tid_skin: {}, 保存到数据库", tid);
+            eprintln!(
+                "[LittleSkin皮肤] 从 textures URL 提取到 tid_skin: {}, 保存到数据库",
+                tid
+            );
             save_tid_skin_to_database(uuid, tid);
         }
     }
@@ -594,12 +631,16 @@ fn download_skin_from_profile_json(
     // 优先尝试用 raw/<tid> 方式下载（如果能提取到 tid，参考 Blessing Skin 官方文档）
     if let Some(tid) = extract_tid_from_texture_url(&skin_url) {
         let raw_url = format!("https://littleskin.cn/raw/{}", tid);
-        eprintln!("[LittleSkin皮肤] textures URL 提取到 tid，优先使用 raw API: {}", raw_url);
+        eprintln!(
+            "[LittleSkin皮肤] textures URL 提取到 tid，优先使用 raw API: {}",
+            raw_url
+        );
         if let Ok(raw_resp) = client.get(&raw_url).send() {
             if raw_resp.status().is_success() {
                 if let Ok(raw_bytes) = raw_resp.bytes() {
                     if raw_bytes.len() >= 8 && raw_bytes.starts_with(&[137, 80, 78, 71]) {
-                        fs::write(save_path, raw_bytes).map_err(|e| format!("保存皮肤文件失败: {}", e))?;
+                        fs::write(save_path, raw_bytes)
+                            .map_err(|e| format!("保存皮肤文件失败: {}", e))?;
                         return Ok(());
                     }
                 }
@@ -608,14 +649,17 @@ fn download_skin_from_profile_json(
         eprintln!("[LittleSkin皮肤] raw API 尝试失败，回退到 textures URL 下载");
     }
 
-    let skin_response = client.get(&skin_url).send()
+    let skin_response = client
+        .get(&skin_url)
+        .send()
         .map_err(|e| format!("下载皮肤失败: {}", e))?;
 
     if !skin_response.status().is_success() {
         return Err(format!("下载皮肤失败 (HTTP {})", skin_response.status()));
     }
 
-    let skin_bytes = skin_response.bytes()
+    let skin_bytes = skin_response
+        .bytes()
         .map_err(|e| format!("读取皮肤数据失败: {}", e))?;
 
     fs::write(save_path, skin_bytes).map_err(|e| format!("保存皮肤文件失败: {}", e))?;
@@ -631,7 +675,11 @@ fn download_skin_from_profile_json(
 ///   - 尝试无连字符的 UUID（32 字符）
 ///   - 如果 profile 返回的 id 字段与输入不同，优先使用返回的 id 保存
 ///   - 对于 LittleSkin，增加 sessionserver 路径变体（/sessionserver/session/minecraft/profile/...）
-pub fn download_skin_blocking(uuid: &str, sessionserver_base: &str, save_tid_uuid: Option<&str>) -> Result<(), String> {
+pub fn download_skin_blocking(
+    uuid: &str,
+    sessionserver_base: &str,
+    save_tid_uuid: Option<&str>,
+) -> Result<(), String> {
     let profile_dir = format!("{}/skins", super::config_dir());
     fs::create_dir_all(&profile_dir).map_err(|e| format!("创建皮肤目录失败: {}", e))?;
 
@@ -649,7 +697,10 @@ pub fn download_skin_blocking(uuid: &str, sessionserver_base: &str, save_tid_uui
     let mut urls = Vec::new();
     for uid in &[&uuid_with_hyphens, &uuid_without_hyphens] {
         urls.push(format!("{}/session/minecraft/profile/{}", base, uid));
-        urls.push(format!("{}/sessionserver/session/minecraft/profile/{}", base, uid));
+        urls.push(format!(
+            "{}/sessionserver/session/minecraft/profile/{}",
+            base, uid
+        ));
     }
 
     let mut last_error: Option<String> = None;
@@ -685,7 +736,8 @@ pub fn download_skin_blocking(uuid: &str, sessionserver_base: &str, save_tid_uui
     };
 
     // 从返回的 profile 中获取 id，优先使用返回的 id 保存
-    let saved_uuid = profile_json["id"].as_str()
+    let saved_uuid = profile_json["id"]
+        .as_str()
         .map(|id| format_uuid_with_hyphens(id))
         .unwrap_or_else(|| uuid_with_hyphens.clone());
 
@@ -701,7 +753,12 @@ pub fn download_skin_blocking(uuid: &str, sessionserver_base: &str, save_tid_uui
             // 如果失败，同时尝试使用输入的 uuid 保存（某些情况可能保存路径不一致）
             let alt_path = format!("{}/{}.png", profile_dir, uuid_with_hyphens);
             if alt_path != skin_path {
-                if let Ok(()) = download_skin_from_profile_json(&client, &profile_json, &alt_path, Some(tid_save_uuid)) {
+                if let Ok(()) = download_skin_from_profile_json(
+                    &client,
+                    &profile_json,
+                    &alt_path,
+                    Some(tid_save_uuid),
+                ) {
                     return Ok(());
                 }
             }
@@ -713,9 +770,7 @@ pub fn download_skin_blocking(uuid: &str, sessionserver_base: &str, save_tid_uui
 /// 判断一个字符串是否是玩家名（不是 UUID，不是纯数字 TID）
 /// 玩家名规则：长度 3-16，仅含字母、数字、下划线
 fn is_minecraft_player_name(s: &str) -> bool {
-    s.len() >= 3
-        && s.len() <= 16
-        && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    s.len() >= 3 && s.len() <= 16 && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// 判断一个字符串是否是 TID（纯数字）
@@ -805,7 +860,10 @@ fn download_skin_by_tid(
 
 /// 专门的 LittleSkin 皮肤下载（因为它可能有特殊的 API 行为）
 /// 支持传入可选的 player_name，当传入玩家名时优先通过玩家名方式获取（成功率更高）
-pub fn download_littleskin_skin_internal(uuid: &str, player_name: Option<&str>) -> Result<(), String> {
+pub fn download_littleskin_skin_internal(
+    uuid: &str,
+    player_name: Option<&str>,
+) -> Result<(), String> {
     let littleskin_base = "https://littleskin.cn/api/yggdrasil";
     let cleaned_uuid = format_uuid_with_hyphens(uuid);
     let profile_dir = format!("{}/skins", super::config_dir());
@@ -837,7 +895,10 @@ pub fn download_littleskin_skin_internal(uuid: &str, player_name: Option<&str>) 
     // ---------------------------------------------------------------
     // 情况 B：传入的是 UUID
     // ---------------------------------------------------------------
-    eprintln!("[LittleSkin皮肤] 传入值是 UUID: {}, player_name={:?}", cleaned_uuid, player_name);
+    eprintln!(
+        "[LittleSkin皮肤] 传入值是 UUID: {}, player_name={:?}",
+        cleaned_uuid, player_name
+    );
 
     // 步骤 1：从本地数据库获取 tid_skin（最高优先级）
     for u in &uuid_candidates(uuid) {
@@ -891,7 +952,10 @@ pub fn download_littleskin_skin_internal(uuid: &str, player_name: Option<&str>) 
     // 步骤 4：Fallback：Crafatar 格式（非玩家名/非TID时才尝试，避免把UUID当玩家名）
     let uuid_no_hyphens = format_uuid_without_hyphens(uuid);
     let crafatar_urls = vec![
-        format!("https://littleskin.cn/cravatar/skins/{}.png", uuid_no_hyphens),
+        format!(
+            "https://littleskin.cn/cravatar/skins/{}.png",
+            uuid_no_hyphens
+        ),
         format!("https://littleskin.cn/cravatar/skins/{}.png", cleaned_uuid),
     ];
     for url in &crafatar_urls {
@@ -920,7 +984,8 @@ pub fn download_littleskin_skin_internal(uuid: &str, player_name: Option<&str>) 
                     // 先尝试按 JSON 解析
                     if let Ok(json) = resp.json::<serde_json::Value>() {
                         // 常见字段: name / player_name / username
-                        let extracted_name = json["name"].as_str()
+                        let extracted_name = json["name"]
+                            .as_str()
                             .or_else(|| json["player_name"].as_str())
                             .or_else(|| json["username"].as_str())
                             .or_else(|| json["data"]["name"].as_str())
@@ -934,7 +999,8 @@ pub fn download_littleskin_skin_internal(uuid: &str, player_name: Option<&str>) 
                             }
                         }
                         // 尝试从 JSON 中直接取 tid_skin
-                        let tid_extracted = json["tid_skin"].as_i64()
+                        let tid_extracted = json["tid_skin"]
+                            .as_i64()
                             .or_else(|| json["skin_tid"].as_i64())
                             .or_else(|| json["data"]["tid_skin"].as_i64());
                         if let Some(tid) = tid_extracted {
@@ -945,8 +1011,13 @@ pub fn download_littleskin_skin_internal(uuid: &str, player_name: Option<&str>) 
                             }
                         }
                         // 尝试 textures 字段
-                        if let Some(skin_url) = json.get("skin").and_then(|v| v.as_str())
-                            .or_else(|| json.get("textures").and_then(|v| v.get("SKIN")).and_then(|v| v.get("url")).and_then(|v| v.as_str()))
+                        if let Some(skin_url) =
+                            json.get("skin").and_then(|v| v.as_str()).or_else(|| {
+                                json.get("textures")
+                                    .and_then(|v| v.get("SKIN"))
+                                    .and_then(|v| v.get("url"))
+                                    .and_then(|v| v.as_str())
+                            })
                         {
                             if let Some(tid) = extract_tid_from_texture_url(skin_url) {
                                 eprintln!("[LittleSkin皮肤] 从 skin URL 提取 tid: {}", tid);
@@ -995,9 +1066,7 @@ pub fn get_skin_base64(uuid: String) -> Result<String, String> {
     let uuid_with_hyphens = format_uuid_with_hyphens(&uuid);
     let uuid_without_hyphens = format_uuid_without_hyphens(&uuid);
 
-    let mut candidate_paths = vec![
-        format!("{}/{}.png", profile_dir, uuid),
-    ];
+    let mut candidate_paths = vec![format!("{}/{}.png", profile_dir, uuid)];
     // 添加带/不带连字符的候选
     if uuid != uuid_with_hyphens {
         candidate_paths.push(format!("{}/{}.png", profile_dir, uuid_with_hyphens));
@@ -1060,7 +1129,8 @@ async fn add_new_account(
         match token_response {
             Ok(token) => {
                 // 3. Xbox Live认证
-                let xbox_token_response = authenticate_with_xbox_live(client, &token.access_token).await?;
+                let xbox_token_response =
+                    authenticate_with_xbox_live(client, &token.access_token).await?;
 
                 // 4. 获取XSTS token
                 let xsts_token_response = get_xsts_token(client, &xbox_token_response.token).await?;
@@ -1074,13 +1144,15 @@ async fn add_new_account(
                 .await?;
 
                 // 6. 检查是否拥有Minecraft
-                let purchase_status = check_mc_purchase(client, &minecraft_login_response.access_token).await?;
+                let purchase_status =
+                    check_mc_purchase(client, &minecraft_login_response.access_token).await?;
                 if purchase_status.contains("还没有购买") {
                     return Err(purchase_status.into());
                 }
 
                 // 7. 获取Minecraft个人资料
-                let profile = get_minecraft_profile(client, &minecraft_login_response.access_token).await?;
+                let profile =
+                    get_minecraft_profile(client, &minecraft_login_response.access_token).await?;
 
                 // 8. 下载玩家皮肤
                 download_player_skin(client, &profile.id).await?;
@@ -1119,7 +1191,13 @@ fn build_http_client() -> Result<Client, String> {
 /// 将 reqwest 网络错误转换为对用户友好的中文提示
 fn friendly_net_err(e: impl std::fmt::Display) -> String {
     let msg = e.to_string();
-    if msg.contains("connect") || msg.contains("connection") || msg.contains("timed out") || msg.contains("timeout") || msg.contains("dns") || msg.contains("resolve") {
+    if msg.contains("connect")
+        || msg.contains("connection")
+        || msg.contains("timed out")
+        || msg.contains("timeout")
+        || msg.contains("dns")
+        || msg.contains("resolve")
+    {
         format!("网络连接失败，请检查您的网络后重试（{}）", msg)
     } else {
         msg
@@ -1187,7 +1265,9 @@ pub async fn ms_poll_and_login(device_code: String, interval: u64) -> Result<Acc
             continue; // 用户尚未授权，继续轮询
         }
 
-        let token: TokenResponse = response.json().await
+        let token: TokenResponse = response
+            .json()
+            .await
             .map_err(|e| format!("解析 Token 失败: {}", e))?;
 
         // Xbox Live 认证
@@ -1195,7 +1275,12 @@ pub async fn ms_poll_and_login(device_code: String, interval: u64) -> Result<Acc
             .await
             .map_err(|e| {
                 let msg = e.to_string();
-                if msg.contains("connect") || msg.contains("timed out") || msg.contains("timeout") || msg.contains("dns") || msg.contains("resolve") {
+                if msg.contains("connect")
+                    || msg.contains("timed out")
+                    || msg.contains("timeout")
+                    || msg.contains("dns")
+                    || msg.contains("resolve")
+                {
                     format!("网络连接失败，请检查您的网络后重试（{}）", msg)
                 } else {
                     format!("Xbox Live 认证失败: {}", msg)
@@ -1248,25 +1333,20 @@ pub async fn ms_poll_and_login(device_code: String, interval: u64) -> Result<Acc
         let db_access = mc_login.access_token.clone();
         let db_result = tokio::task::spawn_blocking(move || -> Result<(), String> {
             let connection = setup_database().map_err(|e| e.to_string())?;
-            save_account_info(
-                &connection,
-                &db_name,
-                &db_id,
-                &db_refresh,
-                &db_access,
-            )
-            .map_err(|e| e.to_string())?;
+            save_account_info(&connection, &db_name, &db_id, &db_refresh, &db_access)
+                .map_err(|e| e.to_string())?;
             Ok(())
-        }).await;
+        })
+        .await;
         match db_result {
-            Ok(Ok(())) => {},
+            Ok(Ok(())) => {}
             Ok(Err(e)) => eprintln!("[MS登录] 数据库保存失败(非致命): {}", e),
             Err(e) => eprintln!("[MS登录] 数据库任务崩溃(非致命): {}", e),
         }
 
         // 下载皮肤（非致命）
         match download_player_skin(&client, &profile.id).await {
-            Ok(()) => {},
+            Ok(()) => {}
             Err(e) => eprintln!("[MS登录] 皮肤下载失败(非致命): {}", e),
         }
 
@@ -1346,10 +1426,14 @@ pub async fn ms_get_skins_and_capes(access_token: String) -> Result<MCSkinCapePr
         return Err(format!("获取皮肤资料失败 (HTTP {})", resp.status()));
     }
 
-    let profile: MCFullProfileResponse = resp.json().await
+    let profile: MCFullProfileResponse = resp
+        .json()
+        .await
         .map_err(|e| format!("解析皮肤资料失败: {}", e))?;
 
-    let skins: Vec<MCSkinInfo> = profile.skins.unwrap_or_default()
+    let skins: Vec<MCSkinInfo> = profile
+        .skins
+        .unwrap_or_default()
         .into_iter()
         .map(|s| MCSkinInfo {
             id: s.id,
@@ -1360,7 +1444,9 @@ pub async fn ms_get_skins_and_capes(access_token: String) -> Result<MCSkinCapePr
         })
         .collect();
 
-    let capes: Vec<MCCapeInfo> = profile.capes.unwrap_or_default()
+    let capes: Vec<MCCapeInfo> = profile
+        .capes
+        .unwrap_or_default()
         .into_iter()
         .map(|c| MCCapeInfo {
             id: c.id,
@@ -1376,13 +1462,18 @@ pub async fn ms_get_skins_and_capes(access_token: String) -> Result<MCSkinCapePr
 /// 上传新皮肤（PNG base64）并设置为当前皮肤
 /// variant: "classic" 或 "slim"
 #[tauri::command]
-pub async fn ms_upload_skin(access_token: String, png_base64: String, variant: String) -> Result<String, String> {
+pub async fn ms_upload_skin(
+    access_token: String,
+    png_base64: String,
+    variant: String,
+) -> Result<String, String> {
     use base64::Engine as _;
 
     let client = build_http_client()?;
 
     // 解码 base64 -> 原始 PNG 字节
-    let raw_png = BASE64.decode(png_base64.trim())
+    let raw_png = BASE64
+        .decode(png_base64.trim())
         .map_err(|e| format!("皮肤 base64 解码失败: {}", e))?;
 
     // ── 手动构造 multipart/form-data（不依赖 reqwest multipart feature）
@@ -1391,7 +1482,9 @@ pub async fn ms_upload_skin(access_token: String, png_base64: String, variant: S
 
     // 第一部分：file (PNG 图片)
     body.extend_from_slice(format!("--{}\r\n", boundary).as_bytes());
-    body.extend_from_slice(b"Content-Disposition: form-data; name=\"file\"; filename=\"skin.png\"\r\n");
+    body.extend_from_slice(
+        b"Content-Disposition: form-data; name=\"file\"; filename=\"skin.png\"\r\n",
+    );
     body.extend_from_slice(b"Content-Type: image/png\r\n\r\n");
     body.extend_from_slice(&raw_png);
     body.extend_from_slice(b"\r\n");
@@ -1408,7 +1501,10 @@ pub async fn ms_upload_skin(access_token: String, png_base64: String, variant: S
     let resp = client
         .post("https://api.minecraftservices.com/minecraft/profile/skins")
         .bearer_auth(&access_token)
-        .header(reqwest::header::CONTENT_TYPE, format!("multipart/form-data; boundary={}", boundary))
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={}", boundary),
+        )
         .body(body)
         .send()
         .await
@@ -1421,11 +1517,14 @@ pub async fn ms_upload_skin(access_token: String, png_base64: String, variant: S
     }
 
     // 上传成功后，从响应中解析并返回新皮肤 ID
-    let profile: MCFullProfileResponse = resp.json().await
+    let profile: MCFullProfileResponse = resp
+        .json()
+        .await
         .map_err(|e| format!("解析上传响应失败: {}", e))?;
 
     // 找到新上传的皮肤（通常第一个 ACTIVE 就是新上传的）
-    let new_skin_id = profile.skins
+    let new_skin_id = profile
+        .skins
         .unwrap_or_default()
         .into_iter()
         .find(|s| s.state == "ACTIVE")
@@ -1441,11 +1540,18 @@ pub async fn ms_upload_skin(access_token: String, png_base64: String, variant: S
 
 /// 激活指定皮肤（从已有皮肤列表中切换）
 #[tauri::command]
-pub async fn ms_activate_skin(access_token: String, skin_id: String, variant: String) -> Result<(), String> {
+pub async fn ms_activate_skin(
+    access_token: String,
+    skin_id: String,
+    variant: String,
+) -> Result<(), String> {
     let client = build_http_client()?;
     let body = serde_json::json!({ "variant": variant });
     let resp = client
-        .put(&format!("https://api.minecraftservices.com/minecraft/profile/skins/{}", skin_id))
+        .put(&format!(
+            "https://api.minecraftservices.com/minecraft/profile/skins/{}",
+            skin_id
+        ))
         .bearer_auth(&access_token)
         .json(&body)
         .send()
@@ -1465,7 +1571,10 @@ pub async fn ms_activate_skin(access_token: String, skin_id: String, variant: St
 pub async fn ms_delete_skin(access_token: String, skin_id: String) -> Result<(), String> {
     let client = build_http_client()?;
     let resp = client
-        .delete(&format!("https://api.minecraftservices.com/minecraft/profile/skins/{}", skin_id))
+        .delete(&format!(
+            "https://api.minecraftservices.com/minecraft/profile/skins/{}",
+            skin_id
+        ))
         .bearer_auth(&access_token)
         .send()
         .await

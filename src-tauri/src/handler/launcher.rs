@@ -1,16 +1,16 @@
+use anyhow::Context;
+use os_info::Type;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::env::consts::OS;
 use std::{
-    collections::{HashSet, HashMap},
+    collections::{HashMap, HashSet},
     path::PathBuf,
     sync::{Mutex, OnceLock},
 };
-use std::env::consts::OS;
-use os_info::Type;
-use anyhow::Context;
-use regex::Regex;
 use std::{
     io::{BufRead, BufReader},
-    process::{Command, Stdio, Child},
+    process::{Child, Command, Stdio},
     thread,
 };
 use tauri::Emitter;
@@ -82,15 +82,46 @@ fn parse_log_level(line: &str) -> &'static str {
 fn clean_param_spaces(param: &str) -> String {
     let trimmed = param.trim();
     // 检查参数是否被引号包围
-    if (trimmed.starts_with('"') && trimmed.ends_with('"')) ||
-       (trimmed.starts_with("'") && trimmed.ends_with("'")) {
+    if (trimmed.starts_with('"') && trimmed.ends_with('"'))
+        || (trimmed.starts_with("'") && trimmed.ends_with("'"))
+    {
         // 移除外层引号
-        let inner = &trimmed[1..trimmed.len()-1];
+        let inner = &trimmed[1..trimmed.len() - 1];
         // 移除内部所有空格
         inner.chars().filter(|c| !c.is_whitespace()).collect()
     } else {
         // 没有引号，直接返回trim后的结果
         trimmed.to_string()
+    }
+}
+
+/// Add JVM arguments read from a separate loader JSON.
+///
+/// A selected instance may use the vanilla JSON as `version_name` and a Forge
+/// JSON as `loadName`. In that layout vanilla supplies `-cp`, while Forge alone
+/// supplies the required `-p` module path. Keep a loader path argument unless
+/// the same path key is already present in the effective argument list.
+fn append_loader_jvm_args(args: &mut Vec<String>, loader_args: &[String]) {
+    let mut index = 0;
+    while index < loader_args.len() {
+        let key = &loader_args[index];
+        let has_value = key.starts_with('-')
+            && index + 1 < loader_args.len()
+            && !loader_args[index + 1].starts_with('-');
+        let is_path_key = matches!(
+            key.as_str(),
+            "-p" | "--module-path" | "-cp" | "--class-path"
+        );
+        let already_present = is_path_key && args.iter().any(|arg| arg == key);
+
+        if !already_present {
+            args.push(key.clone());
+            if has_value {
+                args.push(loader_args[index + 1].clone());
+            }
+        }
+
+        index += if has_value { 2 } else { 1 };
     }
 }
 
@@ -135,7 +166,10 @@ fn library_name_to_path(name: &str) -> Option<String> {
         let group = parts[0].replace('.', "/");
         let artifact = parts[1];
         let version = parts[2];
-        Some(format!("{}/{}/{}/{}-{}.jar", group, artifact, version, artifact, version))
+        Some(format!(
+            "{}/{}/{}/{}-{}.jar",
+            group, artifact, version, artifact, version
+        ))
     } else {
         None
     }
@@ -151,13 +185,13 @@ fn parse_library_path(path: &str) -> Option<(String, String, String)> {
     let parts: Vec<&str> = path_without_ext.split('/').collect();
     if parts.len() >= 4 {
         // 路径格式: group/artifact/version/artifact-version
-        let group = parts[..parts.len()-3].join("/");
-        let artifact = parts[parts.len()-3];
-        let version = parts[parts.len()-2];
+        let group = parts[..parts.len() - 3].join("/");
+        let artifact = parts[parts.len() - 3];
+        let version = parts[parts.len() - 2];
 
         // 验证artifact-version格式
         let expected_filename = format!("{}-{}", artifact, version);
-        if parts[parts.len()-1] == expected_filename {
+        if parts[parts.len() - 1] == expected_filename {
             Some((group, artifact.to_string(), version.to_string()))
         } else {
             None
@@ -176,13 +210,19 @@ fn compare_versions(version1: &str, version2: &str) -> bool {
 
     // 逐个比较版本号部分
     for i in 0..std::cmp::max(v1_parts.len(), v2_parts.len()) {
-        let v1_part = v1_parts.get(i).and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
-        let v2_part = v2_parts.get(i).and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
+        let v1_part = v1_parts
+            .get(i)
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(0);
+        let v2_part = v2_parts
+            .get(i)
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(0);
 
         if v1_part > v2_part {
             return true;
         } else if v1_part < v2_part {
-            println!("liteloader是{}, forge是{}",version1,version2);
+            println!("liteloader是{}, forge是{}", version1, version2);
             return false;
         }
     }
@@ -234,7 +274,10 @@ struct Arguments {
 #[serde(untagged)]
 enum JvmArgument {
     String(String),
-    Object { rules: Vec<Rule>, value: serde_json::Value },
+    Object {
+        rules: Vec<Rule>,
+        value: serde_json::Value,
+    },
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -280,7 +323,12 @@ struct Artifact {
     size: u64,
 }
 
-pub fn run_command(args: Vec<String>, javaPath: PathBuf, MCPath: PathBuf, app_handle: tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run_command(
+    args: Vec<String>,
+    javaPath: PathBuf,
+    MCPath: PathBuf,
+    app_handle: tauri::AppHandle,
+) -> Result<(), Box<dyn std::error::Error>> {
     // 检查 Java 路径是否存在
     if !javaPath.exists() {
         return Err(format!("Java 路径不存在: {}", javaPath.display()).into());
@@ -300,8 +348,8 @@ pub fn run_command(args: Vec<String>, javaPath: PathBuf, MCPath: PathBuf, app_ha
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let metadata = std::fs::metadata(&javaPath)
-            .map_err(|e| format!("无法读取 Java 文件信息: {}", e))?;
+        let metadata =
+            std::fs::metadata(&javaPath).map_err(|e| format!("无法读取 Java 文件信息: {}", e))?;
         let permissions = metadata.permissions();
         if permissions.mode() & 0o111 == 0 {
             println!("Java 缺少执行权限，正在修复: {}", javaPath.display());
@@ -360,10 +408,13 @@ pub fn run_command(args: Vec<String>, javaPath: PathBuf, MCPath: PathBuf, app_ha
                         if let Ok(line) = line {
                             let level = parse_log_level(&line).to_string();
                             println!("[{}] {}", level, line);
-                            let _ = handle.emit("game-log", GameLogEvent {
-                                level: level.clone(),
-                                message: line.clone(),
-                            });
+                            let _ = handle.emit(
+                                "game-log",
+                                GameLogEvent {
+                                    level: level.clone(),
+                                    message: line.clone(),
+                                },
+                            );
                             // 检测游戏是否已完全启动
                             if !flag.load(std::sync::atomic::Ordering::SeqCst)
                                 && is_game_fully_started(&line)
@@ -392,10 +443,13 @@ pub fn run_command(args: Vec<String>, javaPath: PathBuf, MCPath: PathBuf, app_ha
                         if let Ok(line) = line {
                             let level = parse_log_level(&line).to_string();
                             println!("[{}] {}", level, line);
-                            let _ = handle.emit("game-log", GameLogEvent {
-                                level: level.clone(),
-                                message: line.clone(),
-                            });
+                            let _ = handle.emit(
+                                "game-log",
+                                GameLogEvent {
+                                    level: level.clone(),
+                                    message: line.clone(),
+                                },
+                            );
                             // 同样在 stderr 中检测启动完成（有些启动日志走 stderr）
                             if !flag.load(std::sync::atomic::Ordering::SeqCst)
                                 && is_game_fully_started(&line)
@@ -447,11 +501,7 @@ pub fn run_command(args: Vec<String>, javaPath: PathBuf, MCPath: PathBuf, app_ha
             Ok(())
         }
         Err(e) => {
-            let msg = format!(
-                "游戏启动失败 (Java: {}): {}",
-                javaPath.display(),
-                e
-            );
+            let msg = format!("游戏启动失败 (Java: {}): {}", javaPath.display(), e);
             println!("{}", msg);
             Err(msg.into())
         }
@@ -527,13 +577,28 @@ pub fn build_jvm_arguments(
     loadType: &str,
     loadName: &str,
     window_width: &str,
-    window_height: &str
+    window_height: &str,
 ) -> Result<String, String> {
     build_jvm_arguments_inner(
-        app, minecraft_path, java_path, wrapper_path, max_memory, version_name,
-        player_name, auth_token, uuid, authlib_injector_path, yggdrasil_api,
-        prefetched_data, loadType, loadName, window_width, window_height,
-    ).map_err(|e| e.to_string())
+        app,
+        minecraft_path,
+        java_path,
+        wrapper_path,
+        max_memory,
+        version_name,
+        player_name,
+        auth_token,
+        uuid,
+        authlib_injector_path,
+        yggdrasil_api,
+        prefetched_data,
+        loadType,
+        loadName,
+        window_width,
+        window_height,
+    )
+    .map(|args| args.join(" "))
+    .map_err(|e| e.to_string())
 }
 
 fn build_jvm_arguments_inner(
@@ -552,14 +617,17 @@ fn build_jvm_arguments_inner(
     loadType: &str,
     loadName: &str,
     window_width: &str,
-    window_height: &str
-) -> anyhow::Result<String> {
+    window_height: &str,
+) -> anyhow::Result<Vec<String>> {
     let minecraft_path_buf = PathBuf::from(minecraft_path);
 
     // 如果 uuid 为空或不合法，根据玩家名生成离线 UUID
     let uuid = if uuid.is_empty() || !is_valid_uuid(uuid) {
         let generated = offline_uuid(player_name);
-        println!("[启动器] UUID 无效 (\"{}\"), 已根据玩家名生成: {}", uuid, generated);
+        println!(
+            "[启动器] UUID 无效 (\"{}\"), 已根据玩家名生成: {}",
+            uuid, generated
+        );
         generated
     } else {
         uuid.to_string()
@@ -579,22 +647,28 @@ fn build_jvm_arguments_inner(
     let normalize = |p: &PathBuf| p.to_string_lossy().replace('\\', "/");
 
     if loadType != "0" {
-        let load_path = minecraft_path_buf
-            .join("versions")
-            .join(loadName);
-        println!("正在加载版本信息，loadType: {}, loadName: {}, loadPath: {}", loadType, loadName, load_path.display());
+        let load_path = minecraft_path_buf.join("versions").join(loadName);
+        println!(
+            "正在加载版本信息，loadType: {}, loadName: {}, loadPath: {}",
+            loadType,
+            loadName,
+            load_path.display()
+        );
         if loadType == "1" {
             println!("loadType为1，检查load_path是否为目录");
             if load_path.is_dir() {
                 println!("load_path是目录，开始读取JSON文件");
-                let entries: Vec<_> = std::fs::read_dir(&load_path).context("Failed to read load_path dir")?.collect();
+                let entries: Vec<_> = std::fs::read_dir(&load_path)
+                    .context("Failed to read load_path dir")?
+                    .collect();
                 println!("目录中共有 {} 个文件/文件夹", entries.len());
                 for entry in entries {
                     let entry = entry.context("Failed to read dir entry")?;
                     let path = entry.path();
                     println!("检查文件: {}", path.display());
                     println!("  文件扩展名: {:?}", path.extension());
-                    if path.extension()
+                    if path
+                        .extension()
                         .and_then(|s| s.to_str())
                         .map(|s| s.eq_ignore_ascii_case("json"))
                         .unwrap_or(false)
@@ -606,12 +680,17 @@ fn build_jvm_arguments_inner(
 
                         let value: serde_json::Value = serde_json::from_reader(
                             std::fs::File::open(&path)
-                                .with_context(|| format!("Failed to open {}", path.display()))?
+                                .with_context(|| format!("Failed to open {}", path.display()))?,
                         )?;
 
-                        println!("解析后的JSON值: {}", serde_json::to_string_pretty(&value).unwrap_or_else(|_| "无法序列化JSON".to_string()));
+                        println!(
+                            "解析后的JSON值: {}",
+                            serde_json::to_string_pretty(&value)
+                                .unwrap_or_else(|_| "无法序列化JSON".to_string())
+                        );
 
-                        let root: &serde_json::Value = if let Some(vinfo) = value.get("versionInfo") {
+                        let root: &serde_json::Value = if let Some(vinfo) = value.get("versionInfo")
+                        {
                             println!("使用versionInfo字段作为根对象");
                             vinfo
                         } else {
@@ -620,7 +699,10 @@ fn build_jvm_arguments_inner(
                         };
 
                         println!("开始提取mainClass和参数");
-                        println!("JSON根对象的所有键: {:?}", root.as_object().map(|o| o.keys().collect::<Vec<_>>()));
+                        println!(
+                            "JSON根对象的所有键: {:?}",
+                            root.as_object().map(|o| o.keys().collect::<Vec<_>>())
+                        );
                         if let Some(main_class) = root.get("mainClass").and_then(|v| v.as_str()) {
                             println!("找到mainClass: {}", main_class);
                             load_main_class = Some(main_class.to_string());
@@ -640,41 +722,21 @@ fn build_jvm_arguments_inner(
                         } else {
                             // ===== 参照 HMCL：统一处理 arguments =====
                             if let Some(args_obj) = root.get("arguments") {
-                                let library_dir_str = normalize(&minecraft_path_buf.join("libraries"));
+                                let library_dir_str =
+                                    normalize(&minecraft_path_buf.join("libraries"));
                                 let classpath_sep = if cfg!(windows) { ";" } else { ":" };
 
                                 // 处理 arguments.game
-                                if let Some(game_arr) = args_obj.get("game").and_then(|v| v.as_array()) {
+                                if let Some(game_arr) =
+                                    args_obj.get("game").and_then(|v| v.as_array())
+                                {
                                     for el in game_arr {
                                         if let Some(s) = el.as_str() {
                                             load_game_params.push(s.trim().to_string());
                                         } else if let Some(obj) = el.as_object() {
                                             // 处理带 rules 的对象
-                                            let rules_match = match obj.get("rules").and_then(|r| r.as_array()) {
-                                                Some(rules) => {
-                                                    let mut allowed = false;
-                                                    for rule in rules {
-                                                        if let Some(action) = rule.get("action").and_then(|a| a.as_str()) {
-                                                            let os_match = match rule.get("os").and_then(|o| o.as_object()) {
-                                                                Some(os) => match os.get("name").and_then(|n| n.as_str()) {
-                                                                    Some("windows") => cfg!(windows),
-                                                                    Some("osx") => cfg!(target_os = "macos"),
-                                                                    Some("linux") => cfg!(target_os = "linux"),
-                                                                    _ => true,
-                                                                },
-                                                                None => true,
-                                                            };
-                                                            if action == "allow" && os_match {
-                                                                allowed = true;
-                                                            } else if action == "disallow" && os_match {
-                                                                allowed = false;
-                                                            }
-                                                        }
-                                                    }
-                                                    allowed
-                                                },
-                                                None => true,
-                                            };
+                                            let rules_match =
+                                                launcher_rules_allow(obj.get("rules"));
                                             if rules_match {
                                                 if let Some(val) = obj.get("value") {
                                                     if let Some(s) = val.as_str() {
@@ -682,7 +744,8 @@ fn build_jvm_arguments_inner(
                                                     } else if let Some(arr) = val.as_array() {
                                                         for item in arr {
                                                             if let Some(s) = item.as_str() {
-                                                                load_game_params.push(s.trim().to_string());
+                                                                load_game_params
+                                                                    .push(s.trim().to_string());
                                                             }
                                                         }
                                                     }
@@ -693,7 +756,9 @@ fn build_jvm_arguments_inner(
                                 }
 
                                 // 处理 arguments.jvm（关键：包含 -p、-cp、--add-opens 等）
-                                if let Some(jvm_arr) = args_obj.get("jvm").and_then(|v| v.as_array()) {
+                                if let Some(jvm_arr) =
+                                    args_obj.get("jvm").and_then(|v| v.as_array())
+                                {
                                     for el in jvm_arr {
                                         fn apply_placeholder(
                                             s: &str,
@@ -702,9 +767,12 @@ fn build_jvm_arguments_inner(
                                             version_name: &str,
                                         ) -> String {
                                             let mut replaced = s.to_string();
-                                            replaced = replaced.replace("${classpath_separator}", classpath_sep);
-                                            replaced = replaced.replace("${library_directory}", library_dir_str);
-                                            replaced = replaced.replace("${version_name}", version_name);
+                                            replaced = replaced
+                                                .replace("${classpath_separator}", classpath_sep);
+                                            replaced = replaced
+                                                .replace("${library_directory}", library_dir_str);
+                                            replaced =
+                                                replaced.replace("${version_name}", version_name);
                                             replaced.trim().to_string()
                                         }
 
@@ -719,45 +787,82 @@ fn build_jvm_arguments_inner(
                                             }
                                         };
 
-                                        fn check_rules(obj: &serde_json::Map<String, serde_json::Value>) -> bool {
+                                        fn check_rules(
+                                            obj: &serde_json::Map<String, serde_json::Value>,
+                                        ) -> bool {
                                             match obj.get("rules").and_then(|r| r.as_array()) {
                                                 Some(rules) => {
                                                     let mut allowed = false;
                                                     for rule in rules {
-                                                        if let Some(action) = rule.get("action").and_then(|a| a.as_str()) {
-                                                            let os_match = match rule.get("os").and_then(|o| o.as_object()) {
-                                                                Some(os) => match os.get("name").and_then(|n| n.as_str()) {
-                                                                    Some("windows") => cfg!(windows),
-                                                                    Some("osx") => cfg!(target_os = "macos"),
-                                                                    Some("linux") => cfg!(target_os = "linux"),
+                                                        if let Some(action) = rule
+                                                            .get("action")
+                                                            .and_then(|a| a.as_str())
+                                                        {
+                                                            let os_match = match rule
+                                                                .get("os")
+                                                                .and_then(|o| o.as_object())
+                                                            {
+                                                                Some(os) => match os
+                                                                    .get("name")
+                                                                    .and_then(|n| n.as_str())
+                                                                {
+                                                                    Some("windows") => {
+                                                                        cfg!(windows)
+                                                                    }
+                                                                    Some("osx") => {
+                                                                        cfg!(target_os = "macos")
+                                                                    }
+                                                                    Some("linux") => {
+                                                                        cfg!(target_os = "linux")
+                                                                    }
                                                                     _ => true,
                                                                 },
                                                                 None => true,
                                                             };
                                                             if action == "allow" && os_match {
                                                                 allowed = true;
-                                                            } else if action == "disallow" && os_match {
+                                                            } else if action == "disallow"
+                                                                && os_match
+                                                            {
                                                                 allowed = false;
                                                             }
                                                         }
                                                     }
                                                     allowed
-                                                },
+                                                }
                                                 None => true,
                                             }
                                         }
 
                                         if let Some(s) = el.as_str() {
-                                            collect_str(s, &mut load_jvm_params, classpath_sep, &library_dir_str, &version_name);
+                                            collect_str(
+                                                s,
+                                                &mut load_jvm_params,
+                                                classpath_sep,
+                                                &library_dir_str,
+                                                &version_name,
+                                            );
                                         } else if let Some(obj) = el.as_object() {
                                             if check_rules(obj) {
                                                 if let Some(val) = obj.get("value") {
                                                     if let Some(s) = val.as_str() {
-                                                        collect_str(s, &mut load_jvm_params, classpath_sep, &library_dir_str, &version_name);
+                                                        collect_str(
+                                                            s,
+                                                            &mut load_jvm_params,
+                                                            classpath_sep,
+                                                            &library_dir_str,
+                                                            &version_name,
+                                                        );
                                                     } else if let Some(arr) = val.as_array() {
                                                         for item in arr {
                                                             if let Some(s) = item.as_str() {
-                                                                collect_str(s, &mut load_jvm_params, classpath_sep, &library_dir_str, &version_name);
+                                                                collect_str(
+                                                                    s,
+                                                                    &mut load_jvm_params,
+                                                                    classpath_sep,
+                                                                    &library_dir_str,
+                                                                    &version_name,
+                                                                );
                                                             }
                                                         }
                                                     }
@@ -778,7 +883,9 @@ fn build_jvm_arguments_inner(
                         println!("  load_jvm_params: {:?}", load_jvm_params);
 
                         // 检查是否是LiteLoader
-                        let is_liteloader = load_main_class.as_ref().map_or(false, |s| s.contains("LiteLoader"));
+                        let is_liteloader = load_main_class
+                            .as_ref()
+                            .map_or(false, |s| s.contains("LiteLoader"));
                         println!("是否是LiteLoader: {}", is_liteloader);
 
                         // 处理versionPatch.json（如果有）
@@ -788,33 +895,54 @@ fn build_jvm_arguments_inner(
                             if patch_json_path.exists() {
                                 println!("找到versionPatch.json，开始处理");
                                 let patch_content = std::fs::read_to_string(&patch_json_path)
-                                    .with_context(|| format!("Failed to read {}", patch_json_path.display()))?;
-                                let patch_value: serde_json::Value = serde_json::from_str(&patch_content)
-                                    .with_context(|| format!("Failed to parse {}", patch_json_path.display()))?;
+                                    .with_context(|| {
+                                        format!("Failed to read {}", patch_json_path.display())
+                                    })?;
+                                let patch_value: serde_json::Value =
+                                    serde_json::from_str(&patch_content).with_context(|| {
+                                        format!("Failed to parse {}", patch_json_path.display())
+                                    })?;
 
-                                if let Some(patch_libraries) = patch_value.get("libraries").and_then(|v| v.as_array()) {
+                                if let Some(patch_libraries) =
+                                    patch_value.get("libraries").and_then(|v| v.as_array())
+                                {
                                     for patch_lib in patch_libraries {
                                         if let Some(downloads) = patch_lib.get("downloads") {
                                             if let Some(artifact) = downloads.get("artifact") {
-                                                if let Some(path_str) = artifact.get("path").and_then(|p| p.as_str()) {
-                                                    let abs = minecraft_path_buf.join("libraries").join(path_str);
+                                                if let Some(path_str) =
+                                                    artifact.get("path").and_then(|p| p.as_str())
+                                                {
+                                                    let abs = minecraft_path_buf
+                                                        .join("libraries")
+                                                        .join(path_str);
                                                     let norm = normalize(&abs);
                                                     patch_library_paths.push(norm);
                                                 }
                                             }
-                                            if let Some(classifiers) = downloads.get("classifiers").and_then(|v| v.as_object()) {
+                                            if let Some(classifiers) = downloads
+                                                .get("classifiers")
+                                                .and_then(|v| v.as_object())
+                                            {
                                                 for art in classifiers.values() {
-                                                    if let Some(path_str) = art.get("path").and_then(|p| p.as_str()) {
-                                                        let abs = minecraft_path_buf.join("libraries").join(path_str);
+                                                    if let Some(path_str) =
+                                                        art.get("path").and_then(|p| p.as_str())
+                                                    {
+                                                        let abs = minecraft_path_buf
+                                                            .join("libraries")
+                                                            .join(path_str);
                                                         let norm = normalize(&abs);
                                                         patch_library_paths.push(norm);
                                                     }
                                                 }
                                             }
-                                        } else if let Some(name_val) = patch_lib.get("name").and_then(|n| n.as_str()) {
+                                        } else if let Some(name_val) =
+                                            patch_lib.get("name").and_then(|n| n.as_str())
+                                        {
                                             // 对于没有downloads字段但有name字段的库
                                             if let Some(lib_path) = library_name_to_path(name_val) {
-                                                let abs = minecraft_path_buf.join("libraries").join(&lib_path);
+                                                let abs = minecraft_path_buf
+                                                    .join("libraries")
+                                                    .join(&lib_path);
                                                 let norm = normalize(&abs);
                                                 patch_library_paths.push(norm);
                                             }
@@ -828,22 +956,35 @@ fn build_jvm_arguments_inner(
                             for lib in libraries {
                                 if let Some(downloads) = lib.get("downloads") {
                                     if let Some(artifact) = downloads.get("artifact") {
-                                        if let Some(path_str) = artifact.get("path").and_then(|p| p.as_str()) {
-                                            let abs = minecraft_path_buf.join("libraries").join(path_str);
+                                        if let Some(path_str) =
+                                            artifact.get("path").and_then(|p| p.as_str())
+                                        {
+                                            let abs =
+                                                minecraft_path_buf.join("libraries").join(path_str);
                                             let norm = normalize(&abs);
                                             println!("library artifact path: {}", abs.display());
                                             load_library_paths.push(norm.clone());
 
-                                            if let Some(name) = lib.get("name").and_then(|n| n.as_str()) {
+                                            if let Some(name) =
+                                                lib.get("name").and_then(|n| n.as_str())
+                                            {
                                                 if name.starts_with("net.minecraftforge:forge") {
                                                     if let Some(folder) = abs.parent() {
                                                         if folder.is_dir() {
                                                             for jf in std::fs::read_dir(folder)? {
                                                                 let jf = jf?;
                                                                 let jfpath = jf.path();
-                                                                if jfpath.extension().and_then(|s| s.to_str()) == Some("jar") {
-                                                                    println!("forge jar: {}", jfpath.display());
-                                                                    load_library_paths.push(normalize(&jfpath));
+                                                                if jfpath
+                                                                    .extension()
+                                                                    .and_then(|s| s.to_str())
+                                                                    == Some("jar")
+                                                                {
+                                                                    println!(
+                                                                        "forge jar: {}",
+                                                                        jfpath.display()
+                                                                    );
+                                                                    load_library_paths
+                                                                        .push(normalize(&jfpath));
                                                                 }
                                                             }
                                                         }
@@ -852,12 +993,21 @@ fn build_jvm_arguments_inner(
                                             }
                                         }
                                     }
-                                    if let Some(classifiers) = downloads.get("classifiers").and_then(|v| v.as_object()) {
+                                    if let Some(classifiers) =
+                                        downloads.get("classifiers").and_then(|v| v.as_object())
+                                    {
                                         for art in classifiers.values() {
-                                            if let Some(path_str) = art.get("path").and_then(|p| p.as_str()) {
-                                                let abs = minecraft_path_buf.join("libraries").join(path_str);
+                                            if let Some(path_str) =
+                                                art.get("path").and_then(|p| p.as_str())
+                                            {
+                                                let abs = minecraft_path_buf
+                                                    .join("libraries")
+                                                    .join(path_str);
                                                 let norm = normalize(&abs);
-                                                println!("library classifier path: {}", abs.display());
+                                                println!(
+                                                    "library classifier path: {}",
+                                                    abs.display()
+                                                );
                                                 load_library_paths.push(norm);
                                             }
                                         }
@@ -866,11 +1016,17 @@ fn build_jvm_arguments_inner(
                                     // 对于所有有name字段的库，都根据name构建路径并添加到classpath
                                     // 这确保了像LiteLoader这样的mod加载器的所有依赖库都被正确加载
                                     // 无论是否有downloads、url或serverreq字段
-                                    if let Some(name_val) = lib.get("name").and_then(|n| n.as_str()) {
+                                    if let Some(name_val) = lib.get("name").and_then(|n| n.as_str())
+                                    {
                                         if let Some(lib_path) = library_name_to_path(name_val) {
-                                            let abs = minecraft_path_buf.join("libraries").join(&lib_path);
+                                            let abs = minecraft_path_buf
+                                                .join("libraries")
+                                                .join(&lib_path);
                                             let norm = normalize(&abs);
-                                            println!("library artifact path (from name): {}", abs.display());
+                                            println!(
+                                                "library artifact path (from name): {}",
+                                                abs.display()
+                                            );
                                             // 检查是否已经添加过，避免重复
                                             if !load_library_paths.contains(&norm) {
                                                 load_library_paths.push(norm);
@@ -894,12 +1050,18 @@ fn build_jvm_arguments_inner(
 
                             // 遍历load_library_paths，查找是否有更高版本的patch库
                             for (i, load_path) in load_library_paths.iter().enumerate() {
-                                if let Some((load_group, load_artifact, load_version)) = parse_library_path(load_path) {
+                                if let Some((load_group, load_artifact, load_version)) =
+                                    parse_library_path(load_path)
+                                {
                                     // 在patch_library_paths中查找相同group和artifact的库
                                     for patch_path in &patch_library_paths {
-                                        if let Some((patch_group, patch_artifact, patch_version)) = parse_library_path(patch_path) {
+                                        if let Some((patch_group, patch_artifact, patch_version)) =
+                                            parse_library_path(patch_path)
+                                        {
                                             // 如果group和artifact相同，比较版本号
-                                            if load_group == patch_group && load_artifact == patch_artifact {
+                                            if load_group == patch_group
+                                                && load_artifact == patch_artifact
+                                            {
                                                 // 如果patch库的版本更高，标记load库为需要移除
                                                 if compare_versions(&patch_version, &load_version) {
                                                     indices_to_remove.push(i);
@@ -934,10 +1096,13 @@ fn build_jvm_arguments_inner(
             }
         } else {
             if load_path.is_dir() {
-                for entry in std::fs::read_dir(&load_path).context("Failed to read load_path dir")? {
+                for entry in
+                    std::fs::read_dir(&load_path).context("Failed to read load_path dir")?
+                {
                     let entry = entry.context("Failed to read dir entry")?;
                     let path = entry.path();
-                    if path.extension()
+                    if path
+                        .extension()
                         .and_then(|s| s.to_str())
                         .map(|s| s.eq_ignore_ascii_case("json"))
                         .unwrap_or(false)
@@ -950,7 +1115,8 @@ fn build_jvm_arguments_inner(
                         let value: serde_json::Value = serde_json::from_str(&content)
                             .with_context(|| format!("Failed to parse {}", path.display()))?;
                         
-                        let root: &serde_json::Value = if let Some(vinfo) = value.get("versionInfo") {
+                        let root: &serde_json::Value = if let Some(vinfo) = value.get("versionInfo")
+                        {
                             vinfo
                         } else {
                             &value
@@ -961,24 +1127,36 @@ fn build_jvm_arguments_inner(
                             for lib in libraries {
                                 if let Some(downloads) = lib.get("downloads") {
                                     if let Some(artifact) = downloads.get("artifact") {
-                                        if let Some(path_str) = artifact.get("path").and_then(|p| p.as_str()) {
-                                            let abs = minecraft_path_buf.join("libraries").join(path_str);
+                                        if let Some(path_str) =
+                                            artifact.get("path").and_then(|p| p.as_str())
+                                        {
+                                            let abs =
+                                                minecraft_path_buf.join("libraries").join(path_str);
                                             let norm = normalize(&abs);
                                             load_library_paths.push(norm);
                                         }
                                     }
-                                    if let Some(classifiers) = downloads.get("classifiers").and_then(|v| v.as_object()) {
+                                    if let Some(classifiers) =
+                                        downloads.get("classifiers").and_then(|v| v.as_object())
+                                    {
                                         for art in classifiers.values() {
-                                            if let Some(path_str) = art.get("path").and_then(|p| p.as_str()) {
-                                                let abs = minecraft_path_buf.join("libraries").join(path_str);
+                                            if let Some(path_str) =
+                                                art.get("path").and_then(|p| p.as_str())
+                                            {
+                                                let abs = minecraft_path_buf
+                                                    .join("libraries")
+                                                    .join(path_str);
                                                 let norm = normalize(&abs);
                                                 load_library_paths.push(norm);
                                             }
                                         }
                                     }
-                                } else if let Some(name_val) = lib.get("name").and_then(|n| n.as_str()) {
+                                } else if let Some(name_val) =
+                                    lib.get("name").and_then(|n| n.as_str())
+                                {
                                     if let Some(lib_path) = library_name_to_path(name_val) {
-                                        let abs = minecraft_path_buf.join("libraries").join(&lib_path);
+                                        let abs =
+                                            minecraft_path_buf.join("libraries").join(&lib_path);
                                         let norm = normalize(&abs);
                                         if !load_library_paths.contains(&norm) {
                                             load_library_paths.push(norm);
@@ -990,7 +1168,8 @@ fn build_jvm_arguments_inner(
                         
                         // 提取参数信息
                         if let Some(args_obj) = root.get("arguments") {
-                            if let Some(game_arr) = args_obj.get("game").and_then(|v| v.as_array()) {
+                            if let Some(game_arr) = args_obj.get("game").and_then(|v| v.as_array())
+                            {
                                 for el in game_arr {
                                     if let Some(s) = el.as_str() {
                                         load_game_params.push(s.trim().to_string());
@@ -1026,8 +1205,9 @@ fn build_jvm_arguments_inner(
     }
 
     let mut version_json: VersionJson = serde_json::from_reader(
-        std::fs::File::open(version_path).context("Failed to open version json")?
-    ).context("Failed to parse version json")?;
+        std::fs::File::open(version_path).context("Failed to open version json")?,
+    )
+    .context("Failed to parse version json")?;
 
     let parent_version: Option<String> = version_json.parent_version.clone();
 
@@ -1038,7 +1218,7 @@ fn build_jvm_arguments_inner(
             .join(format!("{}.json", parent));
 
         let parent_json: VersionJson = serde_json::from_reader(
-            std::fs::File::open(parent_path).context("Failed to open parent json")?
+            std::fs::File::open(parent_path).context("Failed to open parent json")?,
         )?;
 
         if version_json.asset_index.is_none() {
@@ -1072,43 +1252,52 @@ fn build_jvm_arguments_inner(
         }
 
         // ===== 关键修复：合并 parent 的 arguments（参照 HMCL）=====
-    // Forge/NeoForge 的 -p (--module-path)、-cp、--add-opens 等关键参数
-    // 都定义在 parent 的 arguments.jvm 中。必须以 parent 的参数为基础进行合并。
-    match (&version_json.arguments, &parent_json.arguments) {
-        (None, Some(_)) => {
-            // 当前版本没有 arguments，直接使用 parent 的
-            version_json.arguments = parent_json.arguments;
-        }
-        (Some(_), Some(_)) => {
-            // ===== 修复：两边都有 arguments 时，以 parent 的 jvm 参数为主 =====
-            // 因为 Forge/NeoForge 的 -p、-cp 等关键模块路径参数定义在 parent (Forge) JSON 中，
-            // 当前版本（子版本/整合包版本）的 jvm 参数通常为空或不重要。
-            // 如果 parent 有 jvm 参数，就用 parent 的；只有 parent 没有时才用当前的。
-            let parent_has_jvm = parent_json.arguments.as_ref().and_then(|a| a.jvm.as_ref()).is_some();
-            if parent_has_jvm {
-                if let Some(cur_args) = version_json.arguments.as_mut() {
-                    cur_args.jvm = parent_json.arguments.as_ref().and_then(|a| a.jvm.clone());
+        // Forge/NeoForge 的 -p (--module-path)、-cp、--add-opens 等关键参数
+        // 都定义在 parent 的 arguments.jvm 中。必须以 parent 的参数为基础进行合并。
+        match (&version_json.arguments, &parent_json.arguments) {
+            (None, Some(_)) => {
+                // 当前版本没有 arguments，直接使用 parent 的
+                version_json.arguments = parent_json.arguments;
+            }
+            (Some(_), Some(_)) => {
+                // ===== 修复：两边都有 arguments 时，以 parent 的 jvm 参数为主 =====
+                // 因为 Forge/NeoForge 的 -p、-cp 等关键模块路径参数定义在 parent (Forge) JSON 中，
+                // 当前版本（子版本/整合包版本）的 jvm 参数通常为空或不重要。
+                // 如果 parent 有 jvm 参数，就用 parent 的；只有 parent 没有时才用当前的。
+                let parent_has_jvm = parent_json
+                    .arguments
+                    .as_ref()
+                    .and_then(|a| a.jvm.as_ref())
+                    .is_some();
+                if parent_has_jvm {
+                    if let Some(cur_args) = version_json.arguments.as_mut() {
+                        cur_args.jvm = parent_json.arguments.as_ref().and_then(|a| a.jvm.clone());
+                    }
+                }
+                // game 参数同理
+                let parent_has_game = parent_json
+                    .arguments
+                    .as_ref()
+                    .and_then(|a| a.game.as_ref())
+                    .is_some();
+                if parent_has_game {
+                    if let Some(cur_args) = version_json.arguments.as_mut() {
+                        cur_args.game = parent_json.arguments.as_ref().and_then(|a| a.game.clone());
+                    }
                 }
             }
-            // game 参数同理
-            let parent_has_game = parent_json.arguments.as_ref().and_then(|a| a.game.as_ref()).is_some();
-            if parent_has_game {
-                if let Some(cur_args) = version_json.arguments.as_mut() {
-                    cur_args.game = parent_json.arguments.as_ref().and_then(|a| a.game.clone());
-                }
-            }
+            _ => {}
         }
-        _ => {}
-    }
-    // 老版本 format 兼容：如果 parent 使用 minecraft_arguments 而不是 arguments.game
-    if version_json.minecraft_arguments.is_none() && parent_json.minecraft_arguments.is_some() {
-        version_json.minecraft_arguments = parent_json.minecraft_arguments;
-    }
+        // 老版本 format 兼容：如果 parent 使用 minecraft_arguments 而不是 arguments.game
+        if version_json.minecraft_arguments.is_none() && parent_json.minecraft_arguments.is_some() {
+            version_json.minecraft_arguments = parent_json.minecraft_arguments;
+        }
 
         // 如果 parent 的 mainClass 是 bootstraplauncher（Forge 1.17+），使用 parent 的 mainClass
         // 因为当前版本的 mainClass 可能还是 net.minecraft.client.main.Main
         if version_json.main_class.to_lowercase().contains("minecraft")
-            && !parent_json.main_class.to_lowercase().contains("minecraft") {
+            && !parent_json.main_class.to_lowercase().contains("minecraft")
+        {
             version_json.main_class = parent_json.main_class;
         }
     }
@@ -1148,15 +1337,13 @@ fn build_jvm_arguments_inner(
             match rule.action.as_str() {
                 "allow" => allowed = rule_matched,
                 "disallow" => allowed = !rule_matched,
-                _ => ()
+                _ => (),
             }
         }
         allowed
     }
 
-    let format_path = |p: PathBuf| -> String {
-        p.to_string_lossy().replace('\\', "/")
-    };
+    let format_path = |p: PathBuf| -> String { p.to_string_lossy().replace('\\', "/") };
 
     // 处理可能为空的认证字段
     let effective_token = if auth_token.trim().is_empty() {
@@ -1191,12 +1378,14 @@ fn build_jvm_arguments_inner(
         hash[6] = (hash[6] & 0x0f) | 0x30;
         // 设置 RFC 4122 变体
         hash[8] = (hash[8] & 0x3f) | 0x80;
-        format!("{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
+        format!(
+            "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
             u32::from_be_bytes([hash[0], hash[1], hash[2], hash[3]]),
             u16::from_be_bytes([hash[4], hash[5]]),
             u16::from_be_bytes([hash[6], hash[7]]),
             u16::from_be_bytes([hash[8], hash[9]]),
-            u64::from_be_bytes([hash[10], hash[11], hash[12], hash[13], hash[14], hash[15], 0, 0]) >> 16
+            u64::from_be_bytes([hash[10], hash[11], hash[12], hash[13], hash[14], hash[15], 0, 0])
+                >> 16
         )
     }
 
@@ -1207,37 +1396,54 @@ fn build_jvm_arguments_inner(
     };
 
     let replace_placeholders = |s: &str| -> String {
-        let result = s.replace("${auth_player_name}", player_name)
-         .replace("${auth_session}", &effective_token)
-         .replace("${auth_access_token}", &effective_token)
-         .replace("${auth_uuid}", &effective_uuid)
-         .replace("${user_properties}", r#"{"issuer":["Mojang"]}"#)
-         .replace("${version_name}", version_name)
-         .replace("${natives_directory}", &format_path(
-             minecraft_path_buf
-                 .join("versions")
-                 .join(version_name)
-                 .join(format!("{}-natives", version_name))
-         ))
-         .replace("${game_directory}", &format_path(
-             minecraft_path_buf
-                 .join("versions")
-                 .join(if loadType != "0" && !loadName.is_empty() { loadName } else { version_name })
-         ))
-         .replace("${assets_root}", &format_path(
-             minecraft_path_buf.join("assets")
-         ))
-         .replace("${assets_index_name}",
-             &version_json.asset_index.as_ref().map(|a| a.id.trim()).unwrap_or(&String::new()))
-         .replace("${user_type}", "msa")
-         .replace("${version_type}", "RTL");
+        let result = s
+            .replace("${auth_player_name}", player_name)
+            .replace("${auth_session}", &effective_token)
+            .replace("${auth_access_token}", &effective_token)
+            .replace("${auth_uuid}", &effective_uuid)
+            .replace("${user_properties}", r#"{"issuer":["Mojang"]}"#)
+            .replace("${version_name}", version_name)
+            .replace(
+                "${natives_directory}",
+                &format_path(
+                    minecraft_path_buf
+                        .join("versions")
+                        .join(version_name)
+                        .join(format!("{}-natives", version_name)),
+                ),
+            )
+            .replace(
+                "${game_directory}",
+                &format_path(minecraft_path_buf.join("versions").join(
+                    if loadType != "0" && !loadName.is_empty() {
+                        loadName
+                    } else {
+                        version_name
+                    },
+                )),
+            )
+            .replace(
+                "${assets_root}",
+                &format_path(minecraft_path_buf.join("assets")),
+            )
+            .replace(
+                "${assets_index_name}",
+                &version_json
+                    .asset_index
+                    .as_ref()
+                    .map(|a| a.id.trim())
+                    .unwrap_or(&String::new()),
+            )
+            .replace("${user_type}", "msa")
+            .replace("${version_type}", "RTL");
 
         // 将剩余的${}格式参数转换为{}格式
         let re = Regex::new(r"\$\{[^}]+\}").unwrap();
         re.replace_all(&result, "{}").to_string()
     };
 
-    let mut class_path_entries: Vec<String> = version_json.libraries
+    let mut class_path_entries: Vec<String> = version_json
+        .libraries
         .iter()
         .filter_map(|lib| {
             // 检查规则或serverreq标志
@@ -1246,16 +1452,23 @@ fn build_jvm_arguments_inner(
                 return None;
             }
             let artifact_path = if !lib.downloads.classifiers.is_empty() {
-                let classifier = lib.natives.get(match os_info.os_type() {
-                    Type::Windows => "windows",
-                    Type::Macos => "osx",
-                    Type::Linux => "linux",
-                    _ => return None,
-                }).and_then(|s| s.strip_prefix("natives-"));
-                lib.downloads.classifiers.get(classifier?)
+                let classifier = lib
+                    .natives
+                    .get(match os_info.os_type() {
+                        Type::Windows => "windows",
+                        Type::Macos => "osx",
+                        Type::Linux => "linux",
+                        _ => return None,
+                    })
+                    .and_then(|s| s.strip_prefix("natives-"));
+                lib.downloads
+                    .classifiers
+                    .get(classifier?)
                     .map(|a| minecraft_path_buf.join("libraries").join(&a.path))
             } else if lib.downloads.artifact.is_some() {
-                lib.downloads.artifact.as_ref()
+                lib.downloads
+                    .artifact
+                    .as_ref()
                     .map(|a| minecraft_path_buf.join("libraries").join(&a.path))
             } else {
                 // 没有 downloads 信息：根据 name 构建路径
@@ -1337,24 +1550,32 @@ fn build_jvm_arguments_inner(
             // 解析load库的路径
             if let Some((load_group, load_artifact, load_version)) = parse_library_path(load_path) {
                 // 检查是否已经处理过相同group和artifact的库
-                let already_processed = processed_load_libs.iter().any(|(g, a, _)| {
-                    g == &load_group && a == &load_artifact
-                });
+                let already_processed = processed_load_libs
+                    .iter()
+                    .any(|(g, a, _)| g == &load_group && a == &load_artifact);
 
                 if !already_processed {
                     // 标记为已处理
-                    processed_load_libs.push((load_group.clone(), load_artifact.clone(), load_version.clone()));
+                    processed_load_libs.push((
+                        load_group.clone(),
+                        load_artifact.clone(),
+                        load_version.clone(),
+                    ));
 
                     // 检查原版库中是否有相同group和artifact的库
                     for (i, vanilla_path) in class_path_entries.iter().enumerate() {
-                        if let Some((vanilla_group, vanilla_artifact, vanilla_version)) = parse_library_path(vanilla_path) {
+                        if let Some((vanilla_group, vanilla_artifact, vanilla_version)) =
+                            parse_library_path(vanilla_path)
+                        {
                             // 如果group和artifact相同，比较版本号
                             if vanilla_group == load_group && vanilla_artifact == load_artifact {
                                 // 如果load库的版本更高，标记原版库为需要移除
                                 if compare_versions(&load_version, &vanilla_version) {
                                     indices_to_remove.push(i);
-                                    println!("替换库: {} (原版版本: {}) -> {} (load版本: {})",
-                                        vanilla_path, vanilla_version, load_path, load_version);
+                                    println!(
+                                        "替换库: {} (原版版本: {}) -> {} (load版本: {})",
+                                        vanilla_path, vanilla_version, load_path, load_version
+                                    );
                                 }
                             }
                         }
@@ -1388,19 +1609,20 @@ fn build_jvm_arguments_inner(
     // 2. 主类中包含 bootstraplauncher / modlauncher / neo / fml / ModLauncher（
     //    对于通过 loadType/loadName 机制加载 Forge 配置但 version_name 是原版版本名的情况）
     let main_class_lc = version_json.main_class.to_lowercase();
-    let uses_module_system = version_json.libraries.iter().any(|lib| {
-        lib.name.contains(":fmlloader:") || lib.name.contains(":bootstraplauncher:")
-    }) || main_class_lc.contains("bootstraplauncher")
-        || main_class_lc.contains("modlauncher")
-        || main_class_lc.contains("cpw.mods")
-        || main_class_lc.contains("fml");
+    let uses_module_system =
+        version_json.libraries.iter().any(|lib| {
+            lib.name.contains(":fmlloader:") || lib.name.contains(":bootstraplauncher:")
+        }) || main_class_lc.contains("bootstraplauncher")
+            || main_class_lc.contains("modlauncher")
+            || main_class_lc.contains("cpw.mods")
+            || main_class_lc.contains("fml");
 
     if !uses_module_system {
         let vanilla_jar = format_path(
             minecraft_path_buf
                 .join("versions")
                 .join(version_name)
-                .join(format!("{}.jar", version_name))
+                .join(format!("{}.jar", version_name)),
         );
         class_path_entries.push(vanilla_jar);
     }
@@ -1411,10 +1633,7 @@ fn build_jvm_arguments_inner(
     let cp_sep_for_replace = if is_windows { ";" } else { ":" };
     let class_path: String = class_path_entries.join(cp_sep_for_replace);
 
-    let mut args: Vec<String> = vec![
-        "-Xmn768m".to_string(),
-        format!("-Xmx{}m", max_memory),
-    ];
+    let mut args: Vec<String> = vec!["-Xmn768m".to_string(), format!("-Xmx{}m", max_memory)];
 
     // ===== 参照 HMCL：修正 load_jvm_params 中的 neoforge/forge jar 路径 =====
     // Forge JSON 中的 -p 参数可能包含 "neoforge-${version_name}.jar" 这样的引用，
@@ -1434,7 +1653,11 @@ fn build_jvm_arguments_inner(
                     let artifact = parts[1];
                     let version = parts[2];
                     let jar_name = format!("{}-{}.jar", artifact, version);
-                    let jar_path = library_dir.join(&group).join(artifact).join(version).join(&jar_name);
+                    let jar_path = library_dir
+                        .join(&group)
+                        .join(artifact)
+                        .join(version)
+                        .join(&jar_name);
                     let jar_path_str = format_path(jar_path);
                     if lib.name.contains("neoforge") && neoforge_jar.is_empty() {
                         neoforge_jar = jar_path_str.clone();
@@ -1474,7 +1697,10 @@ fn build_jvm_arguments_inner(
             fixed = fixed.replace("neoforge-${version_name}.jar", &neoforge_jar);
             fixed = fixed.replace("neoforge-${version_name}", &neoforge_jar);
             // 其他可能的形式
-            if fixed.contains("neoforge") && fixed.contains(".jar") && !std::path::Path::new(&fixed).exists() {
+            if fixed.contains("neoforge")
+                && fixed.contains(".jar")
+                && !std::path::Path::new(&fixed).exists()
+            {
                 // 如果参数看起来是 jar 路径但不存在，尝试替换为 neoforge jar
                 if fixed.contains(&version_name) {
                     fixed = neoforge_jar.clone();
@@ -1489,7 +1715,10 @@ fn build_jvm_arguments_inner(
     }
 
     let extra_before_cp: Vec<String> = if !load_jvm_params_fixed.is_empty() {
-        load_jvm_params_fixed.iter().map(|p| clean_param_spaces(p)).collect()
+        load_jvm_params_fixed
+            .iter()
+            .map(|p| clean_param_spaces(p))
+            .collect()
     } else {
         Vec::new()
     };
@@ -1515,7 +1744,8 @@ fn build_jvm_arguments_inner(
             for lib in &version_json.libraries {
                 if lib.name.contains("neoforge") || lib.name.contains(":forge:") {
                     if let Some(artifact) = &lib.downloads.artifact {
-                        let jar_path = format_path(minecraft_path_buf.join("libraries").join(&artifact.path));
+                        let jar_path =
+                            format_path(minecraft_path_buf.join("libraries").join(&artifact.path));
                         if lib.name.contains("neoforge") && neoforge_jar_path.is_empty() {
                             neoforge_jar_path = jar_path.clone();
                         }
@@ -1530,8 +1760,12 @@ fn build_jvm_arguments_inner(
                             let artifact_name = parts[1];
                             let artifact_version = parts[2];
                             let jar_name = format!("{}-{}.jar", artifact_name, artifact_version);
-                            let rel_path = format!("{}/{}/{}/{}", group_path, artifact_name, artifact_version, jar_name);
-                            let jar_path = format_path(minecraft_path_buf.join("libraries").join(&rel_path));
+                            let rel_path = format!(
+                                "{}/{}/{}/{}",
+                                group_path, artifact_name, artifact_version, jar_name
+                            );
+                            let jar_path =
+                                format_path(minecraft_path_buf.join("libraries").join(&rel_path));
                             if lib.name.contains("neoforge") && neoforge_jar_path.is_empty() {
                                 neoforge_jar_path = jar_path.clone();
                             }
@@ -1544,13 +1778,22 @@ fn build_jvm_arguments_inner(
             }
             // 如果 libraries 里找不到，还可以在 versions/{loadName}/libraries 里找（NeoForge 安装器布局）
             if (neoforge_jar_path.is_empty() && forge_jar_path.is_empty()) && !loadName.is_empty() {
-                let load_lib_dir = minecraft_path_buf.join("versions").join(&loadName).join("libraries");
+                let load_lib_dir = minecraft_path_buf
+                    .join("versions")
+                    .join(&loadName)
+                    .join("libraries");
                 if let Ok(entries) = std::fs::read_dir(&load_lib_dir) {
                     for entry in entries.flatten() {
                         if let Some(fname) = entry.path().file_name().and_then(|f| f.to_str()) {
-                            if fname.contains("neoforge") && fname.ends_with(".jar") && neoforge_jar_path.is_empty() {
+                            if fname.contains("neoforge")
+                                && fname.ends_with(".jar")
+                                && neoforge_jar_path.is_empty()
+                            {
                                 neoforge_jar_path = format_path(entry.path());
-                            } else if fname.contains("forge") && fname.ends_with(".jar") && forge_jar_path.is_empty() {
+                            } else if fname.contains("forge")
+                                && fname.ends_with(".jar")
+                                && forge_jar_path.is_empty()
+                            {
                                 forge_jar_path = format_path(entry.path());
                             }
                         }
@@ -1581,7 +1824,12 @@ fn build_jvm_arguments_inner(
                         result = result.replace("neoforge-${version_name}", &neoforge_jar_path);
                     }
                     // 也可能是 neoforge-X.Y.Z.jar 这种相对路径形式
-                    if result.contains("neoforge") && result.contains(".jar") && !result.contains(&library_dir) && !result.contains('/') && !result.contains('\\') {
+                    if result.contains("neoforge")
+                        && result.contains(".jar")
+                        && !result.contains(&library_dir)
+                        && !result.contains('/')
+                        && !result.contains('\\')
+                    {
                         // 看起来像个简单文件名，把它替换为完整路径
                         result = neoforge_jar_path.clone();
                     }
@@ -1592,7 +1840,12 @@ fn build_jvm_arguments_inner(
                     } else if result.contains("forge-${version_name}") {
                         result = result.replace("forge-${version_name}", &forge_jar_path);
                     }
-                    if result.contains("forge") && result.contains(".jar") && !result.contains(&library_dir) && !result.contains('/') && !result.contains('\\') {
+                    if result.contains("forge")
+                        && result.contains(".jar")
+                        && !result.contains(&library_dir)
+                        && !result.contains('/')
+                        && !result.contains('\\')
+                    {
                         // 简单文件名 -> 完整路径
                         result = forge_jar_path.clone();
                     }
@@ -1623,7 +1876,8 @@ fn build_jvm_arguments_inner(
                                         if let Some(s) = item.as_str() {
                                             let replaced = replace_placeholders(s);
                                             if !replaced.trim().is_empty() {
-                                                jvm_args_from_version.push(replaced.trim().to_string());
+                                                jvm_args_from_version
+                                                    .push(replaced.trim().to_string());
                                             }
                                         }
                                     }
@@ -1719,13 +1973,17 @@ fn build_jvm_arguments_inner(
             format!("-Dos.name={}", os_info.os_type())
         },
         format!("-Dos.version={}", os_info.version()),
-        format!("-DlibraryDirectory={}", format_path(minecraft_path_buf.join("libraries"))),
+        format!(
+            "-DlibraryDirectory={}",
+            format_path(minecraft_path_buf.join("libraries"))
+        ),
     ];
 
     // 确保 -Djava.library.path 参数总是被添加
     // 根据loadType和loadName来决定使用哪个版本名
     // 只在neoforge时使用loadName，其他modloader使用version_name
-    let is_neoforge = loadType != "0" && !loadName.is_empty() && loadName.to_lowercase().contains("neoforge");
+    let is_neoforge =
+        loadType != "0" && !loadName.is_empty() && loadName.to_lowercase().contains("neoforge");
     // 对于loadType为1的情况，如果是neoforge，使用loadName；否则使用version_name
     let native_version = if loadType == "1" && is_neoforge {
         &loadName
@@ -1736,18 +1994,22 @@ fn build_jvm_arguments_inner(
         minecraft_path_buf
             .join("versions")
             .join(version_name)
-            .join(format!("{}-natives", native_version))
+            .join(format!("{}-natives", native_version)),
     );
     args.push(format!("-Djava.library.path={}", native_path));
 
     // 添加neoforge需要的额外系统属性
     if is_neoforge {
         args.push(format!("-Djna.tmpdir={}", native_path));
-        args.push(format!("-Dorg.lwjgl.system.SharedLibraryExtractPath={}", native_path));
+        args.push(format!(
+            "-Dorg.lwjgl.system.SharedLibraryExtractPath={}",
+            native_path
+        ));
         args.push(format!("-Dio.netty.native.workdir={}", native_path));
     }
 
-    let existing_params: HashSet<String> = version_json.arguments
+    let existing_params: HashSet<String> = version_json
+        .arguments
         .iter()
         .flat_map(|a| a.jvm.iter().flatten())
         .filter_map(|arg| match arg {
@@ -1767,7 +2029,10 @@ fn build_jvm_arguments_inner(
     let effective_authlib_path = if !yggdrasil_api.is_empty() && authlib_injector_path.is_empty() {
         // 用户配置了第三方验证服务器，但没有指定 authlib-injector 路径
         // 自动下载/查找 authlib-injector
-        eprintln!("[Launcher] 检测到 Yggdrasil API: {}, 自动获取 authlib-injector...", yggdrasil_api);
+        eprintln!(
+            "[Launcher] 检测到 Yggdrasil API: {}, 自动获取 authlib-injector...",
+            yggdrasil_api
+        );
         let downloaded = crate::auth::yissadrail::get_or_download_authlib_injector();
         if downloaded.is_empty() {
             eprintln!("[Launcher] 警告: 无法获取 authlib-injector，游戏内皮肤可能无法显示");
@@ -1780,14 +2045,20 @@ fn build_jvm_arguments_inner(
     };
 
     if !effective_authlib_path.is_empty() && !yggdrasil_api.is_empty() {
-        args.push(format!("-javaagent:{}={}", effective_authlib_path, yggdrasil_api));
+        args.push(format!(
+            "-javaagent:{}={}",
+            effective_authlib_path, yggdrasil_api
+        ));
         // 对于 LittleSkin 等皮肤站，添加 no-verify 选项避免部分 SSL 问题
         args.push("-Dauthlibinjector.noVerify=true".to_string());
         args.push("-Dauthlibinjector.mojangNamespace=default".to_string());
     }
 
     if !prefetched_data.is_empty() {
-        args.push(format!("-Dauthlibinjector.yggdrasil.prefetched={}", prefetched_data));
+        args.push(format!(
+            "-Dauthlibinjector.yggdrasil.prefetched={}",
+            prefetched_data
+        ));
     }
 
     // ===== 关键修复：先加入 version_json.arguments.jvm 中的参数（参照 HMCL）=====
@@ -1862,37 +2133,10 @@ fn build_jvm_arguments_inner(
         }
     }
 
-    // 再处理 extra_before_cp 中的参数（跳过 -p/-cp，因为上面已经从 jvm_args_from_version 加了）
-    // 确保所有以 - 开头的参数在 -cp 之前
+    // 再处理独立加载器 JSON 的参数。version_name 可能指向原版 JSON，而
+    // loadName 指向 Forge JSON；这种情况下 Forge 的 -p 只在这里出现。
     println!("处理extra_before_cp，长度: {}", extra_before_cp.len());
-    {
-        let mut ei = 0;
-        while ei < extra_before_cp.len() {
-            let p = &extra_before_cp[ei];
-            let has_value = p.starts_with('-')
-                && ei + 1 < extra_before_cp.len()
-                && !extra_before_cp[ei + 1].starts_with('-');
-
-            // 跳过 -p/--module-path/-cp，已经从 jvm_args_from_version 中添加
-            let is_module_or_class_path_key =
-                p == "-p" || p == "--module-path" || p == "-cp" || p == "--class-path";
-            if !is_module_or_class_path_key {
-                args.push(p.clone());
-                if has_value {
-                    args.push(extra_before_cp[ei + 1].clone());
-                    ei += 2;
-                } else {
-                    ei += 1;
-                }
-            } else {
-                if has_value {
-                    ei += 2;
-                } else {
-                    ei += 1;
-                }
-            }
-        }
-    }
+    append_loader_jvm_args(&mut args, &extra_before_cp);
 
     // 将 Wrapper JAR 也加入 classpath（不能用 -jar，否则 Java 会忽略 -cp）
 
@@ -1915,7 +2159,10 @@ fn build_jvm_arguments_inner(
             println!("  库总数量: {}", class_path_entries.len());
         } else {
             println!("[HMCL 模式] 检测到 Forge 模块系统，使用 Forge 指定的参数启动");
-            println!("  Forge 已提供 -p: {}, Forge 已提供 -cp: {}", forge_has_module_path, forge_has_cp);
+            println!(
+                "  Forge 已提供 -p: {}, Forge 已提供 -cp: {}",
+                forge_has_module_path, forge_has_cp
+            );
         }
 
         // ===== 关键修复：确保 Java 内部 API 对 unnamed module 开放 =====
@@ -1946,7 +2193,11 @@ fn build_jvm_arguments_inner(
     let mut game_args_vec: Vec<String> = Vec::new();
 
     // 处理原版游戏参数
-    if let Some(game_args) = version_json.arguments.as_ref().and_then(|a| a.game.as_ref()) {
+    if let Some(game_args) = version_json
+        .arguments
+        .as_ref()
+        .and_then(|a| a.game.as_ref())
+    {
         for arg in game_args {
             match arg {
                 serde_json::Value::String(s) => {
@@ -1979,9 +2230,19 @@ fn build_jvm_arguments_inner(
 
     game_args_vec.extend(vec![
         "--width".to_string(),
-        (if window_width.is_empty() { "873" } else { window_width }).to_string(),
+        (if window_width.is_empty() {
+            "873"
+        } else {
+            window_width
+        })
+        .to_string(),
         "--height".to_string(),
-        (if window_height.is_empty() { "486" } else { window_height }).to_string(),
+        (if window_height.is_empty() {
+            "486"
+        } else {
+            window_height
+        })
+        .to_string(),
     ]);
 
     // 修复点2: 不进行去重检查，确保load中game里面的所有参数都被加入总启动参数中
@@ -1998,8 +2259,8 @@ fn build_jvm_arguments_inner(
                 li += 1;
                 continue;
             }
-            if !(game_args_vec.contains(tok)&&tok.starts_with("--")) {
-            game_args_vec.push(tok.clone());
+            if !(game_args_vec.contains(tok) && tok.starts_with("--")) {
+                game_args_vec.push(tok.clone());
             }
             li += 1;
         }
@@ -2047,9 +2308,7 @@ fn build_jvm_arguments_inner(
     game_app_args.extend(filtered_game_args.iter().cloned());
 
     // 处理option.txt文件
-    let instance_dir = minecraft_path_buf
-        .join("versions")
-        .join(version_name);
+    let instance_dir = minecraft_path_buf.join("versions").join(version_name);
     let option_file_path = instance_dir.join("options.txt");
 
     // 检查并创建option.txt文件
@@ -2096,9 +2355,8 @@ fn build_jvm_arguments_inner(
     }
     println!("=== 参数列表结束 ===");
 
-    let arg = args.join(" ");
-    println!("{}", arg);
-    Ok(arg)
+    println!("{}", args.join(" "));
+    Ok(args)
 }
 
 /// 启动游戏（构建参数并执行 Java 进程）
@@ -2119,23 +2377,150 @@ pub fn launch_game(
     loadType: &str,
     loadName: &str,
     window_width: &str,
-    window_height: &str
+    window_height: &str,
 ) -> Result<String, String> {
     // 先构建参数
-    let arg_string = build_jvm_arguments_inner(
+    let args = build_jvm_arguments_inner(
         app.clone(),
-        minecraft_path, java_path, wrapper_path, max_memory, version_name,
-        player_name, auth_token, uuid, authlib_injector_path, yggdrasil_api,
-        prefetched_data, loadType, loadName, window_width, window_height,
-    ).map_err(|e| e.to_string())?;
+        minecraft_path,
+        java_path,
+        wrapper_path,
+        max_memory,
+        version_name,
+        player_name,
+        auth_token,
+        uuid,
+        authlib_injector_path,
+        yggdrasil_api,
+        prefetched_data,
+        loadType,
+        loadName,
+        window_width,
+        window_height,
+    )
+    .map_err(|e| e.to_string())?;
 
     // 再启动游戏
     run_command(
-        arg_string.split_whitespace().map(|s| s.to_string()).collect(),
+        args.clone(),
         PathBuf::from(java_path),
         PathBuf::from(minecraft_path),
         app,
-    ).map_err(|e| e.to_string())?;
+    )
+    .map_err(|e| e.to_string())?;
 
-    Ok(arg_string)
+    Ok(args.join(" "))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{append_loader_jvm_args, launcher_rules_allow};
+    use serde_json::json;
+
+    #[test]
+    fn keeps_loader_module_path_when_vanilla_supplies_classpath() {
+        let mut args = vec!["-cp".to_string(), "C:/Minecraft/libraries/*".to_string()];
+        let loader_args = vec![
+            "-p".to_string(),
+            "C:/Minecraft/libraries/bootstrap.jar;C:/Minecraft/libraries/asm-commons.jar"
+                .to_string(),
+            "--add-modules".to_string(),
+            "ALL-MODULE-PATH".to_string(),
+        ];
+
+        append_loader_jvm_args(&mut args, &loader_args);
+
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "-p" && pair[1].contains("asm-commons.jar")));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "--add-modules" && pair[1] == "ALL-MODULE-PATH"));
+    }
+
+    #[test]
+    fn preserves_a_module_path_containing_spaces_as_one_argument() {
+        let mut args = Vec::new();
+        let module_path = "C:/Users/Test User/.minecraft/libraries/bootstrap.jar".to_string();
+
+        append_loader_jvm_args(&mut args, &["-p".to_string(), module_path.clone()]);
+
+        assert_eq!(args, vec!["-p".to_string(), module_path]);
+    }
+
+    #[test]
+    fn keeps_an_existing_effective_module_path() {
+        let mut args = vec!["-p".to_string(), "effective-module-path".to_string()];
+
+        append_loader_jvm_args(
+            &mut args,
+            &["-p".to_string(), "loader-module-path".to_string()],
+        );
+
+        assert_eq!(args, vec!["-p", "effective-module-path"]);
+    }
+
+    #[test]
+    fn skips_demo_argument_rule_for_a_normal_launch() {
+        let rules = json!([
+            {
+                "action": "allow",
+                "features": { "is_demo_user": true }
+            }
+        ]);
+
+        assert!(!launcher_rules_allow(Some(&rules)));
+    }
+
+    #[test]
+    fn accepts_an_unconditional_allow_rule() {
+        let rules = json!([{ "action": "allow" }]);
+
+        assert!(launcher_rules_allow(Some(&rules)));
+    }
+}
+
+/// 判断 Mojang arguments 中的一组规则是否允许当前参数。
+///
+/// RTLauncher 当前没有启用 demo、Quick Play 等可选 feature，因此 feature
+/// 的实际值统一按 false 处理。这样 `is_demo_user: true` 对应的 `--demo`
+/// 不会被误加到正常启动参数中。
+fn launcher_rules_allow(rules: Option<&serde_json::Value>) -> bool {
+    let Some(rules) = rules.and_then(|value| value.as_array()) else {
+        return true;
+    };
+
+    let mut allowed = false;
+    for rule in rules {
+        let os_matches = match rule.get("os").and_then(|value| value.as_object()) {
+            Some(os) => match os.get("name").and_then(|value| value.as_str()) {
+                Some("windows") => cfg!(windows),
+                Some("osx") => cfg!(target_os = "macos"),
+                Some("linux") => cfg!(target_os = "linux"),
+                Some(_) => false,
+                None => true,
+            },
+            None => true,
+        };
+
+        let features_match = rule
+            .get("features")
+            .and_then(|value| value.as_object())
+            .map(|features| {
+                features
+                    .values()
+                    .all(|expected| expected.as_bool() == Some(false))
+            })
+            .unwrap_or(true);
+
+        if os_matches && features_match {
+            match rule.get("action").and_then(|value| value.as_str()) {
+                Some("allow") => allowed = true,
+                Some("disallow") => allowed = false,
+                _ => {}
+            }
+        }
+    }
+
+    allowed
 }

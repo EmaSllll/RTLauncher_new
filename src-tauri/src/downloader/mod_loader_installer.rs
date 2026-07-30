@@ -8,7 +8,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use zip::ZipArchive;
 
-async fn ensure_options_lang(version_dir: &Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn ensure_options_lang(
+    version_dir: &Path,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let options_path = version_dir.join("options.txt");
     if options_path.exists() {
         let content = fs::read_to_string(&options_path)?;
@@ -149,8 +151,9 @@ pub struct InstallerContents {
 }
 impl InstallerContents {
     pub fn parse(installer_jar_path: &Path) -> Result<Self> {
-        let file = File::open(installer_jar_path)
-            .with_context(|| format!("Failed to open installer {}", installer_jar_path.display()))?;
+        let file = File::open(installer_jar_path).with_context(|| {
+            format!("Failed to open installer {}", installer_jar_path.display())
+        })?;
         let mut zip = ZipArchive::new(file).context("Failed to parse installer zip structure ")?;
         let mut profile_text = String::new();
         let mut version_text = String::new();
@@ -173,10 +176,10 @@ impl InstallerContents {
                 "version.json not found in installer, this may not be a valid Forge/NeoForge installer "
             ));
         }
-        let profile: InstallProfile = serde_json::from_str(&profile_text)
-            .context("Failed to parse install_profile.json ")?;
-        let version_json: Value = serde_json::from_str(&version_text)
-            .context("Failed to parse version.json ")?;
+        let profile: InstallProfile =
+            serde_json::from_str(&profile_text).context("Failed to parse install_profile.json ")?;
+        let version_json: Value =
+            serde_json::from_str(&version_text).context("Failed to parse version.json ")?;
         Ok(InstallerContents {
             profile,
             version_json,
@@ -234,8 +237,8 @@ fn download_if_missing(url: &str, target: &Path) -> Result<()> {
     let mut bytes = Vec::new();
     resp.read_to_end(&mut bytes)
         .with_context(|| format!("读取 {} 响应体失败", url))?;
-    let mut file = File::create(target)
-        .with_context(|| format!("创建文件 {} 失败", target.display()))?;
+    let mut file =
+        File::create(target).with_context(|| format!("创建文件 {} 失败", target.display()))?;
     file.write_all(&bytes)?;
     drop(file);
     Ok(())
@@ -256,8 +259,7 @@ pub fn collect_library_plan<'a>(
         if let Some(false) = lib.clientreq {
             continue;
         }
-        if lib.name.contains(":natives-") || lib.name.contains(":natives-") {
-        }
+        if lib.name.contains(":natives-") || lib.name.contains(":natives-") {}
         let (path, url) = if let Some(dl) = &lib.downloads {
             if let Some(artifact) = &dl.artifact {
                 let path = libraries_dir.join(&artifact.path);
@@ -298,7 +300,11 @@ pub async fn download_libraries_async(
         Vec::with_capacity(plans.len());
     let mut already_existing = 0usize;
     for plan in &plans {
-        if plan.path.exists() && fs::metadata(&plan.path).map(|m| m.len() > 0).unwrap_or(false) {
+        if plan.path.exists()
+            && fs::metadata(&plan.path)
+                .map(|m| m.len() > 0)
+                .unwrap_or(false)
+        {
             already_existing += 1;
             continue;
         }
@@ -406,7 +412,11 @@ fn resolve_data_value(
         }
         if let Some(idx) = found_idx {
             let mut entry = zip.by_index(idx).with_context(|| {
-                format!("在安装器 {} 中抽取 {} 失败", installer_path.display(), internal)
+                format!(
+                    "在安装器 {} 中抽取 {} 失败",
+                    installer_path.display(),
+                    internal
+                )
             })?;
             let temp_dir = mc_dir.join("temp_installer_resources");
             fs::create_dir_all(&temp_dir).ok();
@@ -521,9 +531,7 @@ async fn download_url_async(url: &str, target: &Path) -> Result<()> {
         .await
         .map(|_| ())
 }
-async fn fetch_minecraft_version_package(
-    mc_version: &str,
-) -> Result<serde_json::Value> {
+async fn fetch_minecraft_version_package(mc_version: &str) -> Result<serde_json::Value> {
     let client = crate::http_client::shared_client().await;
     let manifest_url = "https://launchermeta.mojang.com/mc/game/version_manifest.json";
     let manifest: serde_json::Value = client
@@ -696,10 +704,7 @@ pub async fn run_processors_async(
             });
         }
         if !pre_tasks.is_empty() {
-            println!(
-                "  预热并行下载 {} 个 processor 依赖库",
-                pre_tasks.len()
-            );
+            println!("  预热并行下载 {} 个 processor 依赖库", pre_tasks.len());
             let _ = crate::downloader::concurrent_download::download_all(pre_tasks, None).await;
         }
     }
@@ -739,11 +744,7 @@ pub async fn run_processors_async(
         } else {
             None
         };
-        let args: Vec<String> = proc
-            .args
-            .iter()
-            .map(|a| substitute(a, &data_map))
-            .collect();
+        let args: Vec<String> = proc.args.iter().map(|a| substitute(a, &data_map)).collect();
         let mut cmd = Command::new(java_bin);
         if let Some(cls) = &main_class {
             cmd.arg("-cp");
@@ -752,9 +753,7 @@ pub async fn run_processors_async(
         } else if let Some(jar_name) = &proc.jar {
             let rel = maven_to_path(jar_name);
             cmd.arg("-jar");
-            cmd.arg(normalize_path(
-                &libraries_dir.join(rel).to_string_lossy(),
-            ));
+            cmd.arg(normalize_path(&libraries_dir.join(rel).to_string_lossy()));
         } else {
             continue;
         }
@@ -766,9 +765,12 @@ pub async fn run_processors_async(
             .map(|a| a.to_string_lossy().into_owned())
             .collect();
         println!("  运行 processor: java {}", display_args.join(" "));
-        let status = cmd
-            .status()
-            .with_context(|| format!("运行 processor {} 失败", proc.jar.clone().unwrap_or_default()))?;
+        let status = cmd.status().with_context(|| {
+            format!(
+                "运行 processor {} 失败",
+                proc.jar.clone().unwrap_or_default()
+            )
+        })?;
         if !status.success() {
             return Err(anyhow!(
                 "processor 执行失败（退出码 {:?}）：java {}",
@@ -781,8 +783,7 @@ pub async fn run_processors_async(
     Ok(ran)
 }
 fn read_manifest_main_class(jar_path: &Path) -> Result<Option<String>> {
-    let file = File::open(jar_path)
-        .with_context(|| format!("读取 {} 失败", jar_path.display()))?;
+    let file = File::open(jar_path).with_context(|| format!("读取 {} 失败", jar_path.display()))?;
     let mut zip = ZipArchive::new(file)
         .with_context(|| format!("解析 {} 为 zip 失败", jar_path.display()))?;
     let mut manifest = String::new();
@@ -825,10 +826,9 @@ pub fn write_version_json(
     fs::create_dir_all(&version_dir)
         .with_context(|| format!("创建 {} 失败", version_dir.display()))?;
     let out_path = version_dir.join(format!("{}.json", version_id));
-    let text = serde_json::to_string_pretty(version_json)
-        .context("序列化 version.json 失败")?;
-    let mut f = File::create(&out_path)
-        .with_context(|| format!("创建 {} 失败", out_path.display()))?;
+    let text = serde_json::to_string_pretty(version_json).context("序列化 version.json 失败")?;
+    let mut f =
+        File::create(&out_path).with_context(|| format!("创建 {} 失败", out_path.display()))?;
     f.write_all(text.as_bytes())?;
     Ok(out_path)
 }

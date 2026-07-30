@@ -98,10 +98,7 @@ pub fn parse_modpack_cmd(path: String) -> Result<ParsedModpackInfo, String> {
     }
     let parsed: ParsedModpack =
         modpack_installer::parse_modpack_from_zip(&p).map_err(|e| e.to_string())?;
-    let file_size = p
-        .metadata()
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let file_size = p.metadata().map(|m| m.len()).unwrap_or(0);
     Ok(ParsedModpackInfo {
         name: parsed.name,
         mc_version: parsed.mc_version,
@@ -122,8 +119,7 @@ pub fn save_modpack_to_cache_cmd(
     }
     let parsed = modpack_installer::parse_modpack_from_zip(&src)
         .map_err(|e| format!("解析整合包失败: {}", e))?;
-    let cache_dir = get_modpack_cache_dir(None)?
-        .join(&parsed.mc_version);
+    let cache_dir = get_modpack_cache_dir(None)?.join(&parsed.mc_version);
     std::fs::create_dir_all(&cache_dir).map_err(|e| format!("创建缓存目录失败: {}", e))?;
     let file_name = if target_file_name.trim().is_empty() {
         src.file_name()
@@ -141,14 +137,19 @@ pub fn save_modpack_to_cache_cmd(
     };
     let target = cache_dir.join(&file_name);
     let final_target = if target.exists() {
-        let stem = target.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "modpack".to_string());
-        let ext = target.extension().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "mrpack".to_string());
+        let stem = target
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "modpack".to_string());
+        let ext = target
+            .extension()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "mrpack".to_string());
         cache_dir.join(format!("{}_{}.{}", stem, chrono_now(), ext))
     } else {
         target
     };
-    std::fs::copy(&src, &final_target)
-        .map_err(|e| format!("复制文件到缓存失败: {}", e))?;
+    std::fs::copy(&src, &final_target).map_err(|e| format!("复制文件到缓存失败: {}", e))?;
     println!(
         "[Modpack] 已缓存整合包: {} -> {}",
         src.display(),
@@ -196,10 +197,7 @@ pub fn list_cached_modpacks_cmd(
                     .file_stem()
                     .map(|s| s.to_string_lossy().to_string())
                     .unwrap_or_else(|| file_name.clone());
-                let file_size = file_path
-                    .metadata()
-                    .map(|m| m.len())
-                    .unwrap_or(0);
+                let file_size = file_path.metadata().map(|m| m.len()).unwrap_or(0);
                 let fmt = modpack_installer::detect_modpack_format(&file_path);
                 let format_str = match fmt {
                     ModpackFormat::Modrinth => "modrinth".to_string(),
@@ -217,11 +215,7 @@ pub fn list_cached_modpacks_cmd(
             }
         }
     }
-    results.sort_by(|a, b| {
-        a.mc_version
-            .cmp(&b.mc_version)
-            .then(a.name.cmp(&b.name))
-    });
+    results.sort_by(|a, b| a.mc_version.cmp(&b.mc_version).then(a.name.cmp(&b.name)));
     Ok(results)
 }
 #[tauri::command]
@@ -243,10 +237,7 @@ pub fn install_modpack_from_zip_cmd(app: AppHandle, path: String) -> Result<u64,
     let path_clone = path.clone();
     let minecraft_dir_clone = minecraft_dir.clone();
     tauri::async_runtime::spawn(async move {
-        println!(
-            "[Modpack] 开始安装任务 {}: {}",
-            task_id, path_clone
-        );
+        println!("[Modpack] 开始安装任务 {}: {}", task_id, path_clone);
         let _ = app_clone.emit(
             "modpack-progress",
             ModpackProgressPayload {
@@ -371,10 +362,7 @@ pub fn delete_cached_modpack_cmd(full_path: String) -> Result<(), String> {
     Ok(())
 }
 #[tauri::command]
-pub fn delete_version_dir_cmd(
-    minecraft_path: String,
-    version_name: String,
-) -> Result<(), String> {
+pub fn delete_version_dir_cmd(minecraft_path: String, version_name: String) -> Result<(), String> {
     if version_name.is_empty() {
         return Err("版本名称不能为空".to_string());
     }
@@ -397,10 +385,7 @@ pub fn delete_version_dir_cmd(
         return Err("拒绝删除：目录不在 versions 目录内".to_string());
     }
     std::fs::remove_dir_all(&version_dir).map_err(|e| format!("删除版本目录失败: {}", e))?;
-    println!(
-        "[Version] 已删除版本目录: {}",
-        version_dir.display()
-    );
+    println!("[Version] 已删除版本目录: {}", version_dir.display());
     Ok(())
 }
 fn chrono_now() -> String {

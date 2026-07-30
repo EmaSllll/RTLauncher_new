@@ -1,9 +1,8 @@
+use fastnbt::{from_bytes, to_bytes, Value};
+use serde::Deserialize;
+use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::collections::HashMap;
-use fastnbt::{Value, from_bytes, to_bytes};
-use serde::Deserialize;
-
 
 pub type PackInfo = (String, String, String);
 
@@ -105,13 +104,13 @@ struct RootCompound {
     data: LevelInfo,
 }
 
-
 /// 解析单个光影包/材质包信息
 fn parse_resource_pack(folder_abs_path: &str) -> Option<PackInfo> {
     let path = Path::new(folder_abs_path);
 
     // 1. 获取材质包文件夹名称
-    let folder_name = path.file_name()
+    let folder_name = path
+        .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("Unknown_Pack")
         .to_string();
@@ -143,7 +142,9 @@ pub fn find_resource_packs(root_path: &str) -> Vec<PackInfo> {
             // 只处理目录
             if path.is_dir() {
                 // 尝试解析每个子文件夹
-                if let Some(pack_info) = parse_resource_pack(&path.to_string_lossy().replace(r"\", "/")) {
+                if let Some(pack_info) =
+                    parse_resource_pack(&path.to_string_lossy().replace(r"\", "/"))
+                {
                     packs.push(pack_info);
                 }
             }
@@ -192,7 +193,6 @@ pub fn get_mc_version(folder_path: &Path) -> String {
     String::new()
 }
 
-
 fn translate_pack_format_to_version(format: u64) -> String {
     match format {
         1 => "1.6.1 ~ 1.8.9".to_string(),
@@ -236,7 +236,8 @@ pub fn scan_instances(instances_path: &Path) -> Vec<String> {
             // 只处理目录
             if path.is_dir() {
                 // 获取路径的最后一部分（文件夹名称）
-                let folder_name = path.file_name()
+                let folder_name = path
+                    .file_name()
                     .and_then(|name| name.to_str())
                     .unwrap_or("Unknown_Instance")
                     .to_string();
@@ -398,16 +399,26 @@ pub fn parse_level_dat(world_folder_abs_path: &str) -> Option<Vec<String>> {
                         .unwrap_or(0);
 
                     // ============ 获取 allowCommands ============
-                    let allow_commands = data_compound.get("allowCommands")
+                    let allow_commands = data_compound
+                        .get("allowCommands")
                         .map(|v| parse_bool_value(v))
                         .unwrap_or(false);
 
                     // ============ 获取游戏规则 ============
                     match data_compound.get("GameRules") {
                         Some(Value::Compound(game_rules)) => {
-                            let keep_inventory = game_rules.get("keepInventory").map(|v| parse_bool_value(v)).unwrap_or(false);
-                            let mob_griefing = game_rules.get("mobGriefing").map(|v| parse_bool_value(v)).unwrap_or(false);
-                            let do_fire_tick = game_rules.get("doFireTick").map(|v| parse_bool_value(v)).unwrap_or(false);
+                            let keep_inventory = game_rules
+                                .get("keepInventory")
+                                .map(|v| parse_bool_value(v))
+                                .unwrap_or(false);
+                            let mob_griefing = game_rules
+                                .get("mobGriefing")
+                                .map(|v| parse_bool_value(v))
+                                .unwrap_or(false);
+                            let do_fire_tick = game_rules
+                                .get("doFireTick")
+                                .map(|v| parse_bool_value(v))
+                                .unwrap_or(false);
                             
                             Some(vec![
                                 seed_value.to_string(),
@@ -464,34 +475,34 @@ pub fn modify_nbt_param(
     let level_dat_path = path.join("level.dat");
 
     // 读取并解压文件
-    let bytes = fs::read(&level_dat_path)
-        .map_err(|e| format!("读取文件失败: {}", e))?;
+    let bytes = fs::read(&level_dat_path).map_err(|e| format!("读取文件失败: {}", e))?;
 
     let mut decoder = GzDecoder::new(&bytes[..]);
     let mut decompressed = Vec::new();
-    decoder.read_to_end(&mut decompressed)
+    decoder
+        .read_to_end(&mut decompressed)
         .map_err(|_| "解压文件失败".to_string())?;
 
     // 解析 NBT 数据
-    let mut nbt_value: Value = from_bytes(&decompressed)
-        .map_err(|e| format!("解析 NBT 数据失败: {:?}", e))?;
+    let mut nbt_value: Value =
+        from_bytes(&decompressed).map_err(|e| format!("解析 NBT 数据失败: {:?}", e))?;
 
     // 递归查找并修改参数
     modify_value_recursive(&mut nbt_value, param_name, &new_value)?;
 
     // 序列化、压缩并写入文件
-    let modified_bytes = to_bytes(&nbt_value)
-        .map_err(|e| format!("序列化失败: {:?}", e))?;
+    let modified_bytes = to_bytes(&nbt_value).map_err(|e| format!("序列化失败: {:?}", e))?;
 
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(&modified_bytes)
+    encoder
+        .write_all(&modified_bytes)
         .map_err(|_| "压缩失败".to_string())?;
 
-    let compressed = encoder.finish()
+    let compressed = encoder
+        .finish()
         .map_err(|e| format!("完成压缩失败: {}", e))?;
 
-    fs::write(&level_dat_path, compressed)
-        .map_err(|e| format!("写入文件失败: {}", e))?;
+    fs::write(&level_dat_path, compressed).map_err(|e| format!("写入文件失败: {}", e))?;
 
     Ok(())
 }
@@ -517,33 +528,41 @@ pub fn modify_nbt_param_str(
         param_name_lower.as_str(),
         "keepinventory" | "mobgriefing" | "dofiretick" | "allowcommands"
     ) {
-        return Err(format!("不支持的参数名: {}，仅支持: keepInventory, mobGriefing, doFireTick, allowCommands", param_name));
+        return Err(format!(
+            "不支持的参数名: {}，仅支持: keepInventory, mobGriefing, doFireTick, allowCommands",
+            param_name
+        ));
     }
 
     let path = Path::new(world_folder_abs_path);
     let level_dat_path = path.join("level.dat");
 
     // 读取文件
-    let bytes = fs::read(&level_dat_path)
-        .map_err(|e| format!("读取文件失败: {}", e))?;
+    let bytes = fs::read(&level_dat_path).map_err(|e| format!("读取文件失败: {}", e))?;
 
     // 使用改进的解压函数（支持两种格式）
-    let decompressed = decompress_level_dat(&bytes)
-        .map_err(|_| "解压文件失败".to_string())?;
+    let decompressed = decompress_level_dat(&bytes).map_err(|_| "解压文件失败".to_string())?;
 
     // 解析 NBT 数据
-    let mut root: Value = from_bytes(&decompressed)
-        .map_err(|e| format!("解析 NBT 数据失败: {:?}", e))?;
+    let mut root: Value =
+        from_bytes(&decompressed).map_err(|e| format!("解析 NBT 数据失败: {:?}", e))?;
 
     // 转换字符串值为适当的 NBT 类型
     // 注意：游戏规则(GameRules)中的布尔值存储为 String("true"/"false")
     //       allowCommands 存储为 Byte(0/1)
-    let is_game_rule = matches!(param_name_lower.as_str(), "keepinventory" | "mobgriefing" | "dofiretick");
+    let is_game_rule = matches!(
+        param_name_lower.as_str(),
+        "keepinventory" | "mobgriefing" | "dofiretick"
+    );
     
     let value_to_set = if let Ok(b) = new_value.parse::<bool>() {
         if is_game_rule {
             // 游戏规则的布尔值存储为 NBT String
-            Value::String(if b { "true".to_string() } else { "false".to_string() })
+            Value::String(if b {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            })
         } else {
             // allowCommands 等字段的布尔值存储为 NBT Byte
             Value::Byte(if b { 1 } else { 0 })
@@ -569,14 +588,18 @@ pub fn modify_nbt_param_str(
         // 获取 Data 节点
         if let Some(Value::Compound(data_map)) = root_map.get_mut("Data") {
             // 处理游戏规则（keepInventory、mobGriefing、doFireTick）
-            if matches!(param_name_lower.as_str(), "keepinventory" | "mobgriefing" | "dofiretick") {
+            if matches!(
+                param_name_lower.as_str(),
+                "keepinventory" | "mobgriefing" | "dofiretick"
+            ) {
                 // 若 GameRules 不存在则自动创建
                 if !data_map.contains_key("GameRules") {
                     data_map.insert("GameRules".to_string(), Value::Compound(HashMap::new()));
                 }
                 if let Some(Value::Compound(game_rules)) = data_map.get_mut("GameRules") {
                     // 优先查找已有的同名键（大小写和下划线可能不同），否则直接用标准名写入
-                    let existing_key = game_rules.keys()
+                    let existing_key = game_rules
+                        .keys()
                         .find(|k| k.to_lowercase().replace("_", "") == param_name_lower)
                         .cloned();
                     let key = existing_key.unwrap_or_else(|| param_name.to_string());
@@ -588,7 +611,8 @@ pub fn modify_nbt_param_str(
             // 处理 allowCommands
             else if param_name_lower == "allowcommands" {
                 // 查找已有键（大小写和下划线不敏感），若不存在则直接创建
-                let existing_key = data_map.keys()
+                let existing_key = data_map
+                    .keys()
                     .find(|k| k.to_lowercase().replace("_", "") == param_name_lower)
                     .cloned();
                 let key = existing_key.unwrap_or_else(|| "allowCommands".to_string());
@@ -602,18 +626,18 @@ pub fn modify_nbt_param_str(
     }
 
     // 序列化、压缩并写入文件
-    let modified_bytes = to_bytes(&root)
-        .map_err(|e| format!("序列化失败: {:?}", e))?;
+    let modified_bytes = to_bytes(&root).map_err(|e| format!("序列化失败: {:?}", e))?;
 
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-    encoder.write_all(&modified_bytes)
+    encoder
+        .write_all(&modified_bytes)
         .map_err(|_| "压缩失败".to_string())?;
 
-    let compressed = encoder.finish()
+    let compressed = encoder
+        .finish()
         .map_err(|e| format!("完成压缩失败: {}", e))?;
 
-    fs::write(&level_dat_path, compressed)
-        .map_err(|e| format!("写入文件失败: {}", e))?;
+    fs::write(&level_dat_path, compressed).map_err(|e| format!("写入文件失败: {}", e))?;
 
     Ok(())
 }
