@@ -42,7 +42,7 @@
       "icons/icon.png"
     ],
     "category": "Game",
-    "targets": ["deb"]
+    "targets": ["appimage", "deb"]
   },
   "plugins": {
     "updater": {

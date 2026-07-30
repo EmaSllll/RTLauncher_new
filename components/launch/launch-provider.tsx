@@ -76,39 +76,6 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
   const { t } = useI18n();
   const [config, setConfig] = useState<LaunchConfig>(DEFAULT_LAUNCH_CONFIG);
   const [configLoaded, setConfigLoaded] = useState(false);
-
-  
-  // 客户端挂载后从 localStorage 恢复配置，再用 Tauri config 覆盖路径字段
-  useEffect(() => {
-    let cancelled = false;
-    const init = async () => {
-      let base: Partial<LaunchConfig> = {};
-      try {
-        const saved = localStorage.getItem("rtl-launch-config");
-        if (saved) base = JSON.parse(saved);
-        const savedTime = localStorage.getItem("rtl-last-launch-time");
-        if (savedTime) setLastLaunchTime(savedTime);
-      } catch { /* ignore */ }
-
-      // 从 Tauri config 目录加载选中路径，优先级高于 localStorage
-      try {
-        const pathsCfg = await invoke<{
-          selected_java_path: string;
-          selected_minecraft_path: string;
-        }>("get_launcher_paths_config");
-        if (pathsCfg.selected_java_path) base.javaPath = pathsCfg.selected_java_path;
-        if (pathsCfg.selected_minecraft_path) base.minecraftPath = pathsCfg.selected_minecraft_path;
-      } catch { /* 不可用时保留 localStorage 值 */ }
-
-      if (!cancelled) {
-        setConfig((prev) => ({ ...prev, ...base }));
-        setConfigLoaded(true);
-      }
-    };
-    init();
-    return () => { cancelled = true; };
-  }, []);
-
   const [status, setStatus] = useState<LaunchStatus>("idle");
   const [logs, setLogs] = useState<LaunchLogEntry[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -116,6 +83,38 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
   const [lastLaunchTime, setLastLaunchTime] = useState<string | null>(null);
   const [progress, setProgress] = useState<LaunchProgress | null>(null);
   const logIdRef = useRef(0);
+
+
+  // 本地配置先恢复，使首屏不必等待原生 I/O；原生路径查询完成后再无缝合并。
+  useEffect(() => {
+    let cancelled = false;
+    let savedConfig: Partial<LaunchConfig> = {};
+    try {
+      const saved = localStorage.getItem("rtl-launch-config");
+      if (saved) savedConfig = JSON.parse(saved);
+      const savedTime = localStorage.getItem("rtl-last-launch-time");
+      if (savedTime) setLastLaunchTime(savedTime);
+    } catch { /* ignore */ }
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setConfig((prev) => ({ ...prev, ...savedConfig }));
+      setConfigLoaded(true);
+    });
+    void invoke<{
+      selected_java_path: string;
+      selected_minecraft_path: string;
+    }>("get_launcher_paths_config")
+      .then((pathsCfg) => {
+        if (cancelled) return;
+        setConfig((prev) => ({
+          ...prev,
+          ...(pathsCfg.selected_java_path ? { javaPath: pathsCfg.selected_java_path } : {}),
+          ...(pathsCfg.selected_minecraft_path ? { minecraftPath: pathsCfg.selected_minecraft_path } : {}),
+        }));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const { selectedProfile } = useAccountContext();
 
