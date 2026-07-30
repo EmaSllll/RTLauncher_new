@@ -10,10 +10,7 @@ import {
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { type UnlistenFn } from "@tauri-apps/api/event";
-import {
-  setupAllDownloadListeners,
-  makeStartDownloadFn,
-} from "./download-event-utils";
+import { makeStartDownloadFn } from "./download-event-utils";
 import { isTauriRuntime } from "@/lib/tauri-runtime";
 
 export type DownloadTaskStatus =
@@ -90,17 +87,13 @@ interface QueueItem {
 export function DownloadProvider({ children }: { children: React.ReactNode }) {
   const [tasks, setTasks] = useState<DownloadTask[]>([]);
   const unlistensRef = useRef<UnlistenFn[]>([]);
+  const listenerSetupRef = useRef<Promise<void> | null>(null);
+  const listenerOwnerActiveRef = useRef(true);
   const pendingQueueRef = useRef<QueueItem[]>([]);
   const isDownloadingRef = useRef(false);
   const localIdCounterRef = useRef(-1);
   /** 非原版下载的 taskId 计数器（从 1_000_000 起，避免与后端 taskId 冲突）*/
   const taskIdCounterRef = useRef(1_000_000);
-
-  /** 标记下载已结束，释放排队锁并尝试启动下一个任务 */
-  const markDownloadDone = useCallback(() => {
-    isDownloadingRef.current = false;
-    dequeueNext();
-  }, []);
 
   /** ========== 排队机制（仅用于原版 Minecraft 下载）========== */
   const dequeueNext = useCallback(async () => {
@@ -134,39 +127,65 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  /** ========== 注册事件 ========== */
+  /** 标记下载已结束，释放排队锁并尝试启动下一个任务 */
+  const markDownloadDone = useCallback(() => {
+    isDownloadingRef.current = false;
+    void dequeueNext();
+  }, [dequeueNext]);
+
+  /** 首次下载前确保监听已经完成注册，空闲时会提前预热。 */
+  const ensureDownloadListeners = useCallback(async () => {
+    if (!isTauriRuntime() || unlistensRef.current.length > 0) return;
+    if (!listenerSetupRef.current) {
+      listenerSetupRef.current = import("./download-listeners")
+        .then(({ setupAllDownloadListeners }) =>
+          setupAllDownloadListeners(setTasks, markDownloadDone)
+        )
+        .then((unlistens) => {
+          if (!listenerOwnerActiveRef.current) {
+            unlistens.forEach((unlisten) => unlisten());
+            listenerSetupRef.current = null;
+            return;
+          }
+          unlistensRef.current = unlistens;
+        })
+        .catch((error) => {
+          listenerSetupRef.current = null;
+          throw error;
+        });
+    }
+    await listenerSetupRef.current;
+  }, [markDownloadDone]);
+
+  /** ========== 空闲时预热事件监听 ========== */
   useEffect(() => {
     if (!isTauriRuntime()) return;
 
     let cancelled = false;
-    const cancelledRef = { current: false };
-
-    async function setup() {
-      // 所有下载器的事件监听都在这里集中注册
-      // 原版下载（download-finished）完成时会调用 markDownloadDone 释放排队锁
-      const unlistens = await setupAllDownloadListeners(setTasks, markDownloadDone);
-      if (cancelled) {
-        unlistens.forEach((fn) => fn());
-        return;
-      }
-      unlistensRef.current = unlistens;
-    }
-
-    setup();
+    listenerOwnerActiveRef.current = true;
+    const warmUp = () => {
+      void ensureDownloadListeners().catch((error) => {
+        if (!cancelled) console.error("注册下载事件监听失败:", error);
+      });
+    };
+    const timeoutId = window.setTimeout(warmUp, 0);
 
     return () => {
       cancelled = true;
-      cancelledRef.current = true;
+      listenerOwnerActiveRef.current = false;
+      window.clearTimeout(timeoutId);
       unlistensRef.current.forEach((fn) => fn());
       unlistensRef.current = [];
+      listenerSetupRef.current = null;
     };
-  }, [markDownloadDone]);
+  }, [ensureDownloadListeners]);
 
   /** ========== 启动函数 ========== */
 
   /** 原版下载（排队制）*/
   const startDownload = useCallback(
     async (label: string, mcVersion: string, instanceName?: string): Promise<number> => {
+      await ensureDownloadListeners();
       if (!isDownloadingRef.current) {
         isDownloadingRef.current = true;
         try {
@@ -200,18 +219,20 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
         return localId;
       }
     },
-    [dequeueNext]
+    [ensureDownloadListeners]
   );
 
   /** 使用工厂生成的通用 start 函数 */
   const startModLoaderDownload = makeStartDownloadFn(
     setTasks,
     taskIdCounterRef,
-    dequeueNext
+    dequeueNext,
+    ensureDownloadListeners
   );
 
   /** Java 下载 - 只创建前端 task，不 invoke，Java 下载由其他命令触发 */
   const startJavaDownload = useCallback(async (runtimeName: string) => {
+    await ensureDownloadListeners();
     const taskId = taskIdCounterRef.current++;
     setTasks((prev) => {
       const isDownloading = prev.some(
@@ -229,7 +250,7 @@ export function DownloadProvider({ children }: { children: React.ReactNode }) {
       return [task, ...prev];
     });
     return taskId;
-  }, []);
+  }, [ensureDownloadListeners]);
 
   /** OptiFine */
   const startOptifineDownload = useCallback(

@@ -17,7 +17,8 @@ use tokio::sync::{mpsc, Semaphore};
 const MOJANG_MANIFEST: &str = "https://launchermeta.mojang.com/mc/game/version_manifest.json";
 const MIRROR_URL: &str = "https://bmclapi2.bangbang93.com";
 
-const MAX_CONCURRENT_DOWNLOADS: usize = 128;
+// 过高的文件级并发会争用 Tokio 线程、文件描述符和磁盘，拖慢整个启动器。
+const MAX_CONCURRENT_DOWNLOADS: usize = 16;
 #[derive(Debug)]
 struct DownloadTask {
     urls: Vec<String>,

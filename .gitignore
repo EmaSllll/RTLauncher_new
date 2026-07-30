@@ -56,10 +56,13 @@ no-password-key.txt
 no-password-key.txt.pub
 /.omc
 /.worktrees/
+/src-tauri/RTL
+gen_latest_json.js
 
 # AI Agents
 /.devin
 /.agents
+/.codex
 
 # Local IDE
 /.idea/

@@ -67,8 +67,7 @@ use handler::quilt_handler::{
     get_quilt_loader_versions,
 };
 use handler::system::{
-    ensure_launcher_profiles_on_startup, get_system_memory, open_external, optimize_memory_usage,
-    read_file_base64, write_file,
+    get_system_memory, open_external, optimize_memory_usage, read_file_base64, write_file,
 };
 use mutiplayer::{
     ensure_openp2p_stopped, mp_check_openp2p, mp_encode_room_info, mp_get_openp2p_dir,
@@ -99,8 +98,12 @@ const NS_WINDOW_STYLE_MASK_FULL_SIZE_CONTENT_VIEW: u64 = 1 << 15;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // 固定 16 工作线程：下载/解压并发任务多，默认 CPU 核数的线程池吞吐不够
-    std::env::set_var("TOKIO_WORKER_THREADS", "16");
+    // 给 WebView、磁盘 I/O 和前台交互留下 CPU，避免低配设备在启动时争用。
+    let cpu_count = std::thread::available_parallelism()
+        .map(|count| count.get())
+        .unwrap_or(4);
+    let worker_threads = (cpu_count + 1).saturating_div(2).max(4);
+    std::env::set_var("TOKIO_WORKER_THREADS", worker_threads.to_string());
 
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -224,12 +227,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
-            // 启动时异步检查 & 生成各 minecraft 路径下的 launcher_profiles.json
-            // （不阻塞 UI，不与用户交互）
-            std::thread::spawn(move || {
-                ensure_launcher_profiles_on_startup();
-            });
-
             #[cfg(not(target_os = "macos"))]
             app.handle().plugin(tauri_plugin_single_instance::init(
                 |app: &tauri::AppHandle, _args, _cwd| {

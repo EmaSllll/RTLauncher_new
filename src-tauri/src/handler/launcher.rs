@@ -2379,6 +2379,9 @@ pub fn launch_game(
     window_width: &str,
     window_height: &str,
 ) -> Result<String, String> {
+    // launcher_profiles 仅在真正启动游戏时才有价值，后台处理以保持启动响应。
+    crate::handler::system::schedule_launcher_profiles_check();
+
     // 先构建参数
     let args = build_jvm_arguments_inner(
         app.clone(),

@@ -9,12 +9,12 @@ use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::{mpsc, Semaphore};
 
-pub const MAX_CONCURRENT_FILES: usize = 256;
+pub const MAX_CONCURRENT_FILES: usize = 24;
 pub const THROTTLE_MS_AFTER_FILE: u64 = 0;
-pub const MAX_TOTAL_CONNECTIONS: usize = 512;
+pub const MAX_TOTAL_CONNECTIONS: usize = 32;
 const SMART_INITIAL_CONCURRENCY: usize = 5;
 const SMART_MIN_CONCURRENCY: usize = 2;
-const SMART_MAX_CONCURRENCY: usize = 24;
+const SMART_MAX_CONCURRENCY: usize = 12;
 const SMART_ADJUST_BATCH: usize = 8;
 const CHUNKED_THRESHOLD: u64 = 256 * 1024;
 const SMALL_CHUNK: u64 = 256 * 1024;
