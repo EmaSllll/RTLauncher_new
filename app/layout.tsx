@@ -9,10 +9,9 @@ import { AccountProvider } from "@/components/accounts/account-provider";
 import { DownloadProvider } from "@/components/download/download-provider";
 import { DownloadTaskList } from "@/components/download/download-task-list";
 import { LaunchProvider } from "@/components/launch/launch-provider";
-import { FloatingLaunchButton } from "@/components/launch/floating-launch-button";
 import { MultiplayerProvider } from "@/components/multiplayer/multiplayer-provider";
 import { PageTransition } from "@/components/page-transition";
-import { GlobalDragDrop } from "@/components/global/global-drag-drop";
+import { DeferredGlobalFeatures } from "@/components/global/deferred-global-features";
 import { UIConfigProvider } from "@/components/ui-config/ui-config-provider";
 
 export const metadata: Metadata = {
@@ -42,8 +41,8 @@ export default function RootLayout({
                   <MultiplayerProvider>
                     <DownloadProvider>
                       <TooltipProvider>
-                        {/* 全局拖放处理组件 - 必须放在 DownloadProvider 内部 */}
-                        <GlobalDragDrop />
+                        {/* 非关键全局能力在首屏可交互后再加载 */}
+                        <DeferredGlobalFeatures />
 
                         <TitleBar />
 
@@ -55,9 +54,6 @@ export default function RootLayout({
                         </div>
 
                         <DownloadTaskList />
-
-                        {/* 全局悬浮启动按钮 - 类似下载任务，所有页面可见 */}
-                        <FloatingLaunchButton />
                       </TooltipProvider>
                     </DownloadProvider>
                   </MultiplayerProvider>

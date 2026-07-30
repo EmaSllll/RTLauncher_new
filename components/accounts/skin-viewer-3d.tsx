@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import * as skinview3d from "skinview3d";
 
 /**
  * Minecraft 3D 皮肤查看器（基于 skinview3d 库，该库使用 three.js）
@@ -38,22 +37,25 @@ export function SkinViewer3D({
   const viewerRef = useRef<any>(null);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
-  const [libReady, setLibReady] = useState(true);
+  const [skinview3d, setSkinview3d] = useState<typeof import("skinview3d") | null>(null);
+  const [libraryFailed, setLibraryFailed] = useState(false);
 
-  // 检查 skinview3d 库是否可用
+  // three.js/skinview3d 体积较大，在首帧绘制完成后再加载，避免阻塞主页交互。
   useEffect(() => {
-    try {
-      if (!skinview3d || !skinview3d.SkinViewer) {
-        setLibReady(false);
-      }
-    } catch {
-      setLibReady(false);
-    }
+    let cancelled = false;
+    void import("skinview3d")
+      .then((module) => {
+        if (!cancelled) setSkinview3d(module);
+      })
+      .catch(() => {
+        if (!cancelled) setLibraryFailed(true);
+      });
+    return () => { cancelled = true; };
   }, []);
 
   // 初始化 viewer
   useEffect(() => {
-    if (!libReady) return;
+    if (!skinview3d) return;
     if (!canvasRef.current) return;
 
     let cancelled = false;
@@ -117,7 +119,7 @@ export function SkinViewer3D({
         viewerRef.current = null;
       }
     };
-  }, [libReady]);
+  }, [skinview3d]);
 
   // 更新皮肤
   useEffect(() => {
@@ -158,7 +160,7 @@ export function SkinViewer3D({
     } catch {}
   }, [width, height]);
 
-  if (!libReady) {
+  if (libraryFailed) {
     return (
       <div
         ref={containerRef}
