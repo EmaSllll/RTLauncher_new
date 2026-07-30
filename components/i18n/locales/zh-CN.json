@@ -1,0 +1,49 @@
+{
+  "common": {
+    "add": "添加",
+    "back": "返回",
+    "cancel": "取消",
+    "clear": "清空",
+    "delete": "删除",
+    "loading": "加载中...",
+    "notSet": "未设置",
+    "refresh": "刷新",
+    "search": "搜索..."
+  },
+  "account": {
+    "microsoftSignIn": "正版登录",
+    "littleSkinSignIn": "LittleSkin 登录",
+    "thirdPartySignIn": "第三方登录",
+    "offlineSignIn": "离线登录"
+  },
+  "resource": {
+    "cacheLibrary": "缓存库",
+    "currentInstance": "当前实例中",
+    "matchingVersionAvailable": "对应版本 · 可加入",
+    "addedFiles": "已加入的文件",
+    "doubleClickFolder": "双击文件夹进入",
+    "noFiles": "暂无文件",
+    "noAvailableFiles": "暂无可用文件",
+    "uploadFiles": "上传文件",
+    "addToInstance": "加入实例",
+    "removeFromInstance": "移出实例",
+    "openFolder": "打开目录 {name}",
+    "deleteConfirm": "确定删除“{name}”吗？"
+  },
+  "launch": {
+    "title": "游戏启动",
+    "noVersionSelected": "未选择版本",
+    "launchGame": "启动游戏",
+    "stopGame": "停止游戏",
+    "launchLog": "启动日志",
+    "waitingToLaunch": "等待启动...",
+    "launchProgress": "启动进度",
+    "startingJvm": "JVM 启动",
+    "loadingLibraries": "加载库文件",
+    "loadingAssets": "加载资源",
+    "initializingGame": "初始化游戏",
+    "loadingMods": "加载模组",
+    "loadingWorld": "加载世界",
+    "ready": "准备完成"
+  }
+}

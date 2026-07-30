@@ -20,6 +20,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useUIConfigContext } from "@/components/ui-config/ui-config-provider"
+import { useSettings, type AppLanguage } from "@/components/settings/settings-provider"
 
 interface SidebarProps {
   className?: string
@@ -46,7 +47,6 @@ function waitForPageContent(
   return new Promise<void>((resolve) => {
     let settled = false
     let settleTimer: number | undefined
-    let timeoutTimer: number | undefined
 
     const finish = () => {
       if (settled) return
@@ -72,25 +72,47 @@ function waitForPageContent(
       characterData: true,
     })
 
+    const timeoutTimer = window.setTimeout(finish, 700)
+
     if (signal.aborted) {
       finish()
       return
     }
 
     signal.addEventListener("abort", finish, { once: true })
-    timeoutTimer = window.setTimeout(finish, 700)
   })
 }
 
-const allNavItems: NavItem[] = [
-  { id: "home", icon: <Home className="size-4" />, label: "首页", href: "/" },
-  { id: "game-settings", icon: <Gamepad2 className="size-4" />, label: "游戏设置", href: "/game-settings" },
-  { id: "launch", icon: <Rocket className="size-4" />, label: "启动", href: "/launch" },
-  { id: "download", icon: <Download className="size-4" />, label: "下载", href: "/download" },
-  { id: "multiplayer", icon: <Globe className="size-4" />, label: "联机", href: "/multiplayer" },
-  { id: "tools", icon: <Wrench className="size-4" />, label: "工具", href: "/tools" },
-  { id: "settings", icon: <Settings className="size-4" />, label: "设置", href: "/settings" },
+const NAV_ITEM_BASE: Omit<NavItem, "label">[] = [
+  { id: "home", icon: <Home className="size-4" />, href: "/" },
+  { id: "game-settings", icon: <Gamepad2 className="size-4" />, href: "/game-settings" },
+  { id: "launch", icon: <Rocket className="size-4" />, href: "/launch" },
+  { id: "download", icon: <Download className="size-4" />, href: "/download" },
+  { id: "multiplayer", icon: <Globe className="size-4" />, href: "/multiplayer" },
+  { id: "tools", icon: <Wrench className="size-4" />, href: "/tools" },
+  { id: "settings", icon: <Settings className="size-4" />, href: "/settings" },
 ]
+
+const NAV_LABELS: Record<AppLanguage, Record<string, string>> = {
+  "zh-CN": {
+    home: "首页",
+    "game-settings": "游戏设置",
+    launch: "启动",
+    download: "下载",
+    multiplayer: "联机",
+    tools: "工具",
+    settings: "设置",
+  },
+  "en-US": {
+    home: "Home",
+    "game-settings": "Game Settings",
+    launch: "Launch",
+    download: "Downloads",
+    multiplayer: "Multiplayer",
+    tools: "Tools",
+    settings: "Settings",
+  },
+}
 
 function NavButton({ item, isActive }: { item: NavItem; isActive: boolean }) {
   const router = useRouter()
@@ -200,6 +222,11 @@ function isNavItemActive(pathname: string, href: string) {
 export function Sidebar({ className }: SidebarProps) {
   const pathname = usePathname()
   const { config, configLoaded } = useUIConfigContext()
+  const { settings } = useSettings()
+  const allNavItems = NAV_ITEM_BASE.map((item) => ({
+    ...item,
+    label: NAV_LABELS[settings.general.language][item.id] ?? item.id,
+  }))
 
   const isActive = (href: string) => isNavItemActive(pathname, href)
 
@@ -217,6 +244,7 @@ export function Sidebar({ className }: SidebarProps) {
 
   return (
     <aside
+      data-app-sidebar
       className={cn(
         "flex h-full w-14 flex-col border-r border-border bg-sidebar",
         className

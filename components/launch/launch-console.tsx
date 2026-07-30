@@ -13,6 +13,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useLaunchContext } from "@/components/launch/launch-provider";
 import { Maximize2, Terminal, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/components/i18n/use-i18n";
 
 const levelColors: Record<string, string> = {
   info: "text-muted-foreground",
@@ -22,6 +23,7 @@ const levelColors: Record<string, string> = {
 
 /** 日志内容（可复用） */
 function LogLines({ logs }: { logs: ReturnType<typeof useLaunchContext>["logs"] }) {
+  const { t } = useI18n();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -35,7 +37,7 @@ function LogLines({ logs }: { logs: ReturnType<typeof useLaunchContext>["logs"] 
       className="h-full overflow-y-auto rounded-xl bg-muted/50 p-3 font-mono text-xs leading-relaxed"
     >
       {logs.length === 0 ? (
-        <p className="text-muted-foreground/50 select-none">等待启动...</p>
+        <p className="text-muted-foreground/50 select-none">{t("launch.waitingToLaunch")}</p>
       ) : (
         logs.map((log) => (
           <motion.div
@@ -63,6 +65,7 @@ function LogLines({ logs }: { logs: ReturnType<typeof useLaunchContext>["logs"] 
  * 显示启动过程的日志输出
  */
 export function LaunchConsole() {
+  const { t } = useI18n();
   const { logs, clearLogs } = useLaunchContext();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -81,7 +84,7 @@ export function LaunchConsole() {
         <CardHeader className="flex-row items-center justify-between">
           <CardTitle className="flex items-center gap-2 text-sm">
             <Terminal className="size-4 text-primary" />
-            启动日志
+            {t("launch.launchLog")}
           </CardTitle>
           <div className="flex items-center gap-1">
             <AnimatePresence>
@@ -99,7 +102,7 @@ export function LaunchConsole() {
                     onClick={clearLogs}
                   >
                     <Trash2 className="size-3 mr-1" />
-                    清空
+                    {t({ "zh-CN": "清空", "en-US": "Clear" })}
                   </Button>
                 </motion.div>
               )}
@@ -121,7 +124,7 @@ export function LaunchConsole() {
           >
             {logs.length === 0 ? (
               <p className="text-muted-foreground/50 select-none">
-                等待启动...
+                {t("launch.waitingToLaunch")}
               </p>
             ) : (
               logs.map((log) => (
@@ -156,7 +159,7 @@ export function LaunchConsole() {
           <DialogHeader>
             <DialogTitle>
               <Terminal className="size-4 text-primary" />
-              启动日志
+              {t("launch.launchLog")}
             </DialogTitle>
             {logs.length > 0 && (
               <Button
@@ -166,7 +169,7 @@ export function LaunchConsole() {
                 onClick={clearLogs}
               >
                 <Trash2 className="size-3 mr-1" />
-                清空
+                {t({ "zh-CN": "清空", "en-US": "Clear" })}
               </Button>
             )}
           </DialogHeader>

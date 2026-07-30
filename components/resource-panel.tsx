@@ -19,6 +19,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { fadeSlideUp, staggerContainer, staggerItem } from "@/lib/motion";
+import { useI18n } from "@/components/i18n/use-i18n";
+
+const RESOURCE_TITLES: Record<string, { "zh-CN": string; "en-US": string }> = {
+  "模组管理": { "zh-CN": "模组管理", "en-US": "Mods" },
+  "资源包管理": { "zh-CN": "资源包管理", "en-US": "Resource Packs" },
+  "光影包管理": { "zh-CN": "光影包管理", "en-US": "Shaders" },
+  "数据包管理": { "zh-CN": "数据包管理", "en-US": "Datapacks" },
+  "存档管理": { "zh-CN": "存档管理", "en-US": "Worlds" },
+  "投影原理图管理": { "zh-CN": "投影原理图管理", "en-US": "Schematics" },
+};
 
 /**
  * 模组依赖项信息
@@ -131,8 +141,6 @@ export default function ResourcePanel({
   onOpenLeftDirectory,
   onNavigateUpLeft,
   leftModInfo,
-  rightTitle,
-  rightDescription,
   rightIcon,
   rightIconBg,
   rightFiles,
@@ -153,6 +161,10 @@ export default function ResourcePanel({
   simplifyName,
   getFileSubtitle,
 }: ResourcePanelProps) {
+  const { t } = useI18n();
+  const localizedLeftTitle = RESOURCE_TITLES[leftTitle]
+    ? t(RESOURCE_TITLES[leftTitle])
+    : leftTitle;
   // 先做 URL decode（%20 -> 空格 等），再应用用户自定义的 simplifyName
   const decodeUrlName = (s: string): string => {
     try {
@@ -243,7 +255,7 @@ export default function ResourcePanel({
           animate="animate"
           className="flex flex-col items-center justify-center gap-2 p-6 text-center"
         >
-          <p className="text-sm text-destructive">读取失败</p>
+          <p className="text-sm text-destructive">{t({ "zh-CN": "读取失败", "en-US": "Failed to load" })}</p>
           <p className="text-xs text-muted-foreground">{error}</p>
         </motion.div>
       );
@@ -287,7 +299,7 @@ export default function ResourcePanel({
               }`}
               role={canOpenDirectory ? "button" : undefined}
               tabIndex={canOpenDirectory ? 0 : undefined}
-              aria-label={canOpenDirectory ? `打开目录 ${file.name}` : undefined}
+              aria-label={canOpenDirectory ? t("resource.openFolder", { name: file.name }) : undefined}
               onDoubleClick={canOpenDirectory ? (event) => {
                 if ((event.target as HTMLElement).closest("button")) return;
                 onOpenLeftDirectory(file.name);
@@ -350,7 +362,7 @@ export default function ResourcePanel({
                         e.stopPropagation();
                         handleOpenDetail(file, modInfoMap);
                       }}
-                      title="查看详细信息"
+                      title={t({ "zh-CN": "查看详细信息", "en-US": "View details" })}
                     >
                       <Info className="size-3.5" />
                     </Button>
@@ -363,7 +375,7 @@ export default function ResourcePanel({
                       size="icon"
                       className="size-7 opacity-0 group-hover:opacity-100 transition-opacity"
                       onClick={() => handleStartRename(file.name)}
-                      title="重命名"
+                      title={t({ "zh-CN": "重命名", "en-US": "Rename" })}
                     >
                       <Edit3 className="size-3.5" />
                     </Button>
@@ -376,7 +388,7 @@ export default function ResourcePanel({
                       size="icon"
                       className={`size-7 ${side === "right" ? "font-bold" : ""}`}
                       onClick={() => moveHandler(file.name)}
-                      title={side === "right" ? "加入实例" : "移出实例"}
+                      title={side === "right" ? t("resource.addToInstance") : t("resource.removeFromInstance")}
                     >
                       {side === "right" ? (
                         <Plus className="size-3.5" />
@@ -393,11 +405,11 @@ export default function ResourcePanel({
                       size="icon"
                       className="size-7 text-destructive opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10"
                       onClick={() => {
-                        if (confirm(`确定删除 "${simplify(file.name)}" 吗？`)) {
+                        if (confirm(t("resource.deleteConfirm", { name: simplify(file.name) }))) {
                           deleteHandler(file.name);
                         }
                       }}
-                      title="删除"
+                      title={t({ "zh-CN": "删除", "en-US": "Delete" })}
                     >
                       <Trash2 className="size-3.5" />
                     </Button>
@@ -411,8 +423,8 @@ export default function ResourcePanel({
     );
   };
 
-  const leftEmptyIcon = React.cloneElement(leftIcon as any, { className: "size-6 text-muted-foreground" });
-  const rightEmptyIcon = React.cloneElement(rightIcon as any, { className: "size-6 text-muted-foreground" });
+  const leftEmptyIcon = React.cloneElement(leftIcon as React.ReactElement<{ className?: string }>, { className: "size-6 text-muted-foreground" });
+  const rightEmptyIcon = React.cloneElement(rightIcon as React.ReactElement<{ className?: string }>, { className: "size-6 text-muted-foreground" });
 
   return (
     <div className="flex h-full flex-col gap-4 p-4 overflow-hidden">
@@ -425,17 +437,17 @@ export default function ResourcePanel({
       >
         <div className={`flex size-9 items-center justify-center rounded-xl ${leftIconBg}`}>{leftIcon}</div>
         <div>
-          <h1 className="text-lg font-semibold leading-none">{leftTitle}</h1>
+          <h1 className="text-lg font-semibold leading-none">{localizedLeftTitle}</h1>
           <p className="mt-1 text-xs text-muted-foreground">{leftDescription || ""}</p>
         </div>
         <div className="ml-auto flex items-center gap-2">
           {onUploadFiles && (
-            <Button variant="default" size="icon" className="size-8" onClick={onUploadFiles} title="上传文件">
+            <Button variant="default" size="icon" className="size-8" onClick={onUploadFiles} title={t("resource.uploadFiles")}>
               <Plus className="size-3.5" />
             </Button>
           )}
           {onRefresh && (
-            <Button variant="ghost" size="icon" className="size-8" onClick={onRefresh} title="刷新">
+            <Button variant="ghost" size="icon" className="size-8" onClick={onRefresh} title={t({ "zh-CN": "刷新", "en-US": "Refresh" })}>
               <RefreshCw className="size-3.5" />
             </Button>
           )}
@@ -453,10 +465,10 @@ export default function ResourcePanel({
         >
           <div className="shrink-0 flex items-center gap-3 px-3 py-2 border-b">
             <div className={`flex size-7 items-center justify-center rounded-lg ${leftIconBg}`}>
-              {React.cloneElement(leftIcon as any, { className: "size-3.5 text-current" })}
+              {React.cloneElement(leftIcon as React.ReactElement<{ className?: string }>, { className: "size-3.5 text-current" })}
             </div>
                 <div className="min-w-0 flex-1">
-                  <h2 className="text-sm font-semibold leading-tight">当前实例中</h2>
+                  <h2 className="text-sm font-semibold leading-tight">{t("resource.currentInstance")}</h2>
                   {leftDirectoryPath.length > 0 ? (
                     <div className="flex items-center gap-1 text-xs text-muted-foreground min-w-0">
                       {onNavigateUpLeft && (
@@ -464,9 +476,9 @@ export default function ResourcePanel({
                           type="button"
                           className="shrink-0 hover:text-foreground"
                           onClick={onNavigateUpLeft}
-                          title="返回上一级目录"
+                          title={t({ "zh-CN": "返回上一级目录", "en-US": "Go to parent folder" })}
                         >
-                          <ChevronLeft className="inline size-3.5" /> 返回
+                          <ChevronLeft className="inline size-3.5" /> {t({ "zh-CN": "返回", "en-US": "Back" })}
                         </button>
                       )}
                       <span className="truncate" title={leftDirectoryPath.join(" / ")}>
@@ -475,7 +487,7 @@ export default function ResourcePanel({
                     </div>
                   ) : (
                     <p className="text-xs text-muted-foreground truncate">
-                      {onOpenLeftDirectory ? "双击文件夹进入" : "已加入的文件"}
+                      {onOpenLeftDirectory ? t("resource.doubleClickFolder") : t("resource.addedFiles")}
                     </p>
                   )}
                 </div>
@@ -485,7 +497,7 @@ export default function ResourcePanel({
               <Input
                 value={leftSearch}
                 onChange={(e) => setLeftSearch(e.target.value)}
-                placeholder="搜索..."
+                placeholder={t("common.search")}
                 className="pl-7 h-7 text-xs"
               />
             </div>
@@ -496,7 +508,7 @@ export default function ResourcePanel({
               leftLoading,
               leftError,
               leftEmptyIcon,
-              "暂无文件",
+              t("resource.noFiles"),
               "left",
               onMoveLeftToRight,
               onDeleteLeft,
@@ -515,11 +527,11 @@ export default function ResourcePanel({
         >
           <div className="shrink-0 flex items-center gap-3 px-3 py-2 border-b">
             <div className={`flex size-7 items-center justify-center rounded-lg ${rightIconBg}`}>
-              {React.cloneElement(rightIcon as any, { className: "size-3.5 text-current" })}
+              {React.cloneElement(rightIcon as React.ReactElement<{ className?: string }>, { className: "size-3.5 text-current" })}
             </div>
             <div className="min-w-0 flex-1">
-              <h2 className="text-sm font-semibold leading-tight">Cache 库</h2>
-              <p className="text-xs text-muted-foreground truncate">对应版本 · 可加入</p>
+              <h2 className="text-sm font-semibold leading-tight">{t("resource.cacheLibrary")}</h2>
+              <p className="text-xs text-muted-foreground truncate">{t("resource.matchingVersionAvailable")}</p>
             </div>
             {rightBadge && <Badge variant="secondary" className="text-xs shrink-0">{rightBadge}</Badge>}
             <div className="relative w-40 shrink-0">
@@ -527,7 +539,7 @@ export default function ResourcePanel({
               <Input
                 value={rightSearch}
                 onChange={(e) => setRightSearch(e.target.value)}
-                placeholder="搜索..."
+                placeholder={t("common.search")}
                 className="pl-7 h-7 text-xs"
               />
             </div>
@@ -538,7 +550,7 @@ export default function ResourcePanel({
               rightLoading,
               rightError,
               rightEmptyIcon,
-              "暂无可用文件",
+              t("resource.noAvailableFiles"),
               "right",
               onMoveRightToLeft,
               onDeleteRight,

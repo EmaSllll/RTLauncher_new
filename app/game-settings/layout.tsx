@@ -3,15 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useI18n, type Translation } from "@/components/i18n/use-i18n";
 
 const NAV_ITEMS = [
-  { href: "/game-settings/mods", label: "模组管理" },
-  { href: "/game-settings/resources", label: "资源包" },
-  { href: "/game-settings/worlds", label: "存档" },
-  { href: "/game-settings/shaders", label: "光影包" },
-  { href: "/game-settings/datapacks", label: "数据包" },
-  { href: "/game-settings/schematics", label: "投影原理图" },
-  { href: "/game-settings/screenshots", label: "截图" },
+  { href: "/game-settings/mods", label: { "zh-CN": "模组管理", "en-US": "Mods" } as Translation },
+  { href: "/game-settings/resources", label: { "zh-CN": "资源包", "en-US": "Resource Packs" } as Translation },
+  { href: "/game-settings/worlds", label: { "zh-CN": "存档", "en-US": "Worlds" } as Translation },
+  { href: "/game-settings/shaders", label: { "zh-CN": "光影包", "en-US": "Shaders" } as Translation },
+  { href: "/game-settings/datapacks", label: { "zh-CN": "数据包", "en-US": "Datapacks" } as Translation },
+  { href: "/game-settings/schematics", label: { "zh-CN": "投影原理图", "en-US": "Schematics" } as Translation },
+  { href: "/game-settings/screenshots", label: { "zh-CN": "截图", "en-US": "Screenshots" } as Translation },
 ];
 
 export default function GameSettingsLayout({
@@ -20,6 +21,7 @@ export default function GameSettingsLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const { t } = useI18n();
 
   return (
     <div className="h-full flex flex-col">
@@ -39,7 +41,7 @@ export default function GameSettingsLayout({
                   : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
               )}
             >
-              {item.label}
+              {t(item.label)}
             </Link>
           ))}
         </div>

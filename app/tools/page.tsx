@@ -25,6 +25,7 @@ import {
   getModpackDir,
   formatTimestamp,
 } from "@/components/modpack/modpack-api";
+import { useI18n } from "@/components/i18n/use-i18n";
 
 interface NewPackDialogState {
   open: boolean;
@@ -35,6 +36,7 @@ interface NewPackDialogState {
 
 export default function ToolsPage() {
   const router = useRouter();
+  const { t } = useI18n();
 
   // 整合包实例
   const { instances, loading: instLoading, reload: reloadInstances } =
@@ -64,11 +66,11 @@ export default function ToolsPage() {
     if (!dialog) return;
     const trimmed = dialog.name.trim();
     if (!trimmed) {
-      setDialog({ ...dialog, error: "请输入名称" });
+      setDialog({ ...dialog, error: t({ "zh-CN": "请输入名称", "en-US": "Enter a name" }) });
       return;
     }
     if (!/^[^\\/:*?"<>|\r\n]+$/.test(trimmed)) {
-      setDialog({ ...dialog, error: "名称包含非法字符" });
+      setDialog({ ...dialog, error: t({ "zh-CN": "名称包含非法字符", "en-US": "The name contains invalid characters" }) });
       return;
     }
     const url =
@@ -90,7 +92,7 @@ export default function ToolsPage() {
       await deleteInstance(pendingDelete);
       await reloadInstances();
     } catch (e: any) {
-      alert(`删除失败: ${e?.message || e}`);
+      alert(`${t({ "zh-CN": "删除失败", "en-US": "Delete failed" })}: ${e?.message || e}`);
     }
     setPendingDelete(null);
   };
@@ -104,8 +106,8 @@ export default function ToolsPage() {
             <FileText className="size-5 text-primary" />
           </div>
           <div>
-            <h1 className="text-lg font-semibold leading-none">工具中心</h1>
-            <p className="mt-1 text-xs text-muted-foreground">整合包制作与管理</p>
+            <h1 className="text-lg font-semibold leading-none">{t({ "zh-CN": "工具中心", "en-US": "Tools" })}</h1>
+            <p className="mt-1 text-xs text-muted-foreground">{t({ "zh-CN": "整合包制作与管理", "en-US": "Create and manage modpacks" })}</p>
           </div>
         </div>
       </div>
@@ -128,17 +130,16 @@ export default function ToolsPage() {
                     mrpack
                   </Badge>
                 </div>
-                <h3 className="font-semibold text-base">制作 Modrinth 整合包</h3>
+                <h3 className="font-semibold text-base">{t({ "zh-CN": "制作 Modrinth 整合包", "en-US": "Create a Modrinth modpack" })}</h3>
                 <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                  通过 Modrinth API 搜索并添加文件，自动收集 path、sha1、sha256、
-                  fileSize、downloadUrl；可指定每个文件的客户端/服务端依赖级别。
+                  {t({ "zh-CN": "通过 Modrinth API 搜索并添加文件，自动收集 path、sha1、sha256、fileSize、downloadUrl；可指定每个文件的客户端/服务端依赖级别。", "en-US": "Search and add files with the Modrinth API. Collects path, sha1, sha256, fileSize, and downloadUrl, with client/server dependency settings per file." })}
                 </p>
                 <Button
                   className="mt-4 w-full gap-2"
                   onClick={() => openNewPack("modrinth")}
                 >
                   <Plus className="size-4" />
-                  新建 Modrinth 整合包
+                  {t({ "zh-CN": "新建 Modrinth 整合包", "en-US": "New Modrinth modpack" })}
                 </Button>
               </div>
             </motion.div>
@@ -157,17 +158,16 @@ export default function ToolsPage() {
                     manifest.json
                   </Badge>
                 </div>
-                <h3 className="font-semibold text-base">制作 CurseForge 整合包</h3>
+                <h3 className="font-semibold text-base">{t({ "zh-CN": "制作 CurseForge 整合包", "en-US": "Create a CurseForge modpack" })}</h3>
                 <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-                  通过 CurseForge API 搜索，收集 projectID 与 fileID 对；
-                  可勾选每个文件是否为必须安装。
+                  {t({ "zh-CN": "通过 CurseForge API 搜索，收集 projectID 与 fileID 对；可勾选每个文件是否为必须安装。", "en-US": "Search with the CurseForge API, collect projectID and fileID pairs, and choose whether each file is required." })}
                 </p>
                 <Button
                   className="mt-4 w-full gap-2"
                   onClick={() => openNewPack("curseforge")}
                 >
                   <Plus className="size-4" />
-                  新建 CurseForge 整合包
+                  {t({ "zh-CN": "新建 CurseForge 整合包", "en-US": "New CurseForge modpack" })}
                 </Button>
               </div>
             </motion.div>
@@ -178,7 +178,7 @@ export default function ToolsPage() {
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-semibold flex items-center gap-2">
                 <Sparkles className="size-4 text-primary" />
-                我的整合包实例
+                {t({ "zh-CN": "我的整合包实例", "en-US": "My modpack instances" })}
               </h2>
               <div className="flex items-center gap-2">
                 <Button
@@ -190,12 +190,12 @@ export default function ToolsPage() {
                   <RefreshCw
                     className={`size-3.5 mr-1 ${instLoading ? "animate-spin" : ""}`}
                   />
-                  刷新
+                  {t({ "zh-CN": "刷新", "en-US": "Refresh" })}
                 </Button>
                 <div className="relative">
                   <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
                   <Input
-                    placeholder="搜索实例名称..."
+                    placeholder={t({ "zh-CN": "搜索实例名称...", "en-US": "Search instances..." })}
                     value={instanceFilter}
                     onChange={(e) => setInstanceFilter(e.target.value)}
                     className="w-48 h-8 text-xs pl-8"
@@ -206,20 +206,20 @@ export default function ToolsPage() {
 
             {dir && (
               <div className="mb-3 text-xs text-muted-foreground flex items-center gap-1">
-                <Folder className="size-3" /> 保存位置：
+                <Folder className="size-3" /> {t({ "zh-CN": "保存位置：", "en-US": "Saved in:" })}
                 <span className="font-mono">{dir}</span>
               </div>
             )}
 
             {instLoading ? (
               <div className="py-8 flex items-center justify-center text-xs text-muted-foreground gap-2">
-                <Loader2 className="size-4 animate-spin" /> 加载中...
+                <Loader2 className="size-4 animate-spin" /> {t({ "zh-CN": "加载中...", "en-US": "Loading..." })}
               </div>
             ) : filteredInstances.length === 0 ? (
               <div className="py-8 text-center border border-dashed rounded-xl text-xs text-muted-foreground">
                 {instances.length === 0
-                  ? "暂无整合包实例，点击上方按钮创建第一个"
-                  : "没有匹配此关键词的实例"}
+                  ? t({ "zh-CN": "暂无整合包实例，点击上方按钮创建第一个", "en-US": "No modpack instances yet. Create your first one above." })
+                  : t({ "zh-CN": "没有匹配此关键词的实例", "en-US": "No instances match this search." })}
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -243,7 +243,7 @@ export default function ToolsPage() {
                         </div>
                         <div className="text-xs text-muted-foreground mt-1 flex flex-wrap items-center gap-2">
                           <span>
-                            {inst.file_count} 个文件 · MC {inst.game_version || "—"}
+                            {inst.file_count} {t({ "zh-CN": "个文件", "en-US": "files" })} · MC {inst.game_version || "—"}
                           </span>
                           {inst.loader && (
                             <Badge variant="outline" className="text-[9px] py-0">
@@ -260,12 +260,12 @@ export default function ToolsPage() {
                               variant="outline"
                               className="text-[9px] py-0 text-amber-600 border-amber-400"
                             >
-                              互联
+                              {t({ "zh-CN": "互联", "en-US": "Cross-loader" })}
                             </Badge>
                           )}
                         </div>
                         <div className="text-[10px] text-muted-foreground mt-0.5">
-                          更新：{formatTimestamp(inst.updated_at)}
+                          {t({ "zh-CN": "更新：", "en-US": "Updated: " })}{formatTimestamp(inst.updated_at)}
                         </div>
                       </div>
                       <div className="flex items-center gap-1 shrink-0">
@@ -277,7 +277,7 @@ export default function ToolsPage() {
                           }
                         >
                           <Edit className="size-3.5 mr-1" />
-                          编辑
+                          {t({ "zh-CN": "编辑", "en-US": "Edit" })}
                         </Button>
                         <Button
                           variant="ghost"
@@ -301,21 +301,21 @@ export default function ToolsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-card border border-border rounded-2xl shadow-xl max-w-md w-full p-6">
             <h3 className="font-semibold text-base mb-1">
-              新建 {dialog.format === "modrinth" ? "Modrinth" : "CurseForge"} 整合包
+              {t({ "zh-CN": "新建", "en-US": "New" })} {dialog.format === "modrinth" ? "Modrinth" : "CurseForge"} {t({ "zh-CN": "整合包", "en-US": "modpack" })}
             </h3>
             <p className="text-xs text-muted-foreground mb-4">
-              给你的整合包取个名字，之后可随时修改。
+              {t({ "zh-CN": "给你的整合包取个名字，之后可随时修改。", "en-US": "Give your modpack a name. You can change it later." })}
             </p>
             <div className="mb-4">
               <label className="text-xs text-muted-foreground block mb-1">
-                整合包名称 *
+                {t({ "zh-CN": "整合包名称", "en-US": "Modpack name" })} *
               </label>
               <Input
                 autoFocus
                 value={dialog.name}
                 onChange={(e) => setDialog({ ...dialog, name: e.target.value })}
                 onKeyDown={(e) => e.key === "Enter" && confirmNewPack()}
-                placeholder="如：My Fantastic Pack"
+                placeholder={t({ "zh-CN": "如：My Fantastic Pack", "en-US": "e.g. My Fantastic Pack" })}
               />
               {dialog.error && (
                 <div className="mt-1 text-xs text-red-500">{dialog.error}</div>
@@ -323,14 +323,14 @@ export default function ToolsPage() {
             </div>
             <div className="flex items-center justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => setDialog(null)}>
-                取消
+                {t({ "zh-CN": "取消", "en-US": "Cancel" })}
               </Button>
               <Button
                 size="sm"
                 onClick={confirmNewPack}
                 disabled={!dialog.name.trim()}
               >
-                开始制作
+                {t({ "zh-CN": "开始制作", "en-US": "Start creating" })}
               </Button>
             </div>
           </div>
@@ -341,9 +341,9 @@ export default function ToolsPage() {
       {pendingDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-card border border-border rounded-2xl shadow-xl max-w-sm w-full p-6">
-            <h3 className="font-semibold text-base mb-1">确认删除？</h3>
+            <h3 className="font-semibold text-base mb-1">{t({ "zh-CN": "确认删除？", "en-US": "Delete this modpack?" })}</h3>
             <p className="text-xs text-muted-foreground mb-4">
-              将从磁盘永久删除：
+              {t({ "zh-CN": "将从磁盘永久删除：", "en-US": "This will be permanently removed from disk:" })}
               <span className="block font-mono mt-1 text-primary">{pendingDelete}.json</span>
             </p>
             <div className="flex items-center justify-end gap-2">
@@ -352,10 +352,10 @@ export default function ToolsPage() {
                 size="sm"
                 onClick={() => setPendingDelete(null)}
               >
-                取消
+                {t({ "zh-CN": "取消", "en-US": "Cancel" })}
               </Button>
               <Button size="sm" variant="destructive" onClick={doDelete}>
-                删除
+                {t({ "zh-CN": "删除", "en-US": "Delete" })}
               </Button>
             </div>
           </div>

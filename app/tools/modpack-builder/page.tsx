@@ -9,10 +9,12 @@ import {
   loadInstance,
 } from "@/components/modpack/modpack-api";
 import { Loader2 } from "lucide-react";
+import { useI18n } from "@/components/i18n/use-i18n";
 
 function ModpackBuilderInner() {
   const router = useRouter();
   const search = useSearchParams();
+  const { t } = useI18n();
 
   const type = search.get("type");
   const name = search.get("name") || undefined;
@@ -37,7 +39,7 @@ function ModpackBuilderInner() {
       loadInstance(name)
         .then((inst) => {
           if ((inst as any).format !== type) {
-            setLoadError("整合包类型不匹配");
+            setLoadError(t({ "zh-CN": "整合包类型不匹配", "en-US": "The modpack type does not match." }));
             setExistingFiles([]);
             return;
           }
@@ -69,7 +71,7 @@ function ModpackBuilderInner() {
   if (existingFiles === null) {
     return (
       <div className="h-full flex items-center justify-center text-sm text-muted-foreground gap-2">
-        <Loader2 className="size-4 animate-spin" /> 正在加载整合包数据...
+        <Loader2 className="size-4 animate-spin" /> {t({ "zh-CN": "正在加载整合包数据...", "en-US": "Loading modpack data..." })}
       </div>
     );
   }
@@ -77,7 +79,7 @@ function ModpackBuilderInner() {
   if (loadError) {
     return (
       <div className="h-full flex items-center justify-center text-sm text-red-500">
-        加载失败：{loadError}
+        {t({ "zh-CN": "加载失败：", "en-US": "Load failed: " })}{loadError}
       </div>
     );
   }
@@ -97,10 +99,11 @@ function ModpackBuilderInner() {
 }
 
 export default function ModpackBuilderPage() {
+  const { t } = useI18n();
   return (
     <Suspense fallback={
       <div className="h-full flex items-center justify-center text-sm text-muted-foreground gap-2">
-        <Loader2 className="size-4 animate-spin" /> 正在加载...
+        <Loader2 className="size-4 animate-spin" /> {t({ "zh-CN": "正在加载...", "en-US": "Loading..." })}
       </div>
     }>
       <ModpackBuilderInner />

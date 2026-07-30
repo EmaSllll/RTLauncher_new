@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import type { LauncherPathsConfig } from "@/types";
+import { useI18n } from "@/components/i18n/use-i18n";
 
 interface MemoryOptimizationReport {
   available_before_mb: number;
@@ -40,6 +41,7 @@ interface MemoryOptimizationReport {
  * 显示启动按钮和当前状态概览
  */
 export function LaunchPanel() {
+  const { t } = useI18n();
   const { config, status, errorMessage, launchGame, cancelLaunch } = useLaunchContext();
   const { selectedProfile } = useAccountContext();
   const [javaInstallations, setJavaInstallations] = useState<LauncherPathsConfig["java_installations"]>({});
@@ -48,6 +50,15 @@ export function LaunchPanel() {
   const [optimizing, setOptimizing] = useState(false);
   const [lastReport, setLastReport] = useState<MemoryOptimizationReport | null>(null);
   const [optimizeError, setOptimizeError] = useState<string | null>(null);
+  const profileStatusMap: Record<string, string> = {
+    "LittleSkin 登录": t("account.littleSkinSignIn"),
+    "第三方登录": t("account.thirdPartySignIn"),
+    "离线登录": t("account.offlineSignIn"),
+    "正版登录": t("account.microsoftSignIn"),
+  };
+  const profileStatus = selectedProfile?.status
+    ? profileStatusMap[selectedProfile.status] ?? selectedProfile.status
+    : undefined;
 
   useEffect(() => {
     invoke<LauncherPathsConfig>("get_launcher_paths_config")
@@ -87,7 +98,7 @@ export function LaunchPanel() {
             </div>
             <div>
               <p className="text-sm font-medium">
-                {config.versionName || "未选择版本"}
+                {config.versionName || t("launch.noVersionSelected")}
               </p>
               <div className="flex items-center gap-2 mt-0.5">
                 {config.loadType !== "0" && config.loadName && (
@@ -116,7 +127,7 @@ export function LaunchPanel() {
               <div className="text-right">
                 <p className="text-xs font-medium">{selectedProfile.name}</p>
                 <p className="text-[10px] text-muted-foreground">
-                  {selectedProfile.status}
+                  {profileStatus}
                 </p>
               </div>
             </div>
@@ -156,17 +167,17 @@ export function LaunchPanel() {
           {isLaunching ? (
             <>
               <Loader2 className="size-4 animate-spin" />
-              {status === "preparing" ? "停止准备" : "Launching"}
+              {status === "preparing" ? t({ "zh-CN": "停止准备", "en-US": "Stop preparing" }) : "Launching"}
             </>
           ) : isRunning ? (
             <>
               <Square className="size-4" />
-              停止游戏
+              {t("launch.stopGame")}
             </>
           ) : (
             <>
               <Play className="size-4" />
-              启动游戏
+              {t("launch.launchGame")}
             </>
           )}
         </Button>
@@ -182,17 +193,17 @@ export function LaunchPanel() {
           {optimizing ? (
             <>
               <Loader2 className="size-3.5 animate-spin" />
-              正在释放系统内存...
+              {t({ "zh-CN": "正在释放系统内存...", "en-US": "Freeing system memory..." })}
             </>
           ) : lastReport ? (
             <>
               <Sparkles className="size-3.5" />
-              已释放约 {lastReport.freed_mb >= 0 ? lastReport.freed_mb : 0} MB 内存 · 再次清理
+              {t({ "zh-CN": `已释放约 ${lastReport.freed_mb >= 0 ? lastReport.freed_mb : 0} MB 内存 · 再次清理`, "en-US": `Freed about ${lastReport.freed_mb >= 0 ? lastReport.freed_mb : 0} MB · Clean again` })}
             </>
           ) : (
             <>
               <HardDrive className="size-3.5" />
-              一键清理内存（释放系统缓存）
+              {t({ "zh-CN": "一键清理内存（释放系统缓存）", "en-US": "Free memory (clear system cache)" })}
             </>
           )}
         </Button>
@@ -211,19 +222,19 @@ export function LaunchPanel() {
                 <Sparkles className="size-3.5 shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <p>
-                    可用内存：{lastReport.available_before_mb} MB →
+                    {t({ "zh-CN": "可用内存：", "en-US": "Available memory: " })}{lastReport.available_before_mb} MB →
                     <span className="font-semibold text-foreground">
                       {" "}
                       {lastReport.available_after_mb} MB
                     </span>{" "}
-                    （{lastReport.total_mb} MB 总计）
+                    {t({ "zh-CN": `（${lastReport.total_mb} MB 总计）`, "en-US": `(${lastReport.total_mb} MB total)` })}
                   </p>
                   <p>
-                    平台：{lastReport.platform} · 耗时：{lastReport.duration_ms} ms
+                    {t({ "zh-CN": "平台：", "en-US": "Platform: " })}{lastReport.platform} · {t({ "zh-CN": "耗时：", "en-US": "Duration: " })}{lastReport.duration_ms} ms
                   </p>
                   {lastReport.methods.length > 0 && (
                     <p className="mt-1 opacity-70 truncate">
-                      方法：{lastReport.methods.join(" · ")}
+                      {t({ "zh-CN": "Methods: ", "en-US": "Methods: " })}{lastReport.methods.join(" · ")}
                     </p>
                   )}
                 </div>
@@ -250,8 +261,8 @@ export function LaunchPanel() {
         {/* 快捷信息 */}
         <div className="grid grid-cols-3 gap-2 text-[10px] text-muted-foreground">
           <div className="rounded-lg bg-muted/50 p-2">
-            <span className="block font-medium text-foreground">内存</span>
-            {config.maxMemory || "未设置"} MB
+            <span className="block font-medium text-foreground">{t({ "zh-CN": "内存", "en-US": "Memory" })}</span>
+            {config.maxMemory || t({ "zh-CN": "未设置", "en-US": "Not set" })} MB
           </div>
           <div className="rounded-lg bg-muted/50 p-2">
             <span className="block font-medium text-foreground">Java</span>
@@ -261,11 +272,11 @@ export function LaunchPanel() {
                     const inst = javaInstallations?.[config.javaPath];
                     return inst ? `Java ${inst.major_version}` : (config.javaPath.split("/").pop() || config.javaPath.split("\\").pop());
                   })()
-                : "未设置"}
+                : t({ "zh-CN": "未设置", "en-US": "Not set" })}
             </span>
           </div>
           <div className="rounded-lg bg-muted/50 p-2">
-            <span className="block font-medium text-foreground">窗口</span>
+            <span className="block font-medium text-foreground">{t({ "zh-CN": "窗口", "en-US": "Window" })}</span>
             {config.windowWidth || "873"} × {config.windowHeight || "486"}
           </div>
         </div>
