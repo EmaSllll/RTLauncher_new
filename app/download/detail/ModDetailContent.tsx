@@ -838,49 +838,52 @@ export default function ModDetailContent({ modId }: { modId: string }) {
     // Dependency resolution runs after primary download is successfully started
     // Errors here should not affect the primary download's state
     if (settings.general.autoDownloadModDependencies && resourceKind === "mod") {
+      let hostname: string | null = null;
       try {
-        const hostname = new URL(file.url).hostname;
-        const dependencyCommand = /(^|\.)modrinth\.com$/i.test(hostname)
-          ? "get_modrinth_required_dependencies"
-          : /(^|\.)forgecdn\.net$/i.test(hostname) || /(^|\.)curseforge\.com$/i.test(hostname)
-            ? "get_curseforge_required_dependencies"
-            : null;
-
-        if (!dependencyCommand) return;
-
-        void invoke<ResolvedModDependency[]>(dependencyCommand, {
-          projectSlug: modSlug,
-          mcVersion,
-          modLoader,
-          downloadUrl: file.url,
-        })
-          .then(async (dependencies) => {
-            await Promise.all(
-              dependencies.map(async (dependency) => {
-                try {
-                  await startResourceDownload(
-                    "mod",
-                    dependency.projectSlug || dependency.projectId,
-                    `${dependency.projectName} (dependency)`,
-                    mcVersion,
-                    modLoader,
-                    dependency.downloadUrl,
-                  );
-                } catch (error) {
-                  console.error(`Failed to download dependency ${dependency.projectName}:`, error);
-                }
-              }),
-            );
-          })
-          .catch((error) => {
-            // The selected mod download is already running; dependency lookup
-            // failure should not turn it into a failed task.
-            console.warn("Failed to resolve required mod dependencies:", error);
-          });
+        hostname = new URL(file.url).hostname;
       } catch (error) {
-        // URL parsing or hostname extraction failed - log warning but don't affect primary download
         console.warn("Failed to parse URL for dependency resolution:", error);
       }
+
+      if (!hostname) return;
+
+      const dependencyCommand = /(^|\.)modrinth\.com$/i.test(hostname)
+        ? "get_modrinth_required_dependencies"
+        : /(^|\.)forgecdn\.net$/i.test(hostname) || /(^|\.)curseforge\.com$/i.test(hostname)
+          ? "get_curseforge_required_dependencies"
+          : null;
+
+      if (!dependencyCommand) return;
+
+      void invoke<ResolvedModDependency[]>(dependencyCommand, {
+        projectSlug: modSlug,
+        mcVersion,
+        modLoader,
+        downloadUrl: file.url,
+      })
+        .then(async (dependencies) => {
+          await Promise.all(
+            dependencies.map(async (dependency) => {
+              try {
+                await startResourceDownload(
+                  "mod",
+                  dependency.projectSlug || dependency.projectId,
+                  `${dependency.projectName} (dependency)`,
+                  mcVersion,
+                  modLoader,
+                  dependency.downloadUrl,
+                );
+              } catch (error) {
+                console.error(`Failed to download dependency ${dependency.projectName}:`, error);
+              }
+            }),
+          );
+        })
+        .catch((error) => {
+          // The selected mod download is already running; dependency lookup
+          // failure should not turn it into a failed task.
+          console.warn("Failed to resolve required mod dependencies:", error);
+        });
     }
   };
 
