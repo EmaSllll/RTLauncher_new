@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use log::{debug, info, warn, error};
 use std::{
     collections::{HashSet, HashMap},
     path::PathBuf,
@@ -81,15 +82,11 @@ fn parse_log_level(line: &str) -> &'static str {
 /// 例如: "-DFabricMcEmu= net.minecraft.client.main.Main " -> "-DFabricMcEmu=net.minecraft.client.main.Main"
 fn clean_param_spaces(param: &str) -> String {
     let trimmed = param.trim();
-    // 检查参数是否被引号包围
     if (trimmed.starts_with('"') && trimmed.ends_with('"')) ||
        (trimmed.starts_with("'") && trimmed.ends_with("'")) {
-        // 移除外层引号
         let inner = &trimmed[1..trimmed.len()-1];
-        // 移除内部所有空格
         inner.chars().filter(|c| !c.is_whitespace()).collect()
     } else {
-        // 没有引号，直接返回trim后的结果
         trimmed.to_string()
     }
 }
@@ -170,11 +167,9 @@ fn parse_library_path(path: &str) -> Option<(String, String, String)> {
 /// 比较两个版本号，返回true如果version1 > version2
 /// 简单版本比较，不支持语义化版本的所有特性
 fn compare_versions(version1: &str, version2: &str) -> bool {
-    // 分割版本号
     let v1_parts: Vec<&str> = version1.split('.').collect();
     let v2_parts: Vec<&str> = version2.split('.').collect();
 
-    // 逐个比较版本号部分
     for i in 0..std::cmp::max(v1_parts.len(), v2_parts.len()) {
         let v1_part = v1_parts.get(i).and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
         let v2_part = v2_parts.get(i).and_then(|s| s.parse::<u32>().ok()).unwrap_or(0);
@@ -182,12 +177,10 @@ fn compare_versions(version1: &str, version2: &str) -> bool {
         if v1_part > v2_part {
             return true;
         } else if v1_part < v2_part {
-            println!("liteloader是{}, forge是{}",version1,version2);
             return false;
         }
     }
 
-    // 版本号相同
     false
 }
 
@@ -304,7 +297,7 @@ pub fn run_command(args: Vec<String>, javaPath: PathBuf, MCPath: PathBuf, app_ha
             .map_err(|e| format!("无法读取 Java 文件信息: {}", e))?;
         let permissions = metadata.permissions();
         if permissions.mode() & 0o111 == 0 {
-            println!("Java 缺少执行权限，正在修复: {}", javaPath.display());
+            info!("Java 缺少执行权限，正在修复: {}", javaPath.display());
             let mut new_perms = permissions.clone();
             new_perms.set_mode(permissions.mode() | 0o755);
             std::fs::set_permissions(&javaPath, new_perms)
@@ -331,7 +324,7 @@ pub fn run_command(args: Vec<String>, javaPath: PathBuf, MCPath: PathBuf, app_ha
     match command.spawn() {
         Ok(mut child) => {
             let pid = child.id();
-            println!("游戏启动成功，进程ID: {}", pid);
+            info!("游戏启动成功，进程ID: {}", pid);
 
             // 从子进程取出 stdout/stderr 管道
             let stdout = child.stdout.take();
@@ -426,7 +419,7 @@ pub fn run_command(args: Vec<String>, javaPath: PathBuf, MCPath: PathBuf, app_ha
                     match c.wait() {
                         Ok(status) => status.code().unwrap_or(-1),
                         Err(e) => {
-                            println!("等待游戏进程 {} 时出错: {}", pid, e);
+                            error!("等待游戏进程 {} 时出错: {}", pid, e);
                             -1
                         }
                     }
@@ -434,7 +427,7 @@ pub fn run_command(args: Vec<String>, javaPath: PathBuf, MCPath: PathBuf, app_ha
                     -1
                 };
 
-                println!("游戏进程 {} 已结束，退出码: {}", pid, exit_code);
+                info!("游戏进程 {} 已结束，退出码: {}", pid, exit_code);
 
                 // 清空全局进程表
                 {
@@ -452,7 +445,7 @@ pub fn run_command(args: Vec<String>, javaPath: PathBuf, MCPath: PathBuf, app_ha
                 javaPath.display(),
                 e
             );
-            println!("{}", msg);
+            error!("{}", msg);
             Err(msg.into())
         }
     }
@@ -559,7 +552,7 @@ fn build_jvm_arguments_inner(
     // 如果 uuid 为空或不合法，根据玩家名生成离线 UUID
     let uuid = if uuid.is_empty() || !is_valid_uuid(uuid) {
         let generated = offline_uuid(player_name);
-        println!("[启动器] UUID 无效 (\"{}\"), 已根据玩家名生成: {}", uuid, generated);
+        info!("[启动器] UUID 无效, 已根据玩家名生成: {}", generated);
         generated
     } else {
         uuid.to_string()
@@ -582,63 +575,45 @@ fn build_jvm_arguments_inner(
         let load_path = minecraft_path_buf
             .join("versions")
             .join(loadName);
-        println!("正在加载版本信息，loadType: {}, loadName: {}, loadPath: {}", loadType, loadName, load_path.display());
+        debug!("正在加载版本信息，loadType: {}, loadName: {}", loadType, loadName);
         if loadType == "1" {
-            println!("loadType为1，检查load_path是否为目录");
             if load_path.is_dir() {
-                println!("load_path是目录，开始读取JSON文件");
                 let entries: Vec<_> = std::fs::read_dir(&load_path).context("Failed to read load_path dir")?.collect();
-                println!("目录中共有 {} 个文件/文件夹", entries.len());
+                debug!("目录中共有 {} 个文件/文件夹", entries.len());
                 for entry in entries {
                     let entry = entry.context("Failed to read dir entry")?;
                     let path = entry.path();
-                    println!("检查文件: {}", path.display());
-                    println!("  文件扩展名: {:?}", path.extension());
+                    debug!("检查文件: {}", path.display());
                     if path.extension()
                         .and_then(|s| s.to_str())
                         .map(|s| s.eq_ignore_ascii_case("json"))
                         .unwrap_or(false)
                     {
-                        println!("找到JSON文件: {}", path.display());
+                        debug!("找到JSON文件: {}", path.display());
                         let content = std::fs::read_to_string(&path)
                             .with_context(|| format!("Failed to read {}", path.display()))?;
-                        println!("JSON内容: {}", content);
 
                         let value: serde_json::Value = serde_json::from_reader(
                             std::fs::File::open(&path)
                                 .with_context(|| format!("Failed to open {}", path.display()))?
                         )?;
 
-                        println!("解析后的JSON值: {}", serde_json::to_string_pretty(&value).unwrap_or_else(|_| "无法序列化JSON".to_string()));
-
                         let root: &serde_json::Value = if let Some(vinfo) = value.get("versionInfo") {
-                            println!("使用versionInfo字段作为根对象");
                             vinfo
                         } else {
-                            println!("使用整个JSON作为根对象");
                             &value
                         };
 
-                        println!("开始提取mainClass和参数");
-                        println!("JSON根对象的所有键: {:?}", root.as_object().map(|o| o.keys().collect::<Vec<_>>()));
                         if let Some(main_class) = root.get("mainClass").and_then(|v| v.as_str()) {
-                            println!("找到mainClass: {}", main_class);
+                            debug!("找到mainClass: {}", main_class);
                             load_main_class = Some(main_class.to_string());
-                            println!("load_main_class已设置: {:?}", load_main_class);
-                        } else {
-                            println!("未找到mainClass字段");
                         }
 
-                        // 修复点1: 不再合并参数，保持独立元素
-                        println!("检查minecraftArguments字段...");
                         if let Some(mca) = root.get("minecraftArguments").and_then(|v| v.as_str()) {
-                            println!("找到minecraftArguments: {}", mca);
                             for token in mca.split_whitespace() {
                                 load_game_params.push(token.trim().to_string());
                             }
-                            println!("load_game_params已添加: {:?}", load_game_params);
                         } else {
-                            // ===== 参照 HMCL：统一处理 arguments =====
                             if let Some(args_obj) = root.get("arguments") {
                                 let library_dir_str = normalize(&minecraft_path_buf.join("libraries"));
                                 let classpath_sep = if cfg!(windows) { ";" } else { ":" };
@@ -767,26 +742,22 @@ fn build_jvm_arguments_inner(
                                     }
                                 }
                             } else {
-                                println!("未找到arguments字段");
+                                debug!("未找到arguments字段");
                             }
                         }
 
-                        // 检查是否是LiteLoader
-                        println!("JSON参数处理完成:");
-                        println!("  load_main_class: {:?}", load_main_class);
-                        println!("  load_game_params: {:?}", load_game_params);
-                        println!("  load_jvm_params: {:?}", load_jvm_params);
+                        debug!("JSON参数处理完成: main_class={:?}, game_params_len={}, jvm_params_len={}",
+                            load_main_class, load_game_params.len(), load_jvm_params.len());
 
-                        // 检查是否是LiteLoader
                         let is_liteloader = load_main_class.as_ref().map_or(false, |s| s.contains("LiteLoader"));
-                        println!("是否是LiteLoader: {}", is_liteloader);
+                        debug!("是否是LiteLoader: {}", is_liteloader);
 
                         // 处理versionPatch.json（如果有）
                         let mut patch_library_paths: Vec<String> = Vec::new();
                         if is_liteloader {
                             let patch_json_path = load_path.join("versionPatch.json");
                             if patch_json_path.exists() {
-                                println!("找到versionPatch.json，开始处理");
+                                debug!("找到versionPatch.json，开始处理");
                                 let patch_content = std::fs::read_to_string(&patch_json_path)
                                     .with_context(|| format!("Failed to read {}", patch_json_path.display()))?;
                                 let patch_value: serde_json::Value = serde_json::from_str(&patch_content)
@@ -831,7 +802,7 @@ fn build_jvm_arguments_inner(
                                         if let Some(path_str) = artifact.get("path").and_then(|p| p.as_str()) {
                                             let abs = minecraft_path_buf.join("libraries").join(path_str);
                                             let norm = normalize(&abs);
-                                            println!("library artifact path: {}", abs.display());
+                                            debug!("library artifact path: {}", abs.display());
                                             load_library_paths.push(norm.clone());
 
                                             if let Some(name) = lib.get("name").and_then(|n| n.as_str()) {
@@ -842,7 +813,7 @@ fn build_jvm_arguments_inner(
                                                                 let jf = jf?;
                                                                 let jfpath = jf.path();
                                                                 if jfpath.extension().and_then(|s| s.to_str()) == Some("jar") {
-                                                                    println!("forge jar: {}", jfpath.display());
+                                                                    debug!("forge jar: {}", jfpath.display());
                                                                     load_library_paths.push(normalize(&jfpath));
                                                                 }
                                                             }
@@ -857,7 +828,7 @@ fn build_jvm_arguments_inner(
                                             if let Some(path_str) = art.get("path").and_then(|p| p.as_str()) {
                                                 let abs = minecraft_path_buf.join("libraries").join(path_str);
                                                 let norm = normalize(&abs);
-                                                println!("library classifier path: {}", abs.display());
+                                                debug!("library classifier path: {}", abs.display());
                                                 load_library_paths.push(norm);
                                             }
                                         }
@@ -870,8 +841,7 @@ fn build_jvm_arguments_inner(
                                         if let Some(lib_path) = library_name_to_path(name_val) {
                                             let abs = minecraft_path_buf.join("libraries").join(&lib_path);
                                             let norm = normalize(&abs);
-                                            println!("library artifact path (from name): {}", abs.display());
-                                            // 检查是否已经添加过，避免重复
+                                            debug!("library artifact path (from name): {}", abs.display());
                                             if !load_library_paths.contains(&norm) {
                                                 load_library_paths.push(norm);
                                             }
@@ -884,7 +854,7 @@ fn build_jvm_arguments_inner(
                         // 如果是LiteLoader，比较load_library_paths和patch_library_paths
                         // 如果patch中的库版本更高，则替换load中的库
                         if is_liteloader && !patch_library_paths.is_empty() {
-                            println!("正在比较LiteLoader和versionPatch.json中的库版本...");
+                            debug!("正在比较LiteLoader和versionPatch.json中的库版本...");
 
                             // 存储需要移除的load库的索引
                             let mut indices_to_remove: Vec<usize> = Vec::new();
@@ -904,7 +874,7 @@ fn build_jvm_arguments_inner(
                                                 if compare_versions(&patch_version, &load_version) {
                                                     indices_to_remove.push(i);
                                                     patches_to_add.push(patch_path.clone());
-                                                    println!("替换库: {} (load版本: {}) -> {} (patch版本: {})",
+                                                    debug!("替换库: {} (load版本: {}) -> {} (patch版本: {})",
                                                         load_path, load_version, patch_path, patch_version);
                                                 }
                                             }
@@ -930,7 +900,7 @@ fn build_jvm_arguments_inner(
                     }
                 }
             } else {
-                println!("load_path不是目录: {}", load_path.display());
+                debug!("load_path不是目录: {}", load_path.display());
             }
         } else {
             if load_path.is_dir() {
@@ -944,7 +914,7 @@ fn build_jvm_arguments_inner(
                     {
                         let content = std::fs::read_to_string(&path)
                             .with_context(|| format!("Failed to read file {}", path.display()))?;
-                        println!("Content of {}:\n{}", path.display(), content);
+                        debug!("Content of {}:\n{}", path.display(), content);
                         
                         // 解析 JSON 并提取库信息
                         let value: serde_json::Value = serde_json::from_str(&content)
@@ -1020,7 +990,7 @@ fn build_jvm_arguments_inner(
                     }
                 }
             } else {
-                println!("load_path is not a directory: {}", load_path.display());
+                debug!("load_path is not a directory: {}", load_path.display());
             }
         }
     }
@@ -1319,7 +1289,7 @@ fn build_jvm_arguments_inner(
         }
         if !missing.is_empty() {
             let error_msg = format!("classpath 中以下文件不存在或为空:\n{}", missing.join("\n"));
-            println!("[错误] {}", error_msg);
+            error!("classpath 中以下文件不存在或为空:\n{}", missing.join("\n"));
             return Err(anyhow::anyhow!("{}", error_msg));
         }
     }
@@ -1353,7 +1323,7 @@ fn build_jvm_arguments_inner(
                                 // 如果load库的版本更高，标记原版库为需要移除
                                 if compare_versions(&load_version, &vanilla_version) {
                                     indices_to_remove.push(i);
-                                    println!("替换库: {} (原版版本: {}) -> {} (load版本: {})",
+                                    debug!("替换库: {} (原版版本: {}) -> {} (load版本: {})",
                                         vanilla_path, vanilla_version, load_path, load_version);
                                 }
                             }
@@ -1767,12 +1737,12 @@ fn build_jvm_arguments_inner(
     let effective_authlib_path = if !yggdrasil_api.is_empty() && authlib_injector_path.is_empty() {
         // 用户配置了第三方验证服务器，但没有指定 authlib-injector 路径
         // 自动下载/查找 authlib-injector
-        eprintln!("[Launcher] 检测到 Yggdrasil API: {}, 自动获取 authlib-injector...", yggdrasil_api);
+        info!("[Launcher] 检测到 Yggdrasil API: {}, 自动获取 authlib-injector...", yggdrasil_api);
         let downloaded = crate::auth::yissadrail::get_or_download_authlib_injector();
         if downloaded.is_empty() {
-            eprintln!("[Launcher] 警告: 无法获取 authlib-injector，游戏内皮肤可能无法显示");
+            warn!("[Launcher] 警告: 无法获取 authlib-injector，游戏内皮肤可能无法显示");
         } else {
-            eprintln!("[Launcher] 使用 authlib-injector: {}", downloaded);
+            info!("[Launcher] 使用 authlib-injector: {}", downloaded);
         }
         downloaded
     } else {
@@ -1842,14 +1812,14 @@ fn build_jvm_arguments_inner(
                 // 对于 -p/--module-path，额外检查其中引用的 JAR 是否存在
                 let value = &jvm_args_from_version[i + 1];
                 if is_module_or_class_path_key {
-                    println!("[HMCL 模式] 使用 Forge 参数: {} 值长度: {}", p, value.len());
+                    debug!("[HMCL 模式] 使用 Forge 参数: {} 值长度: {}", p, value.len());
                     // 对于 -p，打印其中的每个路径用于调试
                     if p == "-p" || p == "--module-path" {
                         for piece in value.split(|c| c == ';' || c == ':') {
                             if !piece.trim().is_empty() {
                                 let path_buf = PathBuf::from(piece.trim());
                                 let exists = path_buf.exists();
-                                println!("  module-path 项: {} (存在: {})", piece.trim(), exists);
+                                debug!("  module-path 项: {} (存在: {})", piece.trim(), exists);
                             }
                         }
                     }
@@ -1864,7 +1834,7 @@ fn build_jvm_arguments_inner(
 
     // 再处理 extra_before_cp 中的参数（跳过 -p/-cp，因为上面已经从 jvm_args_from_version 加了）
     // 确保所有以 - 开头的参数在 -cp 之前
-    println!("处理extra_before_cp，长度: {}", extra_before_cp.len());
+    debug!("处理extra_before_cp，长度: {}", extra_before_cp.len());
     {
         let mut ei = 0;
         while ei < extra_before_cp.len() {
@@ -1911,11 +1881,11 @@ fn build_jvm_arguments_inner(
             // Forge 没有指定 -cp，使用我们自己构建的 classpath
             args.push("-cp".to_string());
             args.push(class_path.clone());
-            println!("[HMCL 模式] 检测到 Forge 模块系统，使用自定义 classpath");
-            println!("  库总数量: {}", class_path_entries.len());
+            debug!("[HMCL 模式] 检测到 Forge 模块系统，使用自定义 classpath");
+            debug!("  库总数量: {}", class_path_entries.len());
         } else {
-            println!("[HMCL 模式] 检测到 Forge 模块系统，使用 Forge 指定的参数启动");
-            println!("  Forge 已提供 -p: {}, Forge 已提供 -cp: {}", forge_has_module_path, forge_has_cp);
+            debug!("[HMCL 模式] 检测到 Forge 模块系统，使用 Forge 指定的参数启动");
+            debug!("  Forge 已提供 -p: {}, Forge 已提供 -cp: {}", forge_has_module_path, forge_has_cp);
         }
 
         // ===== 关键修复：确保 Java 内部 API 对 unnamed module 开放 =====
@@ -2090,14 +2060,13 @@ fn build_jvm_arguments_inner(
     args.extend(game_app_args);
 
     // 调试: 分条打印参数，便于排查
-    println!("=== 启动参数列表 ({} 项) ===", args.len());
+    debug!("=== 启动参数列表 ({} 项) ===", args.len());
     for (i, a) in args.iter().enumerate() {
-        println!("  [{}] {}", i, a);
+        debug!("  [{}] {}", i, a);
     }
-    println!("=== 参数列表结束 ===");
+    debug!("=== 参数列表结束 ===");
 
     let arg = args.join(" ");
-    println!("{}", arg);
     Ok(arg)
 }
 

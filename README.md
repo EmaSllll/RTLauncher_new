@@ -1,36 +1,107 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# RTLauncher
 
-## Getting Started
+一款现代化的 Minecraft 桌面启动器，基于 **Tauri 2** (Rust) + **Next.js 16** 构建，轻量、快速且跨平台。
 
-First, run the development server:
+## ✨ 功能特性
+
+- 🎮 **多版本支持** — 支持原版、Forge、NeoForge、Fabric、Quilt、LiteLoader、OptiFine 共 7 种 Mod Loader
+- 🔌 **整合包管理** — 支持 CurseForge / Modrinth 整合包一键导入、导出与缓存
+- 👥 **多人联机** — 基于 OpenP2P 的局域网联机方案，支持房主创建和玩家加入
+- 🎨 **皮肤系统** — 3D 皮肤预览（skinview3d）、Microsoft / LittleSkin / Yggdrasil 账户登录
+- 🌍 **国际化** — 内置中文（简体）与英文界面，可轻松扩展
+- 🔧 **自动安装** — 自动下载 Java 运行时、Mod Loader、依赖库
+- 🌙 **主题切换** — 亮/暗主题无缝切换
+- 📦 **低体积** — Rust 原生打包，安装包体积小、内存占用低
+
+## 🏗️ 技术栈
+
+| 层级 | 技术 |
+|------|------|
+| 前端 | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS |
+| UI 组件 | shadcn/ui, Framer Motion, Radix UI |
+| 后端 | Rust (Tauri 2), reqwest, tokio |
+| 构建 | pnpm, Tauri CLI |
+
+## 🚀 快速开始
+
+### 环境要求
+
+- **Node.js** >= 18
+- **Rust** >= 1.77
+- **pnpm** >= 8（推荐）
+
+### 安装依赖
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+pnpm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 开发模式
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+pnpm tauri dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 构建发布
 
-## Learn More
+```bash
+pnpm tauri build
+```
 
-To learn more about Next.js, take a look at the following resources:
+## 📁 项目结构
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```
+RTLauncher/
+├── app/                        # Next.js App Router 页面
+├── components/                 # React 组件
+│   ├── ui/                     # shadcn/ui 基础组件
+│   ├── launcher/               # 启动器相关组件
+│   ├── mod/                    # Mod 管理组件
+│   ├── multiplayer/            # 联机组件
+│   └── settings/               # 设置组件
+├── src-tauri/                  # Tauri (Rust) 后端
+│   ├── src/
+│   │   ├── auth/               # 账户认证
+│   │   ├── handler/            # Tauri 命令处理器
+│   │   │   ├── launcher.rs     # 游戏启动逻辑
+│   │   │   ├── system.rs       # 系统操作
+│   │   │   └── ...             # 其他 handler
+│   │   ├── downloader/         # 下载与安装
+│   │   ├── mutiplayer/         # OpenP2P 联机
+│   │   └── version_management/  # 版本资源管理
+│   └── Cargo.toml
+├── locales/                    # i18n 翻译文件
+└── types/                      # TypeScript 类型定义
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 🔌 支持的 Mod Loader
 
-## Deploy on Vercel
+| Loader | 版本获取 | 自动安装 | 取消下载 |
+|--------|---------|---------|---------|
+| Forge | ✅ | ✅ | ✅ |
+| NeoForge | ✅ | ✅ | ✅ |
+| Fabric | ✅ | ✅ | ✅ |
+| Quilt | ✅ | ✅ | ✅ |
+| OptiFine | ✅ | ✅ | ✅ |
+| LiteLoader | ✅ | ✅ | ✅ |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 🌐 账户系统
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Microsoft 账户** — Device Code OAuth 登录
+- **LittleSkin** — 第三方皮肤站认证
+- **Yggdrasil** — 自定义验证服务器（authlib-injector）
+- **离线账户** — 无需登录的本地账户
+
+## 🤝 贡献
+
+欢迎贡献代码！可以通过以下方式参与：
+
+1. Fork 本仓库
+2. 创建功能分支 (`git checkout -b feature/amazing-feature`)
+3. 提交更改 (`git commit -m 'feat: add amazing feature'`)
+4. 推送到分支 (`git push origin feature/amazing-feature`)
+5. 创建 Pull Request
+
+## 📝 开源协议
+
+本项目基于 [MIT License](LICENSE) 开源。

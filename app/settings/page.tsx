@@ -6,8 +6,9 @@ import { AppearanceSection } from "@/components/settings/section-appearance";
 import { AboutSection } from "@/components/settings/section-about";
 import { SidebarConfigSection } from "@/components/settings/section-sidebar-config";
 import { LanguageSection } from "@/components/settings/section-language";
+import { DownloadSection } from "@/components/settings/section-download";
 import { useSettings, type AppLanguage } from "@/components/settings/settings-provider";
-import { Settings, Sparkles, Package, Layout, Globe2 } from "lucide-react";
+import { Settings, Sparkles, Package, Layout, Globe2, Download } from "lucide-react";
 
 interface NavItem {
   id: string;
@@ -17,6 +18,7 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: "section-language", label: { "zh-CN": "语言", "en-US": "Language" }, icon: <Globe2 className="size-4" /> },
+  { id: "section-download", label: { "zh-CN": "下载", "en-US": "Downloads" }, icon: <Download className="size-4" /> },
   { id: "section-sidebar-config", label: { "zh-CN": "侧边栏配置", "en-US": "Sidebar" }, icon: <Layout className="size-4" /> },
   { id: "section-appearance", label: { "zh-CN": "外观", "en-US": "Appearance" }, icon: <Sparkles className="size-4" /> },
   { id: "section-about", label: { "zh-CN": "版本更新", "en-US": "Updates" }, icon: <Package className="size-4" /> },
@@ -131,6 +133,7 @@ export default function SettingsPage() {
         >
           <div className="mx-auto max-w-2xl space-y-4">
             <LanguageSection />
+            <DownloadSection />
             <SidebarConfigSection />
             <AppearanceSection />
             <AboutSection />

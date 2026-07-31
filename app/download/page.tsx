@@ -71,9 +71,15 @@ function formatDate(iso?: string): string {
   }
 }
 
-function categoryPath(category: string, slug: string): string {
-  // Route to /download/detail?mod={slug} — the existing detail page queries both sources by slug
-  return `/download/detail?mod=${encodeURIComponent(slug)}`;
+function categoryPath(category: string, slug: string, returnQuery?: string, returnCategory?: EnglishCategory): string {
+  // Route to the detail page and keep enough state to restore English search.
+  const params = new URLSearchParams({ mod: slug });
+  if (returnQuery !== undefined && returnCategory !== undefined) {
+    params.set("returnTo", "english");
+    params.set("query", returnQuery);
+    params.set("category", returnCategory);
+  }
+  return `/download/detail?${params.toString()}`;
 }
 
 function categoryForSource(projectType: string): string {
@@ -91,6 +97,23 @@ function categoryForSource(projectType: string): string {
     world: "worlds",
   };
   return map[projectType.toLowerCase()] ?? projectType;
+}
+
+function compareMinecraftVersionsDescending(a: MinecraftVersion, b: MinecraftVersion): number {
+  const parts = (version: string) => {
+    const match = version.match(/^(\d+(?:\.\d+)+)/);
+    return match ? match[1].split(".").map(Number) : null;
+  };
+  const aParts = parts(a.id);
+  const bParts = parts(b.id);
+  if (aParts && bParts) {
+    const length = Math.max(aParts.length, bParts.length);
+    for (let index = 0; index < length; index += 1) {
+      const difference = (bParts[index] ?? 0) - (aParts[index] ?? 0);
+      if (difference !== 0) return difference;
+    }
+  }
+  return new Date(b.releaseDate).getTime() - new Date(a.releaseDate).getTime();
 }
 
 /**
@@ -131,6 +154,18 @@ export default function DownloadPage() {
   const [englishSourceInfo, setEnglishSourceInfo] = useState<
     { modrinth: { ok: boolean; count: number; error?: string }; curseforge: { ok: boolean; count: number; error?: string } } | null
   >(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("tab") !== "english") return;
+
+    const category = params.get("category");
+    setTab("english");
+    setEnglishQuery(params.get("query") || "");
+    if (category && ENGLISH_CATEGORIES.some((item) => item.id === category)) {
+      setEnglishCategory(category as EnglishCategory);
+    }
+  }, []);
 
   // 检查字符串是否包含中文字符（用于判断输入）
   const hasChinese = (text: string): boolean => {
@@ -246,15 +281,22 @@ export default function DownloadPage() {
           default: return `https://www.curseforge.com/minecraft/mc-mods/${slug}`;
         }
       };
-      // Modrinth facets must be JSON array string: [["project_type:mod"]]
-      const modrinthFacets = encodeURIComponent(`[["project_type:${modrinthProjectType}"]]`);
-
-      const modrinthUrl = `https://api.modrinth.com/v2/search?query=${encodeURIComponent(query)}&limit=25&facets=${modrinthFacets}`;
-
-      // Modrinth continues to use fetch (API supports CORS)
-      const modrinthPromise = fetch(modrinthUrl, { headers: { "User-Agent": "RTLauncher" } })
-        .then(r => r.ok ? r.json() : null)
-        .catch(() => null);
+      // Use the native client: direct WebView requests can be blocked by CORS
+      // or local proxy policy even while Modrinth itself is reachable.
+      const modrinthPromise = invoke<string>('search_modrinth_projects', {
+        query,
+        projectType: modrinthProjectType,
+        limit: 25,
+      }).then(result => {
+        try {
+          return JSON.parse(result);
+        } catch {
+          return null;
+        }
+      }).catch((err) => {
+        console.warn('Modrinth search failed:', err);
+        return null;
+      });
 
       // CurseForge searches through backend proxy (avoid CORS issues, improve classId search strategy)
       const cfPromise = invoke('search_curseforge_projects', {
@@ -455,7 +497,7 @@ export default function DownloadPage() {
       )
         return false;
       return true;
-    });
+    }).sort(compareMinecraftVersionsDescending);
   }, [versions, versionFilter, searchQuery]);
 
   return (
@@ -963,6 +1005,8 @@ export default function DownloadPage() {
                         const path = categoryPath(
                           categoryForSource(result.projectType || englishCategory),
                           result.slug,
+                          englishQuery,
+                          englishCategory,
                         );
                         const Icon =
                           ENGLISH_CATEGORIES.find((c) => c.id === (categoryForSource(result.projectType || englishCategory) as EnglishCategory))
