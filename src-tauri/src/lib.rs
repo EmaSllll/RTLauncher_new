@@ -174,13 +174,25 @@ pub fn run() {
                     let _ = window.set_focus();
                 }
             }))?;
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
+            app.handle().plugin(
+                tauri_plugin_log::Builder::default()
+                    .level(if cfg!(debug_assertions) {
+                        log::LevelFilter::Debug
+                    } else {
+                        log::LevelFilter::Info
+                    })
+                    .targets(if cfg!(debug_assertions) {
+                        vec![
+                            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: None }),
+                        ]
+                    } else {
+                        vec![
+                            tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir { file_name: None }),
+                        ]
+                    })
+                    .build(),
+            )?;
 
             let window = if let Some(window) = app.get_webview_window("main") {
                 window
