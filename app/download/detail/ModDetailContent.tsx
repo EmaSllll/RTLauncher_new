@@ -825,8 +825,20 @@ export default function ModDetailContent({ modId }: { modId: string }) {
         next.set(file.url, taskId);
         return next;
       });
+    } catch (err) {
+      console.error("Download failed:", err);
+      setDownloadingUrlToTaskId(prev => {
+        const next = new Map(prev);
+        next.delete(file.url);
+        return next;
+      });
+      return;
+    }
 
-      if (settings.general.autoDownloadModDependencies && resourceKind === "mod") {
+    // Dependency resolution runs after primary download is successfully started
+    // Errors here should not affect the primary download's state
+    if (settings.general.autoDownloadModDependencies && resourceKind === "mod") {
+      try {
         const hostname = new URL(file.url).hostname;
         const dependencyCommand = /(^|\.)modrinth\.com$/i.test(hostname)
           ? "get_modrinth_required_dependencies"
@@ -865,14 +877,10 @@ export default function ModDetailContent({ modId }: { modId: string }) {
             // failure should not turn it into a failed task.
             console.warn("Failed to resolve required mod dependencies:", error);
           });
+      } catch (error) {
+        // URL parsing or hostname extraction failed - log warning but don't affect primary download
+        console.warn("Failed to parse URL for dependency resolution:", error);
       }
-    } catch (err) {
-      console.error("Download failed:", err);
-      setDownloadingUrlToTaskId(prev => {
-        const next = new Map(prev);
-        next.delete(file.url);
-        return next;
-      });
     }
   };
 
