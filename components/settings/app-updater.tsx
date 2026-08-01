@@ -127,7 +127,7 @@ export function AppUpdateBadge() {
     return (
       <div className="flex items-center justify-center gap-2 px-3 py-2 text-xs text-muted-foreground">
         <Loader2 className="size-3.5 animate-spin" />
-        {t({ "zh-CN": "正在检查更新...", "en-US": "Checking for updates..." })}
+        {t("settings.appUpdater.checkingForUpdates")}
       </div>
     );
   }
@@ -171,7 +171,7 @@ export function AppUpdateButton({
           className="shrink-0 gap-1.5"
           onClick={handleCheck}
           disabled={state.kind === "checking"}
-          title={t({ "zh-CN": "检查启动器是否有新版本", "en-US": "Check for launcher updates" })}
+          title={t("settings.appUpdater.checkForLauncherUpdates")}
         >
           {state.kind === "checking" ? (
             <Loader2 className="size-3.5 animate-spin" />
@@ -180,7 +180,7 @@ export function AppUpdateButton({
           ) : (
             <RefreshCw className="size-3.5" />
           )}
-          <span className="text-xs">{t({ "zh-CN": "检查更新", "en-US": "Check for updates" })}</span>
+          <span className="text-xs">{t("settings.appUpdater.checkForUpdates")}</span>
         </Button>
       ) : (
         <button
@@ -189,7 +189,7 @@ export function AppUpdateButton({
           className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs rounded-md bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 transition-colors"
         >
           <Sparkles className="size-3.5" />
-          {t({ "zh-CN": `发现新版本 v${state.kind === "available" ? state.version : ""} · 点击查看`, "en-US": `New version v${state.kind === "available" ? state.version : ""} · View details` })}
+          {t("settings.appUpdater.newVersionVValueViewDetails", { value: state.kind === "available" ? state.version : "" })}
         </button>
       )}
 
@@ -199,7 +199,7 @@ export function AppUpdateButton({
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Download className="size-5" />
-                {t({ "zh-CN": `发现新版本 v${state.version}`, "en-US": `New version v${state.version}` })}
+                {t("settings.appUpdater.newVersionVVersion", { version: state.version })}
               </DialogTitle>
             </DialogHeader>
 
@@ -209,13 +209,13 @@ export function AppUpdateButton({
                   {state.notes}
                 </pre>
               ) : (
-                <span className="text-sm text-muted-foreground">{t({ "zh-CN": "暂无更新说明", "en-US": "No release notes available" })}</span>
+                <span className="text-sm text-muted-foreground">{t("settings.appUpdater.noReleaseNotesAvailable")}</span>
               )}
 
               {installing && (
                 <div className="mt-4 flex items-center gap-3">
                   <Loader2 className="size-4 animate-spin" />
-                  <span className="text-xs text-muted-foreground">{t({ "zh-CN": "正在下载并安装...", "en-US": "Downloading and installing..." })}</span>
+                  <span className="text-xs text-muted-foreground">{t("settings.appUpdater.downloadingAndInstalling")}</span>
                 </div>
               )}
             </div>
@@ -226,18 +226,18 @@ export function AppUpdateButton({
                 onClick={() => setDialogOpen(false)}
                 disabled={installing}
               >
-                {t({ "zh-CN": "稍后再说", "en-US": "Later" })}
+                {t("settings.appUpdater.later")}
               </Button>
               <Button onClick={handleInstall} disabled={installing}>
                 {installing ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />
-                    {t({ "zh-CN": "正在更新", "en-US": "Updating" })}
+                    {t("settings.appUpdater.updating")}
                   </>
                 ) : (
                   <>
                     <Check className="size-4" />
-                    {t({ "zh-CN": "立即安装", "en-US": "Install now" })}
+                    {t("settings.appUpdater.installNow")}
                   </>
                 )}
               </Button>
@@ -278,7 +278,7 @@ function AppUpdateDialogTrigger({
         className="w-full flex items-center justify-center gap-2 px-3 py-2 text-xs rounded-md bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 transition-colors"
       >
         <Sparkles className="size-3.5" />
-        {t({ "zh-CN": `发现新版本 v${version} · 点击查看`, "en-US": `New version v${version} · View details` })}
+        {t("settings.appUpdater.newVersionVVersionViewDetails", { version: version })}
       </button>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -286,7 +286,7 @@ function AppUpdateDialogTrigger({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Download className="size-5" />
-              {t({ "zh-CN": `发现新版本 v${version}`, "en-US": `New version v${version}` })}
+              {t("settings.appUpdater.newVersionVVersion", { version: version })}
             </DialogTitle>
           </DialogHeader>
 
@@ -296,13 +296,13 @@ function AppUpdateDialogTrigger({
                 {notes}
               </pre>
             ) : (
-              <span className="text-sm text-muted-foreground">{t({ "zh-CN": "暂无更新说明", "en-US": "No release notes available" })}</span>
+              <span className="text-sm text-muted-foreground">{t("settings.appUpdater.noReleaseNotesAvailable")}</span>
             )}
 
             {installing && (
               <div className="mt-4 flex items-center gap-3">
                 <Loader2 className="size-4 animate-spin" />
-                <span className="text-xs text-muted-foreground">{t({ "zh-CN": "正在下载并安装...", "en-US": "Downloading and installing..." })}</span>
+                <span className="text-xs text-muted-foreground">{t("settings.appUpdater.downloadingAndInstalling")}</span>
               </div>
             )}
           </div>
@@ -313,18 +313,18 @@ function AppUpdateDialogTrigger({
               onClick={() => setDialogOpen(false)}
               disabled={installing}
             >
-              {t({ "zh-CN": "稍后再说", "en-US": "Later" })}
+              {t("settings.appUpdater.later")}
             </Button>
             <Button onClick={handleInstall} disabled={installing}>
               {installing ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  {t({ "zh-CN": "正在更新", "en-US": "Updating" })}
+                  {t("settings.appUpdater.updating")}
                 </>
               ) : (
                 <>
                   <Check className="size-4" />
-                  {t({ "zh-CN": "立即安装", "en-US": "Install now" })}
+                  {t("settings.appUpdater.installNow")}
                 </>
               )}
             </Button>

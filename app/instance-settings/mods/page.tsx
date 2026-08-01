@@ -5,7 +5,7 @@ import { Puzzle, Package, Folder } from "lucide-react";
 import { createResourcePage } from "@/components/resource-page-factory";
 
 export default createResourcePage({
-  title: "Mods 管理",
+  title: "panel.mods",
   leftIcon: <Puzzle className="size-5 text-emerald-500" />,
   leftIconBg: "bg-emerald-500/10",
   leftIconColor: "text-emerald-500",

@@ -102,7 +102,7 @@ export function LaunchConsole() {
                     onClick={clearLogs}
                   >
                     <Trash2 className="size-3 mr-1" />
-                    {t({ "zh-CN": "清空", "en-US": "Clear" })}
+                    {t("common.clear")}
                   </Button>
                 </motion.div>
               )}
@@ -169,7 +169,7 @@ export function LaunchConsole() {
                 onClick={clearLogs}
               >
                 <Trash2 className="size-3 mr-1" />
-                {t({ "zh-CN": "清空", "en-US": "Clear" })}
+                {t("common.clear")}
               </Button>
             )}
           </DialogHeader>

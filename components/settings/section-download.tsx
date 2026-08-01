@@ -17,32 +17,26 @@ export function DownloadSection() {
       <CardHeader className="pb-4">
         <CardTitle className="flex items-center gap-2 text-base">
           <Download className="size-4 text-primary" />
-          {t({ "zh-CN": "下载", "en-US": "Downloads" })}
+          {t("settings.download.downloads")}
         </CardTitle>
         <CardDescription className="mt-1 text-xs">
-          {t({
-            "zh-CN": "配置模组下载行为",
-            "en-US": "Configure mod download behavior.",
-          })}
+          {t("settings.download.configureModDownloadBehavior")}
         </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="flex items-center justify-between gap-4 rounded-lg border p-3">
           <div className="space-y-1">
             <Label className="text-sm font-medium">
-              {t({ "zh-CN": "自动下载必需依赖", "en-US": "Download required dependencies" })}
+              {t("settings.download.downloadRequiredDependencies")}
             </Label>
             <p className="text-xs text-muted-foreground">
-              {t({
-                "zh-CN": "下载 Modrinth 或 CurseForge 模组时，自动解析并下载与所选版本兼容的必需依赖；可选依赖不会下载。",
-                "en-US": "When downloading Modrinth or CurseForge mods, automatically resolve and download compatible required dependencies. Optional dependencies are skipped.",
-              })}
+              {t("settings.download.whenDownloadingModrinthOrCurseForgeModsAutomaticallyResolve")}
             </p>
           </div>
           <Switch
             checked={enabled}
             onCheckedChange={(checked) => update("general", { autoDownloadModDependencies: checked })}
-            aria-label={t({ "zh-CN": "切换自动下载必需依赖", "en-US": "Toggle required dependency downloads" })}
+            aria-label={t("settings.download.toggleRequiredDependencyDownloads")}
           />
         </div>
       </CardContent>

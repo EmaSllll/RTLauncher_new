@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
 const MODS_CONFIG = {
-  title: "模组管理",
+  title: "panel.mods" as const,
   leftIcon: <Puzzle className="size-5 text-emerald-500" />,
   leftIconBg: "bg-emerald-500/10",
   leftIconColor: "text-emerald-500",
@@ -288,8 +288,8 @@ export default function ModsPage() {
   if (!loadingState.configLoaded || !loadingState.minecraftPath) {
     return (
       <ResourcePageFallback
-        title={!loadingState.configLoaded ? "正在加载配置..." : "未配置游戏目录"}
-        subtitle={!loadingState.configLoaded ? "请稍候" : "请先在「启动」页面配置 Minecraft 游戏目录"}
+        title={!loadingState.configLoaded ? "pageFactory.loadingConfiguration" : "pageFactory.gameDirectoryIsNotConfigured"}
+        subtitle={!loadingState.configLoaded ? "pageFactory.pleaseWait" : "pageFactory.configureTheMinecraftGameDirectoryOnTheLaunchPage"}
       />
     );
   }

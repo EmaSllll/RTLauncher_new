@@ -21,15 +21,6 @@ import { Badge } from "@/components/ui/badge";
 import { fadeSlideUp, staggerContainer, staggerItem } from "@/lib/motion";
 import { useI18n } from "@/components/i18n/use-i18n";
 
-const RESOURCE_TITLES: Record<string, { "zh-CN": string; "en-US": string }> = {
-  "模组管理": { "zh-CN": "模组管理", "en-US": "Mods" },
-  "资源包管理": { "zh-CN": "资源包管理", "en-US": "Resource Packs" },
-  "光影包管理": { "zh-CN": "光影包管理", "en-US": "Shaders" },
-  "数据包管理": { "zh-CN": "数据包管理", "en-US": "Datapacks" },
-  "存档管理": { "zh-CN": "存档管理", "en-US": "Worlds" },
-  "投影原理图管理": { "zh-CN": "投影原理图管理", "en-US": "Schematics" },
-};
-
 /**
  * 模组依赖项信息
  */
@@ -162,9 +153,6 @@ export default function ResourcePanel({
   getFileSubtitle,
 }: ResourcePanelProps) {
   const { t } = useI18n();
-  const localizedLeftTitle = RESOURCE_TITLES[leftTitle]
-    ? t(RESOURCE_TITLES[leftTitle])
-    : leftTitle;
   // 先做 URL decode（%20 -> 空格 等），再应用用户自定义的 simplifyName
   const decodeUrlName = (s: string): string => {
     try {
@@ -255,7 +243,7 @@ export default function ResourcePanel({
           animate="animate"
           className="flex flex-col items-center justify-center gap-2 p-6 text-center"
         >
-          <p className="text-sm text-destructive">{t({ "zh-CN": "读取失败", "en-US": "Failed to load" })}</p>
+          <p className="text-sm text-destructive">{t("panel.failedToLoad")}</p>
           <p className="text-xs text-muted-foreground">{error}</p>
         </motion.div>
       );
@@ -362,7 +350,7 @@ export default function ResourcePanel({
                         e.stopPropagation();
                         handleOpenDetail(file, modInfoMap);
                       }}
-                      title={t({ "zh-CN": "查看详细信息", "en-US": "View details" })}
+                      title={t("panel.viewDetails")}
                     >
                       <Info className="size-3.5" />
                     </Button>
@@ -375,7 +363,7 @@ export default function ResourcePanel({
                       size="icon"
                       className="size-7 opacity-0 group-hover:opacity-100 transition-opacity"
                       onClick={() => handleStartRename(file.name)}
-                      title={t({ "zh-CN": "重命名", "en-US": "Rename" })}
+                      title={t("panel.rename")}
                     >
                       <Edit3 className="size-3.5" />
                     </Button>
@@ -409,7 +397,7 @@ export default function ResourcePanel({
                           deleteHandler(file.name);
                         }
                       }}
-                      title={t({ "zh-CN": "删除", "en-US": "Delete" })}
+                      title={t("common.delete")}
                     >
                       <Trash2 className="size-3.5" />
                     </Button>
@@ -437,7 +425,7 @@ export default function ResourcePanel({
       >
         <div className={`flex size-9 items-center justify-center rounded-xl ${leftIconBg}`}>{leftIcon}</div>
         <div>
-          <h1 className="text-lg font-semibold leading-none">{localizedLeftTitle}</h1>
+          <h1 className="text-lg font-semibold leading-none">{leftTitle}</h1>
           <p className="mt-1 text-xs text-muted-foreground">{leftDescription || ""}</p>
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -447,7 +435,7 @@ export default function ResourcePanel({
             </Button>
           )}
           {onRefresh && (
-            <Button variant="ghost" size="icon" className="size-8" onClick={onRefresh} title={t({ "zh-CN": "刷新", "en-US": "Refresh" })}>
+            <Button variant="ghost" size="icon" className="size-8" onClick={onRefresh} title={t("common.refresh")}>
               <RefreshCw className="size-3.5" />
             </Button>
           )}
@@ -476,9 +464,9 @@ export default function ResourcePanel({
                           type="button"
                           className="shrink-0 hover:text-foreground"
                           onClick={onNavigateUpLeft}
-                          title={t({ "zh-CN": "返回上一级目录", "en-US": "Go to parent folder" })}
+                          title={t("panel.goToParentFolder")}
                         >
-                          <ChevronLeft className="inline size-3.5" /> {t({ "zh-CN": "返回", "en-US": "Back" })}
+                          <ChevronLeft className="inline size-3.5" /> {t("common.back")}
                         </button>
                       )}
                       <span className="truncate" title={leftDirectoryPath.join(" / ")}>

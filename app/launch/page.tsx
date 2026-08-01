@@ -24,7 +24,7 @@ export default function LaunchPage() {
         <div>
           <h1 className="text-lg font-semibold leading-none">{t("launch.title")}</h1>
           <p className="mt-1 text-xs text-muted-foreground">
-            {t({ "zh-CN": "选择版本，配置启动参数，开始你的 Minecraft 之旅", "en-US": "Choose a version, configure launch settings, and begin your Minecraft adventure" })}
+            {t("launch.chooseAVersionConfigureLaunchSettingsAndBeginYour")}
           </p>
         </div>
       </div>

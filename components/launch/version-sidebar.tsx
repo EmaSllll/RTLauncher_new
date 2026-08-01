@@ -93,7 +93,7 @@ export function VersionSidebar({ className }: VersionSidebarProps) {
               className="flex items-center gap-2"
             >
               <PackageOpen className="size-4 text-primary" />
-              <span className="text-sm font-medium">{t({ "zh-CN": "游戏版本", "en-US": "Game versions" })}</span>
+              <span className="text-sm font-medium">{t("launch.versionSidebar.gameVersions")}</span>
             </motion.div>
           )}
         </AnimatePresence>
@@ -126,10 +126,10 @@ export function VersionSidebar({ className }: VersionSidebarProps) {
               {isExpanded && (
                 <>
                   <p className="text-xs text-muted-foreground mb-1">
-                    {t({ "zh-CN": "暂无已安装版本", "en-US": "No installed versions" })}
+                    {t("launch.versionSidebar.noInstalledVersions")}
                   </p>
                   <p className="text-[10px] text-muted-foreground/60">
-                    {t({ "zh-CN": "前往下载页面安装游戏", "en-US": "Install a game version from Downloads" })}
+                    {t("launch.versionSidebar.installAGameVersionFromDownloads")}
                   </p>
                 </>
               )}
@@ -209,7 +209,7 @@ export function VersionSidebar({ className }: VersionSidebarProps) {
             onClick={loadInstances}
           >
             <Plus className="size-3" />
-            {t({ "zh-CN": "刷新列表", "en-US": "Refresh list" })}
+            {t("launch.versionSidebar.refreshList")}
           </Button>
         </div>
       )}

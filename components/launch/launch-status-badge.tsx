@@ -12,39 +12,39 @@ import {
   Square,
 } from "lucide-react";
 import type { LaunchStatus } from "@/types";
-import { useI18n } from "@/components/i18n/use-i18n";
+import { useI18n, type TranslationKey } from "@/components/i18n/use-i18n";
 
 const statusConfig: Record<
   LaunchStatus,
-  { label: { "zh-CN": string; "en-US": string }; icon: React.ReactNode; color: string }
+  { label: TranslationKey; icon: React.ReactNode; color: string }
 > = {
   idle: {
-    label: { "zh-CN": "就绪", "en-US": "Ready" },
+    label: "launch.status.ready",
     icon: <Circle className="size-3" />,
     color: "text-muted-foreground",
   },
   preparing: {
-    label: { "zh-CN": "准备中", "en-US": "Preparing" },
+    label: "launch.status.preparing",
     icon: <Loader2 className="size-3 animate-spin" />,
     color: "text-blue-500",
   },
   launching: {
-    label: { "zh-CN": "启动中", "en-US": "Launching" },
+    label: "launch.status.launching",
     icon: <Loader2 className="size-3 animate-spin" />,
     color: "text-amber-500",
   },
   running: {
-    label: { "zh-CN": "运行中", "en-US": "Running" },
+    label: "launch.status.running",
     icon: <Play className="size-3" />,
     color: "text-green-500",
   },
   stopped: {
-    label: { "zh-CN": "已停止", "en-US": "Stopped" },
+    label: "launch.status.stopped",
     icon: <Square className="size-3" />,
     color: "text-muted-foreground",
   },
   error: {
-    label: { "zh-CN": "错误", "en-US": "Error" },
+    label: "launch.status.error",
     icon: <AlertCircle className="size-3" />,
     color: "text-destructive",
   },
