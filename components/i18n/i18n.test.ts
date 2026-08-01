@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { extname, join, relative } from "node:path";
+import { extname, join, relative, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 import ts from "typescript";
 import enUS from "./locales/en-US.json";
@@ -28,9 +28,10 @@ describe("i18n catalogs", () => {
 
   it("keeps localized copy in JSON catalogs instead of source files", () => {
     const root = process.cwd();
+    const i18nDirectory = `${join(root, "components", "i18n")}${sep}`;
     const files = [join(root, "app"), join(root, "components")]
       .flatMap(getSourceFiles)
-      .filter((path) => !path.includes(`${join("components", "i18n")}/`));
+      .filter((path) => !path.startsWith(i18nDirectory));
     const violations = files.flatMap((path) => {
       const source = readFileSync(path, "utf8");
       const sourceFile = ts.createSourceFile(
