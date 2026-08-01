@@ -6,13 +6,13 @@ import { cn } from "@/lib/utils";
 import { useI18n, type Translation } from "@/components/i18n/use-i18n";
 
 const NAV_ITEMS = [
-  { href: "/game-settings/mods", label: { "zh-CN": "模组管理", "en-US": "Mods" } as Translation },
-  { href: "/game-settings/resources", label: { "zh-CN": "资源包", "en-US": "Resource Packs" } as Translation },
-  { href: "/game-settings/worlds", label: { "zh-CN": "存档", "en-US": "Worlds" } as Translation },
-  { href: "/game-settings/shaders", label: { "zh-CN": "光影包", "en-US": "Shaders" } as Translation },
-  { href: "/game-settings/datapacks", label: { "zh-CN": "数据包", "en-US": "Datapacks" } as Translation },
-  { href: "/game-settings/schematics", label: { "zh-CN": "投影原理图", "en-US": "Schematics" } as Translation },
-  { href: "/game-settings/screenshots", label: { "zh-CN": "截图", "en-US": "Screenshots" } as Translation },
+  { href: "/game-settings/mods", label: "panel.mods" as Translation },
+  { href: "/game-settings/resources", label: "home.cardGrid.resourcePacks" as Translation },
+  { href: "/game-settings/worlds", label: "gameSettings.worlds" as Translation },
+  { href: "/game-settings/shaders", label: "home.cardGrid.shaders" as Translation },
+  { href: "/game-settings/datapacks", label: "gameSettings.datapacks" as Translation },
+  { href: "/game-settings/schematics", label: "home.cardGrid.schematics" as Translation },
+  { href: "/game-settings/screenshots", label: "home.cardGrid.screenshots" as Translation },
 ];
 
 export default function GameSettingsLayout({

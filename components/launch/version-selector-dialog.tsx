@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { useI18n } from "@/components/i18n/use-i18n";
+import { useI18n, type TranslationKey } from "@/components/i18n/use-i18n";
 import { useLaunchContext } from "./launch-provider";
 import type { DirEntry } from "@/types";
 
@@ -110,14 +110,14 @@ function parseVersionDir(dirName: string): ParsedVersion {
 }
 
 /** 加载器类型的显示信息 */
-const LOADER_DISPLAY: Record<string, { label: { "zh-CN": string; "en-US": string }; color: string; order: number }> = {
-  vanilla:    { label: { "zh-CN": "原版", "en-US": "Vanilla" }, color: "bg-green-500/10 text-green-600 dark:text-green-400", order: 0 },
-  forge:      { label: { "zh-CN": "Forge", "en-US": "Forge" }, color: "bg-orange-500/10 text-orange-600 dark:text-orange-400", order: 1 },
-  fabric:     { label: { "zh-CN": "Fabric", "en-US": "Fabric" }, color: "bg-purple-500/10 text-purple-600 dark:text-purple-400", order: 2 },
-  neoforge:   { label: { "zh-CN": "NeoForge", "en-US": "NeoForge" }, color: "bg-blue-500/10 text-blue-600 dark:text-blue-400", order: 3 },
-  quilt:      { label: { "zh-CN": "Quilt", "en-US": "Quilt" }, color: "bg-pink-500/10 text-pink-600 dark:text-pink-400", order: 4 },
-  optifine:   { label: { "zh-CN": "OptiFine", "en-US": "OptiFine" }, color: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400", order: 5 },
-  liteloader: { label: { "zh-CN": "LiteLoader", "en-US": "LiteLoader" }, color: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400", order: 6 },
+const LOADER_DISPLAY: Record<string, { label: TranslationKey; color: string; order: number }> = {
+  vanilla:    { label: "launch.versionSelector.vanilla", color: "bg-green-500/10 text-green-600 dark:text-green-400", order: 0 },
+  forge:      { label: "launch.versionSelector.forge", color: "bg-orange-500/10 text-orange-600 dark:text-orange-400", order: 1 },
+  fabric:     { label: "launch.versionSelector.fabric", color: "bg-purple-500/10 text-purple-600 dark:text-purple-400", order: 2 },
+  neoforge:   { label: "launch.versionSelector.neoForge", color: "bg-blue-500/10 text-blue-600 dark:text-blue-400", order: 3 },
+  quilt:      { label: "launch.versionSelector.quilt", color: "bg-pink-500/10 text-pink-600 dark:text-pink-400", order: 4 },
+  optifine:   { label: "launch.versionSelector.optiFine", color: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400", order: 5 },
+  liteloader: { label: "launch.versionSelector.liteLoader", color: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400", order: 6 },
 };
 
 export function VersionSelectorDialog({ open: controlledOpen, onOpenChange, compact }: VersionSelectorDialogProps = {}) {
@@ -257,12 +257,11 @@ export function VersionSelectorDialog({ open: controlledOpen, onOpenChange, comp
     return loaderAvailability.filter((item) => {
       const display = LOADER_DISPLAY[item.type]?.label;
       return (
-        display?.["zh-CN"].toLowerCase().includes(q) ||
-        display?.["en-US"].toLowerCase().includes(q) ||
+        (display ? t(display).toLowerCase().includes(q) : false) ||
         item.type.toLowerCase().includes(q)
       );
     });
-  }, [loaderAvailability, loaderSearchQuery]);
+  }, [loaderAvailability, loaderSearchQuery, t]);
 
   // 第三步：过滤版本列表
   const filteredVersionList = useMemo(() => {
@@ -322,7 +321,7 @@ export function VersionSelectorDialog({ open: controlledOpen, onOpenChange, comp
             )}
           >
             <span className="truncate">
-              {config.versionName || t({ "zh-CN": "选择游戏版本", "en-US": "Select a game version" })}
+              {config.versionName || t("launch.versionSelector.selectAGameVersion")}
             </span>
             <ChevronDown className="size-3 ml-2 shrink-0" />
           </Button>
@@ -332,7 +331,7 @@ export function VersionSelectorDialog({ open: controlledOpen, onOpenChange, comp
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <PackageOpen className="size-4 text-primary" />
-            {t({ "zh-CN": "选择游戏版本", "en-US": "Select a game version" })}
+            {t("launch.versionSelector.selectAGameVersion")}
           </DialogTitle>
         </DialogHeader>
 
@@ -347,12 +346,12 @@ export function VersionSelectorDialog({ open: controlledOpen, onOpenChange, comp
                 className="h-7 px-2 text-xs"
               >
                 <ChevronLeft className="size-3.5 mr-0.5" />
-                {t({ "zh-CN": "返回", "en-US": "Back" })}
+                {t("common.back")}
               </Button>
               <div className="text-xs text-muted-foreground">
                 {step === "loader" && (
                   <>
-                    MC {t({ "zh-CN": "版本", "en-US": "version" })}:{" "}
+                    MC {t("launch.versionSelector.version")}:{" "}
                     <span className="font-medium text-foreground">
                       {selectedMcVersion}
                     </span>
@@ -376,10 +375,10 @@ export function VersionSelectorDialog({ open: controlledOpen, onOpenChange, comp
             <Input
               placeholder={
                 step === "mc"
-                  ? t({ "zh-CN": "搜索原版版本...", "en-US": "Search vanilla versions..." })
+                  ? t("launch.versionSelector.searchVanillaVersions")
                   : step === "loader"
-                  ? t({ "zh-CN": "搜索 modloader...", "en-US": "Search mod loaders..." })
-                  : t({ "zh-CN": "搜索版本...", "en-US": "Search versions..." })
+                  ? t("launch.versionSelector.searchModLoaders")
+                  : t("launch.versionSelector.searchVersions")
               }
               value={
                 step === "mc"
@@ -408,10 +407,10 @@ export function VersionSelectorDialog({ open: controlledOpen, onOpenChange, comp
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <PackageOpen className="size-10 text-muted-foreground/40 mb-3" />
                   <p className="text-sm text-muted-foreground mb-1">
-                    {mcSearchQuery ? t({ "zh-CN": "没有找到匹配的版本", "en-US": "No matching versions found" }) : t({ "zh-CN": "暂无已安装版本", "en-US": "No installed versions" })}
+                    {mcSearchQuery ? t("launch.versionSelector.noMatchingVersionsFound") : t("launch.versionSidebar.noInstalledVersions")}
                   </p>
                   <p className="text-xs text-muted-foreground/60">
-                    {t({ "zh-CN": "前往下载页面安装游戏", "en-US": "Install a game version from Downloads" })}
+                    {t("launch.versionSidebar.installAGameVersionFromDownloads")}
                   </p>
                 </div>
               ) : (
@@ -439,7 +438,7 @@ export function VersionSelectorDialog({ open: controlledOpen, onOpenChange, comp
                           {node.mcVersion}
                         </div>
                         <div className="text-[11px] text-muted-foreground/70 mt-1">
-                          {t({ "zh-CN": `共 ${totalCount} 个子版本`, "en-US": `${totalCount} subversions` })}
+                          {t("launch.versionSelector.totalCountSubversions", { totalCount: totalCount })}
                         </div>
                       </div>
 
@@ -454,7 +453,7 @@ export function VersionSelectorDialog({ open: controlledOpen, onOpenChange, comp
                   <div className="flex flex-col items-center justify-center py-12 text-center">
                     <PackageOpen className="size-10 text-muted-foreground/40 mb-3" />
                     <p className="text-sm text-muted-foreground">
-                      {loaderSearchQuery ? t({ "zh-CN": "没有找到匹配的 modloader", "en-US": "No matching mod loaders found" }) : t({ "zh-CN": "暂无 modloader", "en-US": "No mod loaders available" })}
+                      {loaderSearchQuery ? t("launch.versionSelector.noMatchingModLoadersFound") : t("launch.versionSelector.noModLoadersAvailable")}
                     </p>
                   </div>
                 ) : (
@@ -495,7 +494,7 @@ export function VersionSelectorDialog({ open: controlledOpen, onOpenChange, comp
                             {display ? t(display.label) : item.type}
                           </span>
                           <span className="text-xs text-muted-foreground">
-                            {t({ "zh-CN": `${count} 个版本`, "en-US": `${count} versions` })}
+                            {t("launch.versionSelector.countVersions", { count: count })}
                           </span>
                         </div>
                         {preview && (
@@ -514,7 +513,7 @@ export function VersionSelectorDialog({ open: controlledOpen, onOpenChange, comp
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <PackageOpen className="size-10 text-muted-foreground/40 mb-3" />
                   <p className="text-sm text-muted-foreground">
-                    {t({ "zh-CN": "该 MC 版本下没有加载器", "en-US": "No loaders are available for this MC version" })}
+                    {t("launch.versionSelector.noLoadersAreAvailableForThisMcVersion")}
                   </p>
                 </div>
               )
@@ -554,7 +553,7 @@ export function VersionSelectorDialog({ open: controlledOpen, onOpenChange, comp
                         <div className="flex items-center gap-2 text-xs text-muted-foreground mt-0.5">
                           {version.loaderType !== "vanilla" && (
                             <span className="text-[11px] text-muted-foreground/80">
-                              {t({ "zh-CN": "加载器版本", "en-US": "Loader version" })}: {version.loaderVersion}
+                              {t("launch.versionSelector.loaderVersion")}: {version.loaderVersion}
                             </span>
                           )}
                           <span
@@ -575,7 +574,7 @@ export function VersionSelectorDialog({ open: controlledOpen, onOpenChange, comp
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <PackageOpen className="size-10 text-muted-foreground/40 mb-3" />
                   <p className="text-sm text-muted-foreground">
-                    {versionSearchQuery ? t({ "zh-CN": "没有找到匹配的版本", "en-US": "No matching versions found" }) : t({ "zh-CN": "暂无版本", "en-US": "No versions available" })}
+                    {versionSearchQuery ? t("launch.versionSelector.noMatchingVersionsFound") : t("launch.versionSelector.noVersionsAvailable")}
                   </p>
                 </div>
               )
@@ -595,7 +594,7 @@ export function VersionSelectorDialog({ open: controlledOpen, onOpenChange, comp
               ) : (
                 <PackageOpen className="size-3 mr-1" />
               )}
-              {t({ "zh-CN": "刷新列表", "en-US": "Refresh list" })}
+              {t("launch.versionSidebar.refreshList")}
             </Button>
           </div>
         </div>

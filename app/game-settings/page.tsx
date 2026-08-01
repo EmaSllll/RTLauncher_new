@@ -30,44 +30,44 @@ import { useI18n, type Translation } from "@/components/i18n/use-i18n";
 const SETTING_CARDS = [
   {
     href: "/game-settings/mods",
-    title: { "zh-CN": "模组管理", "en-US": "Mods" } as Translation,
-    description: { "zh-CN": "添加、移除、管理模组", "en-US": "Add, remove, and manage mods" } as Translation,
+    title: "panel.mods" as Translation,
+    description: "gameSettings.addRemoveAndManageMods" as Translation,
     icon: Puzzle,
   },
   {
     href: "/game-settings/resources",
-    title: { "zh-CN": "资源包", "en-US": "Resource Packs" } as Translation,
-    description: { "zh-CN": "切换和管理材质资源包", "en-US": "Switch and manage texture resource packs" } as Translation,
+    title: "home.cardGrid.resourcePacks" as Translation,
+    description: "gameSettings.switchAndManageTextureResourcePacks" as Translation,
     icon: ImageIcon,
   },
   {
     href: "/game-settings/worlds",
-    title: { "zh-CN": "存档", "en-US": "Worlds" } as Translation,
-    description: { "zh-CN": "管理你的世界存档", "en-US": "Manage your world saves" } as Translation,
+    title: "gameSettings.worlds" as Translation,
+    description: "gameSettings.manageYourWorldSaves" as Translation,
     icon: Map,
   },
   {
     href: "/game-settings/shaders",
-    title: { "zh-CN": "光影包", "en-US": "Shaders" } as Translation,
-    description: { "zh-CN": "配置光影效果和着色器", "en-US": "Configure shader effects and shaders" } as Translation,
+    title: "home.cardGrid.shaders" as Translation,
+    description: "gameSettings.configureShaderEffectsAndShaders" as Translation,
     icon: Layers,
   },
   {
     href: "/game-settings/datapacks",
-    title: { "zh-CN": "数据包", "en-US": "Datapacks" } as Translation,
-    description: { "zh-CN": "管理 Minecraft 数据包", "en-US": "Manage Minecraft datapacks" } as Translation,
+    title: "gameSettings.datapacks" as Translation,
+    description: "gameSettings.manageMinecraftDatapacks" as Translation,
     icon: Database,
   },
   {
     href: "/game-settings/schematics",
-    title: { "zh-CN": "投影原理图", "en-US": "Schematics" } as Translation,
-    description: { "zh-CN": "管理建筑原理图文件", "en-US": "Manage building schematic files" } as Translation,
+    title: "home.cardGrid.schematics" as Translation,
+    description: "gameSettings.manageBuildingSchematicFiles" as Translation,
     icon: Box,
   },
   {
     href: "/game-settings/screenshots",
-    title: { "zh-CN": "截图", "en-US": "Screenshots" } as Translation,
-    description: { "zh-CN": "浏览游戏内保存的截图", "en-US": "View screenshots saved in-game" } as Translation,
+    title: "home.cardGrid.screenshots" as Translation,
+    description: "gameSettings.viewScreenshotsSavedInGame" as Translation,
     icon: Camera,
   },
 ];
@@ -95,7 +95,7 @@ export default function GameSettings() {
   const [versionDialogOpen, setVersionDialogOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const versionName = config.versionName || t({ "zh-CN": "点击选择版本", "en-US": "Click to select version" });
+  const versionName = config.versionName || t("gameSettings.clickToSelectVersion");
   const hasLoader = config.loadType !== "0" && config.loadName;
   const isConfigured = !!config.minecraftPath && !!config.versionName;
 
@@ -108,15 +108,12 @@ export default function GameSettings() {
   async function handleDeleteVersion(e: React.MouseEvent) {
     e.stopPropagation();
     if (!config.minecraftPath || !effectiveVersionDirName) {
-      alert(t({ "zh-CN": "请先选择要删除的版本", "en-US": "Please select a version to delete first" }));
+      alert(t("gameSettings.pleaseSelectAVersionToDeleteFirst"));
       return;
     }
 
     const confirmed = window.confirm(
-      t({
-        "zh-CN": `确认删除游戏版本目录「${effectiveVersionDirName}」？\n\n将删除：${config.minecraftPath}\\versions\\${effectiveVersionDirName}\n\n此操作不可撤销。`,
-        "en-US": `Confirm deletion of game version directory "${effectiveVersionDirName}"?\n\nThis will delete: ${config.minecraftPath}\\versions\\${effectiveVersionDirName}\n\nThis action cannot be undone.`,
-      })
+      t("gameSettings.confirmDeletionOfGameVersionDirectoryEffectiveVersionDir", { effectiveVersionDirName: effectiveVersionDirName, minecraftPath: config.minecraftPath, effectiveVersionDirName2: effectiveVersionDirName })
     );
     if (!confirmed) return;
 
@@ -133,7 +130,7 @@ export default function GameSettings() {
         loadName: "",
       });
       setVersionDialogOpen(false);
-      alert(t({ "zh-CN": `已删除版本目录：${effectiveVersionDirName}`, "en-US": `Deleted version directory: ${effectiveVersionDirName}` }));
+      alert(t("gameSettings.deletedVersionDirectoryEffectiveVersionDirName", { effectiveVersionDirName: effectiveVersionDirName }));
     } catch (err) {
       alert(String(err));
     } finally {
@@ -150,7 +147,7 @@ export default function GameSettings() {
             type="button"
             onClick={() => setVersionDialogOpen(true)}
             className="flex items-center gap-3 px-4 pt-3 pb-3 text-left flex-1 min-w-0 hover:bg-accent/30 transition-colors rounded-lg cursor-pointer focus:outline-none"
-            title={t({ "zh-CN": "点击选择游戏版本", "en-US": "Click to select game version" })}
+            title={t("gameSettings.clickToSelectGameVersion")}
           >
             <div className="flex size-9 items-center justify-center rounded-xl bg-muted shrink-0 pointer-events-none">
               <Gamepad2 className="size-5 text-foreground" />
@@ -158,7 +155,7 @@ export default function GameSettings() {
             <div className="pointer-events-none min-w-0 flex-1 text-left">
               <h1 className="text-lg font-semibold leading-none truncate">{versionName}</h1>
               <p className="mt-1 text-xs text-muted-foreground truncate">
-                {hasLoader ? config.loadName : t({ "zh-CN": "原版 · 无 ModLoader · 点击标题选择版本", "en-US": "Vanilla · No ModLoader · Click title to select version" })}
+                {hasLoader ? config.loadName : t("gameSettings.vanillaNoModLoaderClickTitleToSelectVersion")}
               </p>
             </div>
           </button>
@@ -169,14 +166,14 @@ export default function GameSettings() {
               className="shrink-0 gap-1.5 hover:text-red-500 hover:border-red-500/50"
               onClick={handleDeleteVersion}
               disabled={deleting}
-              title={t({ "zh-CN": "删除当前选中的游戏版本目录", "en-US": "Delete currently selected game version directory" })}
+              title={t("gameSettings.deleteCurrentlySelectedGameVersionDirectory")}
             >
               {deleting ? (
                 <Loader2 className="size-3.5 animate-spin" />
               ) : (
                 <Trash2 className="size-3.5" />
               )}
-              <span className="text-xs">{t({ "zh-CN": "删除版本", "en-US": "Delete version" })}</span>
+              <span className="text-xs">{t("gameSettings.deleteVersion")}</span>
             </Button>
           )}
         </div>
@@ -199,9 +196,9 @@ export default function GameSettings() {
                   <div className="size-12 rounded-full bg-muted flex items-center justify-center">
                     <Gamepad2 className="size-6 text-muted-foreground" />
                   </div>
-                  <p className="text-sm font-medium">{t({ "zh-CN": "请先点击上方标题选择游戏版本", "en-US": "Please click the title above to select a game version" })}</p>
+                  <p className="text-sm font-medium">{t("gameSettings.pleaseClickTheTitleAboveToSelectAGame")}</p>
                   <p className="text-xs text-muted-foreground">
-                    {t({ "zh-CN": "配置完成后即可管理当前版本的模组、资源包等内容", "en-US": "After configuration, you can manage mods, resource packs, and more for the current version" })}
+                    {t("gameSettings.afterConfigurationYouCanManageModsResourcePacksAnd")}
                   </p>
                 </motion.div>
               ) : (
@@ -264,7 +261,7 @@ export default function GameSettings() {
               className="flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl border border-border bg-card/30 hover:bg-accent/40 active:bg-accent/70 transition-all hover:border-foreground/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-foreground/50 text-sm font-medium"
             >
               <Package className="size-4" />
-              <span>{t({ "zh-CN": "进入整合包管理", "en-US": "Go to Modpack Management" })}</span>
+              <span>{t("gameSettings.goToModpackManagement")}</span>
               <ChevronRight className="size-4" />
             </Link>
           </div>

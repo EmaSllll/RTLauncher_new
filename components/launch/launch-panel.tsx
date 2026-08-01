@@ -167,7 +167,7 @@ export function LaunchPanel() {
           {isLaunching ? (
             <>
               <Loader2 className="size-4 animate-spin" />
-              {status === "preparing" ? t({ "zh-CN": "停止准备", "en-US": "Stop preparing" }) : "Launching"}
+              {status === "preparing" ? t("launch.panel.stopPreparing") : "Launching"}
             </>
           ) : isRunning ? (
             <>
@@ -193,17 +193,17 @@ export function LaunchPanel() {
           {optimizing ? (
             <>
               <Loader2 className="size-3.5 animate-spin" />
-              {t({ "zh-CN": "正在释放系统内存...", "en-US": "Freeing system memory..." })}
+              {t("launch.panel.freeingSystemMemory")}
             </>
           ) : lastReport ? (
             <>
               <Sparkles className="size-3.5" />
-              {t({ "zh-CN": `已释放约 ${lastReport.freed_mb >= 0 ? lastReport.freed_mb : 0} MB 内存 · 再次清理`, "en-US": `Freed about ${lastReport.freed_mb >= 0 ? lastReport.freed_mb : 0} MB · Clean again` })}
+              {t("launch.panel.freedAboutValueMbCleanAgain", { value: lastReport.freed_mb >= 0 ? lastReport.freed_mb : 0 })}
             </>
           ) : (
             <>
               <HardDrive className="size-3.5" />
-              {t({ "zh-CN": "一键清理内存（释放系统缓存）", "en-US": "Free memory (clear system cache)" })}
+              {t("launch.panel.freeMemoryClearSystemCache")}
             </>
           )}
         </Button>
@@ -222,19 +222,19 @@ export function LaunchPanel() {
                 <Sparkles className="size-3.5 shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <p>
-                    {t({ "zh-CN": "可用内存：", "en-US": "Available memory: " })}{lastReport.available_before_mb} MB →
+                    {t("launch.panel.availableMemory")}{lastReport.available_before_mb} MB →
                     <span className="font-semibold text-foreground">
                       {" "}
                       {lastReport.available_after_mb} MB
                     </span>{" "}
-                    {t({ "zh-CN": `（${lastReport.total_mb} MB 总计）`, "en-US": `(${lastReport.total_mb} MB total)` })}
+                    {t("launch.panel.totalMbMbTotal", { totalMb: lastReport.total_mb })}
                   </p>
                   <p>
-                    {t({ "zh-CN": "平台：", "en-US": "Platform: " })}{lastReport.platform} · {t({ "zh-CN": "耗时：", "en-US": "Duration: " })}{lastReport.duration_ms} ms
+                    {t("launch.panel.platform")}{lastReport.platform} · {t("launch.panel.duration")}{lastReport.duration_ms} ms
                   </p>
                   {lastReport.methods.length > 0 && (
                     <p className="mt-1 opacity-70 truncate">
-                      {t({ "zh-CN": "Methods: ", "en-US": "Methods: " })}{lastReport.methods.join(" · ")}
+                      {t("launch.panel.methods")}{lastReport.methods.join(" · ")}
                     </p>
                   )}
                 </div>
@@ -261,8 +261,8 @@ export function LaunchPanel() {
         {/* 快捷信息 */}
         <div className="grid grid-cols-3 gap-2 text-[10px] text-muted-foreground">
           <div className="rounded-lg bg-muted/50 p-2">
-            <span className="block font-medium text-foreground">{t({ "zh-CN": "内存", "en-US": "Memory" })}</span>
-            {config.maxMemory || t({ "zh-CN": "未设置", "en-US": "Not set" })} MB
+            <span className="block font-medium text-foreground">{t("launch.panel.memory")}</span>
+            {config.maxMemory || t("common.notSet")} MB
           </div>
           <div className="rounded-lg bg-muted/50 p-2">
             <span className="block font-medium text-foreground">Java</span>
@@ -272,11 +272,11 @@ export function LaunchPanel() {
                     const inst = javaInstallations?.[config.javaPath];
                     return inst ? `Java ${inst.major_version}` : (config.javaPath.split("/").pop() || config.javaPath.split("\\").pop());
                   })()
-                : t({ "zh-CN": "未设置", "en-US": "Not set" })}
+                : t("common.notSet")}
             </span>
           </div>
           <div className="rounded-lg bg-muted/50 p-2">
-            <span className="block font-medium text-foreground">{t({ "zh-CN": "窗口", "en-US": "Window" })}</span>
+            <span className="block font-medium text-foreground">{t("launch.panel.window")}</span>
             {config.windowWidth || "873"} × {config.windowHeight || "486"}
           </div>
         </div>

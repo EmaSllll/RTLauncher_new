@@ -5,7 +5,7 @@ import { Box } from "lucide-react";
 import { createResourcePage } from "@/components/resource-page-factory";
 
 export default createResourcePage({
-  title: "投影原理图管理",
+  title: "panel.schematics",
   leftIcon: <Box className="size-5 text-rose-500" />,
   leftIconBg: "bg-rose-500/10",
   leftIconColor: "text-rose-500",

@@ -70,9 +70,21 @@ RTLauncher/
 │   │   ├── mutiplayer/         # OpenP2P 联机
 │   │   └── version_management/  # 版本资源管理
 │   └── Cargo.toml
-├── locales/                    # i18n 翻译文件
+├── components/i18n/locales/    # i18n 翻译文件
+├── crowdin.yml                 # Crowdin 文件同步配置
 └── types/                      # TypeScript 类型定义
 ```
+
+## 🌍 Crowdin 翻译同步
+
+Crowdin 使用 `components/i18n/locales/en-US.json` 作为英文源文件，并将目标语言写入同一目录。GitHub Actions 每周同步一次翻译，并创建翻译更新 PR。
+
+仓库需要配置以下 GitHub Actions Secrets：
+
+- `CROWDIN_PROJECT_ID`
+- `CROWDIN_PERSONAL_TOKEN`
+
+首次启用时，手动运行 `Sync Crowdin translations` 工作流，并启用 `seed_existing_translations`，以将现有翻译上传到 Crowdin。
 
 ## 🔌 支持的 Mod Loader
 

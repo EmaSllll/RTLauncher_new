@@ -5,7 +5,7 @@ import { Layers } from "lucide-react";
 import { createResourcePage } from "@/components/resource-page-factory";
 
 export default createResourcePage({
-  title: "光影包管理",
+  title: "panel.shaders",
   leftIcon: <Layers className="size-5 text-purple-500" />,
   leftIconBg: "bg-purple-500/10",
   leftIconColor: "text-purple-500",

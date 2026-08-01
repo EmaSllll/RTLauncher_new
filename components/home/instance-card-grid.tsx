@@ -25,34 +25,34 @@ type InstanceCardGridProps = {
 
 const CARD_COPY: Record<string, { title: Translation; description: Translation; stats: Translation[] }> = {
   mods: {
-    title: { "zh-CN": "Mods", "en-US": "Mods" },
-    description: { "zh-CN": "模组管理中心", "en-US": "Manage your mods" },
-    stats: [{ "zh-CN": "• 已安装：72个模组", "en-US": "• Installed: 72 mods" }, { "zh-CN": "• 更新可用：3个", "en-US": "• Updates available: 3" }, { "zh-CN": "• 配置文件编辑", "en-US": "• Edit configuration files" }],
+    title: "home.cardGrid.mods",
+    description: "home.cardGrid.manageYourMods",
+    stats: ["home.cardGrid.installed72Mods", "home.cardGrid.updatesAvailable3", "home.cardGrid.editConfigurationFiles"],
   },
   worlds: {
-    title: { "zh-CN": "世界", "en-US": "Worlds" },
-    description: { "zh-CN": "存档管理", "en-US": "Manage world saves" },
-    stats: [{ "zh-CN": "• 游戏存档：6个", "en-US": "• World saves: 6" }, { "zh-CN": "• 最近游戏：RTL World", "en-US": "• Recently played: RTL World" }, { "zh-CN": "• 自动备份", "en-US": "• Automatic backups" }],
+    title: "home.cardGrid.worlds",
+    description: "home.cardGrid.manageWorldSaves",
+    stats: ["home.cardGrid.worldSaves6", "home.cardGrid.recentlyPlayedRtlWorld", "home.cardGrid.automaticBackups"],
   },
   resources: {
-    title: { "zh-CN": "资源包", "en-US": "Resource Packs" },
-    description: { "zh-CN": "游戏材质管理", "en-US": "Manage game textures" },
-    stats: [{ "zh-CN": "• 当前使用：默认高清", "en-US": "• Current: Default HD" }, { "zh-CN": "• 已安装：4个包", "en-US": "• Installed: 4 packs" }, { "zh-CN": "• 资源包排序", "en-US": "• Resource pack order" }],
+    title: "home.cardGrid.resourcePacks",
+    description: "home.cardGrid.manageGameTextures",
+    stats: ["home.cardGrid.currentDefaultHd", "home.cardGrid.installed4Packs", "home.cardGrid.resourcePackOrder"],
   },
   shaders: {
-    title: { "zh-CN": "光影包", "en-US": "Shaders" },
-    description: { "zh-CN": "视觉效果增强", "en-US": "Enhanced visual effects" },
-    stats: [{ "zh-CN": "• 当前光影：BSL", "en-US": "• Current shader: BSL" }, { "zh-CN": "• 已安装：3个", "en-US": "• Installed: 3" }, { "zh-CN": "• 性能配置", "en-US": "• Performance settings" }],
+    title: "home.cardGrid.shaders",
+    description: "home.cardGrid.enhancedVisualEffects",
+    stats: ["home.cardGrid.currentShaderBsl", "home.cardGrid.installed3", "home.cardGrid.performanceSettings"],
   },
   screenshots: {
-    title: { "zh-CN": "截图", "en-US": "Screenshots" },
-    description: { "zh-CN": "游戏截图管理", "en-US": "Manage game screenshots" },
-    stats: [{ "zh-CN": "• 总数：126张", "en-US": "• Total: 126" }, { "zh-CN": "• 最近截图：今天", "en-US": "• Latest screenshot: Today" }, { "zh-CN": "• 快速分享", "en-US": "• Quick sharing" }],
+    title: "home.cardGrid.screenshots",
+    description: "home.cardGrid.manageGameScreenshots",
+    stats: ["home.cardGrid.total126", "home.cardGrid.latestScreenshotToday", "home.cardGrid.quickSharing"],
   },
   schematics: {
-    title: { "zh-CN": "投影原理图", "en-US": "Schematics" },
-    description: { "zh-CN": "结构设计管理", "en-US": "Manage building designs" },
-    stats: [{ "zh-CN": "• 原理图：12个", "en-US": "• Schematics: 12" }, { "zh-CN": "• 最近使用：Redstone Castle", "en-US": "• Recently used: Redstone Castle" }, { "zh-CN": "• 快速部署", "en-US": "• Quick deployment" }],
+    title: "home.cardGrid.schematics",
+    description: "home.cardGrid.manageBuildingDesigns",
+    stats: ["home.cardGrid.schematics12", "home.cardGrid.recentlyUsedRedstoneCastle", "home.cardGrid.quickDeployment"],
   },
 };
 
@@ -98,42 +98,42 @@ export function InstanceCardGrid({
     switch (cardId) {
       case "mods":
         if (modsCount != null)
-          return [t({ "zh-CN": `• 已安装：${modsCount} 个模组`, "en-US": `• Installed: ${modsCount} mods` }), ...baseStats.slice(1)];
+          return [t("home.cardGrid.installedModsCountMods", { modsCount: modsCount }), ...baseStats.slice(1)];
         break;
       case "worlds":
         if (instanceDir) {
           const countStr = `${worldCount}`;
-          const recent = latestWorld ? t({ "zh-CN": `• 最近游戏：${latestWorld}`, "en-US": `• Recently played: ${latestWorld}` }) : baseStats[1];
-          return [t({ "zh-CN": `• 游戏存档：${countStr}个`, "en-US": `• World saves: ${countStr}` }), recent, baseStats[2]];
+          const recent = latestWorld ? t("home.cardGrid.recentlyPlayedLatestWorld", { latestWorld: latestWorld }) : baseStats[1];
+          return [t("home.cardGrid.worldSavesCountStr", { countStr: countStr }), recent, baseStats[2]];
         }
         break;
       case "resources":
         if (instanceDir) {
           const first = resourcePacks[0]?.name;
-          const current = first ? t({ "zh-CN": `• 当前使用：${first}`, "en-US": `• Current: ${first}` }) : baseStats[0];
-          return [current, t({ "zh-CN": `• 已安装：${resourcePacks.length} 个包`, "en-US": `• Installed: ${resourcePacks.length} packs` }), baseStats[2]];
+          const current = first ? t("home.cardGrid.currentFirst", { first: first }) : baseStats[0];
+          return [current, t("home.cardGrid.installedLengthPacks", { length: resourcePacks.length }), baseStats[2]];
         }
         break;
       case "shaders":
         if (instanceDir) {
           const firstName = shaderEntries[0]?.name.replace(/\.[^.]+$/, "");
-          const current = firstName ? t({ "zh-CN": `• 当前光影：${firstName}`, "en-US": `• Current shader: ${firstName}` }) : baseStats[0];
-          return [current, t({ "zh-CN": `• 已安装：${shaderEntries.length} 个`, "en-US": `• Installed: ${shaderEntries.length}` }), baseStats[2]];
+          const current = firstName ? t("home.cardGrid.currentShaderFirstName", { firstName: firstName }) : baseStats[0];
+          return [current, t("home.cardGrid.installedLength", { length: shaderEntries.length }), baseStats[2]];
         }
         break;
       case "screenshots":
         if (instanceDir)
           return [
-            t({ "zh-CN": `• 总数：${screenshotEntries.length} 张`, "en-US": `• Total: ${screenshotEntries.length}` }),
-            screenshotEntries.length > 0 ? baseStats[1] : t({ "zh-CN": "• 上次截图：从不", "en-US": "• Last screenshot: Never" }),
+            t("home.cardGrid.totalLength", { length: screenshotEntries.length }),
+            screenshotEntries.length > 0 ? baseStats[1] : t("home.cardGrid.lastScreenshotNever"),
             baseStats[2],
           ];
         break;
       case "schematics":
         if (instanceDir) {
           const latest = schematicEntries[0]?.name.replace(/\.[^.]+$/, "");
-          const recentStr = latest ? t({ "zh-CN": `• 最近使用：${latest}`, "en-US": `• Recently used: ${latest}` }) : baseStats[1];
-          return [t({ "zh-CN": `• 原理图：${schematicEntries.length} 个`, "en-US": `• Schematics: ${schematicEntries.length}` }), recentStr, baseStats[2]];
+          const recentStr = latest ? t("home.cardGrid.recentlyUsedLatest", { latest: latest }) : baseStats[1];
+          return [t("home.cardGrid.schematicsLength", { length: schematicEntries.length }), recentStr, baseStats[2]];
         }
         break;
     }
