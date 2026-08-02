@@ -42,7 +42,7 @@ function ModpackBuilderInner() {
       loadInstance(name)
         .then((inst) => {
           if ((inst as any).format !== type) {
-            setLoadError(t({ "zh-CN": "整合包类型不匹配", "en-US": "The modpack type does not match." }));
+            setLoadError(t("tools.modpackBuilder.theModpackTypeDoesNotMatch"));
             setExistingFiles([]);
             return;
           }
@@ -99,7 +99,7 @@ function ModpackBuilderInner() {
   if (existingFiles === null) {
     return (
       <div className="h-full flex items-center justify-center text-sm text-muted-foreground gap-2">
-        <Loader2 className="size-4 animate-spin" /> {t({ "zh-CN": "正在加载整合包数据...", "en-US": "Loading modpack data..." })}
+        <Loader2 className="size-4 animate-spin" /> {t("tools.modpackBuilder.loadingModpackData")}
       </div>
     );
   }
@@ -107,7 +107,7 @@ function ModpackBuilderInner() {
   if (loadError) {
     return (
       <div className="h-full flex items-center justify-center text-sm text-red-500">
-        {t({ "zh-CN": "加载失败：", "en-US": "Load failed: " })}{loadError}
+        {t("tools.modpackBuilder.loadFailed")}{loadError}
       </div>
     );
   }
@@ -134,7 +134,7 @@ export default function ModpackBuilderPage() {
   return (
     <Suspense fallback={
       <div className="h-full flex items-center justify-center text-sm text-muted-foreground gap-2">
-        <Loader2 className="size-4 animate-spin" /> {t({ "zh-CN": "正在加载...", "en-US": "Loading..." })}
+        <Loader2 className="size-4 animate-spin" /> {t("tools.modpackBuilder.loading")}
       </div>
     }>
       <ModpackBuilderInner />

@@ -36,16 +36,16 @@ function ThemeModeRow({
   return (
     <div className="space-y-2.5">
       <div className="flex items-center justify-between">
-        <Label className="font-medium text-sm">{t({ "zh-CN": "主题模式", "en-US": "Theme" })}</Label>
-        <span className="text-xs text-muted-foreground">{value === "light" ? t({ "zh-CN": "浅色", "en-US": "Light" }) : t({ "zh-CN": "深色", "en-US": "Dark" })}</span>
+        <Label className="font-medium text-sm">{t("settings.appearance.theme")}</Label>
+        <span className="text-xs text-muted-foreground">{value === "light" ? t("settings.appearance.light") : t("settings.appearance.dark")}</span>
       </div>
       <Select value={value} onValueChange={(next) => onChange(next as ThemeMode)}>
         <SelectTrigger className="w-full">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="light">{t({ "zh-CN": "浅色", "en-US": "Light" })}</SelectItem>
-          <SelectItem value="dark">{t({ "zh-CN": "深色", "en-US": "Dark" })}</SelectItem>
+          <SelectItem value="light">{t("settings.appearance.light")}</SelectItem>
+          <SelectItem value="dark">{t("settings.appearance.dark")}</SelectItem>
         </SelectContent>
       </Select>
     </div>
@@ -73,7 +73,7 @@ function ThemeColorRow({
   return (
     <div className="space-y-2.5">
       <div className="flex items-center justify-between">
-        <Label className="font-medium text-sm">{t({ "zh-CN": "主题色", "en-US": "Theme color" })}</Label>
+        <Label className="font-medium text-sm">{t("settings.appearance.themeColor")}</Label>
       </div>
 
       <div className="flex items-center gap-3 rounded-lg border border-border bg-card p-2.5">
@@ -107,7 +107,7 @@ function ThemeColorRow({
             onClick={() => onChange("default")}
             className="h-7 px-2 text-xs shrink-0"
           >
-            {t({ "zh-CN": "重置", "en-US": "Reset" })}
+            {t("settings.appearance.reset")}
           </Button>
         )}
       </div>
@@ -133,7 +133,7 @@ function FontSizeRow({
       <div className="flex items-center justify-between">
         <Label className="font-medium text-sm flex items-center gap-1.5">
           <Type className="size-3.5 text-muted-foreground" />
-          {t({ "zh-CN": "字体大小", "en-US": "Font size" })}
+          {t("settings.appearance.fontSize")}
         </Label>
         <span className="text-xs text-muted-foreground font-mono">{rounded}px</span>
       </div>
@@ -181,7 +181,7 @@ function BackgroundRow({
   return (
     <div className="space-y-2.5">
       <div className="flex items-center justify-between">
-        <Label className="font-medium text-sm">{t({ "zh-CN": "页面背景", "en-US": "Page background" })}</Label>
+        <Label className="font-medium text-sm">{t("settings.appearance.pageBackground")}</Label>
         {hasImage && (
           <Button
             type="button"
@@ -191,7 +191,7 @@ function BackgroundRow({
             className="h-7 px-2 text-xs gap-1"
           >
             <X className="size-3" />
-            {t({ "zh-CN": "移除", "en-US": "Remove" })}
+            {t("settings.appearance.remove")}
           </Button>
         )}
       </div>
@@ -217,7 +217,7 @@ function BackgroundRow({
               }}
             />
             <div className="relative z-10 rounded-full bg-black/40 px-3 py-1 text-xs text-white backdrop-blur">
-              {t({ "zh-CN": "预览", "en-US": "Preview" })}
+              {t("settings.appearance.preview")}
             </div>
           </>
         ) : (
@@ -227,7 +227,7 @@ function BackgroundRow({
             className="flex w-full flex-col items-center gap-1.5 py-3 text-muted-foreground transition-colors hover:text-foreground"
           >
             <ImagePlus className="size-6" />
-            <span className="text-xs">{t({ "zh-CN": "上传背景图片", "en-US": "Upload background image" })}</span>
+            <span className="text-xs">{t("settings.appearance.uploadBackgroundImage")}</span>
           </button>
         )}
         <input
@@ -246,7 +246,7 @@ function BackgroundRow({
       {/* 不透明度滑块 */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Label className="text-xs text-muted-foreground">{t({ "zh-CN": "不透明度", "en-US": "Opacity" })}</Label>
+          <Label className="text-xs text-muted-foreground">{t("settings.appearance.opacity")}</Label>
           <span className="text-xs text-muted-foreground font-mono">{opacityPct}%</span>
         </div>
         <input
@@ -264,7 +264,7 @@ function BackgroundRow({
       {/* 高斯模糊滑块 */}
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Label className="text-xs text-muted-foreground">{t({ "zh-CN": "高斯模糊", "en-US": "Gaussian blur" })}</Label>
+          <Label className="text-xs text-muted-foreground">{t("settings.appearance.gaussianBlur")}</Label>
           <span className="text-xs text-muted-foreground font-mono">{blurInt}px</span>
         </div>
         <input
@@ -299,23 +299,23 @@ function HomeModeRow({
       <div className="flex items-center justify-between">
         <Label className="font-medium text-sm flex items-center gap-1.5">
           <Layout className="size-3.5 text-muted-foreground" />
-          {t({ "zh-CN": "主页模式", "en-US": "Home layout" })}
+          {t("settings.appearance.homeLayout")}
         </Label>
-        <span className="text-xs text-muted-foreground">{value === "simple" ? t({ "zh-CN": "简约", "en-US": "Simple" }) : t({ "zh-CN": "完整", "en-US": "Full" })}</span>
+        <span className="text-xs text-muted-foreground">{value === "simple" ? t("settings.appearance.simple") : t("settings.appearance.full")}</span>
       </div>
       <Select value={value} onValueChange={(next) => onChange(next as HomeMode)}>
         <SelectTrigger className="w-full">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="simple">{t({ "zh-CN": "简约", "en-US": "Simple" })}</SelectItem>
-          <SelectItem value="full">{t({ "zh-CN": "完整", "en-US": "Full" })}</SelectItem>
+          <SelectItem value="simple">{t("settings.appearance.simple")}</SelectItem>
+          <SelectItem value="full">{t("settings.appearance.full")}</SelectItem>
         </SelectContent>
       </Select>
       <p className="text-xs text-muted-foreground">
         {value === "simple" 
-          ? t({ "zh-CN": "简约模式：仅显示账户相关内容", "en-US": "Simple layout: only account-related content is shown." })
-          : t({ "zh-CN": "完整模式：显示所有功能模块", "en-US": "Full layout: all feature sections are shown." })}
+          ? t("settings.appearance.simpleLayoutOnlyAccountRelatedContentIsShown")
+          : t("settings.appearance.fullLayoutAllFeatureSectionsAreShown")}
       </p>
     </div>
   );
@@ -342,13 +342,13 @@ export function AppearanceSection() {
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
               <Sparkles className="size-4 text-primary" />
-              {t({ "zh-CN": "外观", "en-US": "Appearance" })}
+              {t("settings.appearance.appearance")}
             </CardTitle>
-            <CardDescription className="text-xs mt-1">{t({ "zh-CN": "主题、配色、字体大小与页面背景", "en-US": "Theme, color, font size, and page background" })}</CardDescription>
+            <CardDescription className="text-xs mt-1">{t("settings.appearance.themeColorFontSizeAndPageBackground")}</CardDescription>
           </div>
           <Button type="button" variant="outline" size="sm" onClick={reset} className="shrink-0 gap-1.5 h-8">
             <RotateCcw className="size-3.5" />
-            {t({ "zh-CN": "重置", "en-US": "Reset" })}
+            {t("settings.appearance.reset")}
           </Button>
         </div>
       </CardHeader>

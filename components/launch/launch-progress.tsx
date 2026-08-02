@@ -5,7 +5,17 @@ import { Progress } from "@/components/ui/progress";
 import { useLaunchContext } from "@/components/launch/launch-provider";
 import { Loader2 } from "lucide-react";
 import { fadeSlideUp } from "@/lib/motion";
-import { useI18n } from "@/components/i18n/use-i18n";
+import { useI18n, type TranslationKey } from "@/components/i18n/use-i18n";
+
+const STAGE_KEYS: Record<string, TranslationKey> = {
+  "JVM 启动": "launch.startingJvm",
+  "加载库文件": "launch.loadingLibraries",
+  "加载资源": "launch.loadingAssets",
+  "初始化游戏": "launch.initializingGame",
+  "加载模组": "launch.loadingMods",
+  "加载世界": "launch.loadingWorld",
+  "准备完成": "launch.ready",
+};
 
 /**
  * 启动进度条组件
@@ -15,15 +25,7 @@ export function LaunchProgress() {
   const { t } = useI18n();
   const { progress, status } = useLaunchContext();
   const isLaunching = status === "preparing" || status === "launching";
-  const stageLabel = progress ? {
-    "JVM 启动": "Starting JVM",
-    "加载库文件": "Loading libraries",
-    "加载资源": "Loading assets",
-    "初始化游戏": "Initializing game",
-    "加载模组": "Loading mods",
-    "加载世界": "Loading world",
-    "准备完成": "Ready",
-  }[progress.currentStage] ?? progress.currentStage : "";
+  const stageKey = progress ? STAGE_KEYS[progress.currentStage] : undefined;
 
   return (
     <AnimatePresence>
@@ -41,7 +43,7 @@ export function LaunchProgress() {
                 <div className="flex items-center gap-2">
                   <Loader2 className="size-3.5 animate-spin text-primary" />
                   <span className="font-medium text-foreground">
-                    {t({ "zh-CN": progress.currentStage, "en-US": stageLabel })}
+                    {stageKey ? t(stageKey) : progress.currentStage}
                   </span>
                 </div>
                 <span className="text-muted-foreground">
@@ -57,7 +59,7 @@ export function LaunchProgress() {
             <div className="flex items-center gap-2 text-xs">
               <Loader2 className="size-3.5 animate-spin text-primary" />
               <span className="font-medium text-foreground">
-                {status === "preparing" ? t({ "zh-CN": "准备中...", "en-US": "Preparing..." }) : t({ "zh-CN": "正在分析启动日志...", "en-US": "Analyzing launch logs..." })}
+                {status === "preparing" ? t("launch.progress.preparing") : t("launch.progress.analyzingLaunchLogs")}
               </span>
             </div>
           )}

@@ -406,11 +406,11 @@ export function ModpackBuilder({
   const doSearch = async () => {
     const q = query.trim();
     if (!q) {
-      setSearchError(t({ "zh-CN": "请输入搜索关键词", "en-US": "Enter a search term" }));
+      setSearchError(t("modpack.modpackBuilder.enterASearchTerm"));
       return;
     }
     if (!mcVersionValid) {
-      setSearchError(t({ "zh-CN": "请先输入有效的 Minecraft 版本", "en-US": "Enter a valid Minecraft version first" }));
+      setSearchError(t("modpack.modpackBuilder.enterAValidMinecraftVersionFirst"));
       return;
     }
     const targetMcVersion = matchedVersion!.id;
@@ -528,7 +528,7 @@ export function ModpackBuilder({
         const filterDesc =
           category === "mod"
             ? crossLoader
-              ? `${targetMcVersion} (${t({ "zh-CN": "已解除加载器限制", "en-US": "loader restriction removed" })})`
+              ? `${targetMcVersion} (${t("modpack.modpackBuilder.loaderRestrictionRemoved")})`
               : `${targetMcVersion} + ${selectedLoader}`
             : category === "modpack"
               ? t({ "zh-CN": `关键词“${q}”`, "en-US": `keyword “${q}”` })
@@ -536,7 +536,7 @@ export function ModpackBuilder({
         setSearchError(t({ "zh-CN": `未找到匹配 ${filterDesc} 的项目`, "en-US": `No projects match ${filterDesc}` }));
       }
     } catch (e: any) {
-      setSearchError(`${t({ "zh-CN": "搜索失败", "en-US": "Search failed" })}: ${e?.message || e}`);
+      setSearchError(`${t("modpack.modpackBuilder.searchFailed")}: ${e?.message || e}`);
     } finally {
       setSearchLoading(false);
     }
@@ -562,7 +562,7 @@ export function ModpackBuilder({
           { headers: MODRINTH_HEADERS, cache: "no-store" },
         );
         if (!data.ok) {
-          throw new Error(`Modrinth API ${t({ "zh-CN": "请求失败", "en-US": "request failed" })} (${data.status})`);
+          throw new Error(`Modrinth API ${t("modpack.modpackBuilder.requestFailed")} (${data.status})`);
         }
         const json = await data.json();
         const list: ParsedModrinthVersion[] = [];
@@ -594,7 +594,7 @@ export function ModpackBuilder({
           }
         }
         if (!proj) {
-          throw new Error(t({ "zh-CN": "无法在 CurseForge 找到该项目", "en-US": "The project could not be found on CurseForge" }));
+          throw new Error(t("modpack.modpackBuilder.theProjectCouldNotBeFoundOnCurseForge"));
         }
         setCurseforgeProjectId(proj.projectId);
         setCurseforgeDisplayName(proj.projectName);
@@ -994,13 +994,13 @@ export function ModpackBuilder({
     if (!mcVersionValid) {
       if (!silent) {
         setSaveStatus("error");
-        setSaveMessage(t({ "zh-CN": "Minecraft 版本无效，无法保存", "en-US": "The Minecraft version is invalid and cannot be saved" }));
+        setSaveMessage(t("modpack.modpackBuilder.theMinecraftVersionIsInvalidAndCannotBeSaved"));
       }
       return false;
     }
 
     setSaveStatus("saving");
-    setSaveMessage(t({ "zh-CN": "正在保存...", "en-US": "Saving..." }));
+    setSaveMessage(t("modpack.modpackBuilder.saving"));
     try {
       if (format === "modrinth") {
         const deps: {
@@ -1020,7 +1020,7 @@ export function ModpackBuilder({
           game: "minecraft",
           versionId: packVersion.trim(),
           name: trimmed,
-          summary: `RTLauncher Modrinth ${t({ "zh-CN": "整合包", "en-US": "modpack" })} - ${matchedVersion!.id}`,
+          summary: `RTLauncher Modrinth ${t("modpack.modpackBuilder.modpack")} - ${matchedVersion!.id}`,
           format: "modrinth",
           files: selectedModrinth.map((f) => ({
             path: f.path,
@@ -1061,14 +1061,14 @@ export function ModpackBuilder({
         });
       }
       setSaveStatus("saved");
-      setSaveMessage(`${t({ "zh-CN": "已保存：", "en-US": "Saved: " })}${dir || "<minecraft>/modpack"}/${trimmed}.json`);
+      setSaveMessage(`${t("modpack.modpackBuilder.saved")}${dir || "<minecraft>/modpack"}/${trimmed}.json`);
       setTimeout(() => {
         setSaveStatus((s) => (s === "saved" ? "idle" : s));
       }, 4000);
       return true;
     } catch (e: any) {
       setSaveStatus("error");
-      setSaveMessage(`${t({ "zh-CN": "保存失败", "en-US": "Save failed" })}: ${e?.message || e}`);
+      setSaveMessage(`${t("modpack.modpackBuilder.saveFailed")}: ${e?.message || e}`);
       return false;
     }
   };
@@ -1138,7 +1138,7 @@ export function ModpackBuilder({
   // 渲染
   // ===========================================================================
 
-  const formatLabel = format === "modrinth" ? "Modrinth mrpack" : `CurseForge ${t({ "zh-CN": "整合包", "en-US": "modpack" })}`;
+  const formatLabel = format === "modrinth" ? "Modrinth mrpack" : `CurseForge ${t("modpack.modpackBuilder.modpack")}`;
   const total =
     format === "modrinth" ? selectedModrinth.length : selectedCurseforge.length;
   const exportBlockers: string[] = [];
@@ -1170,7 +1170,7 @@ export function ModpackBuilder({
             className="gap-1"
           >
             <ArrowLeft className="size-4" />
-            {t({ "zh-CN": "返回", "en-US": "Back" })}
+            {t("common.back")}
           </Button>
           <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10">
             {format === "modrinth" ? (
@@ -1181,10 +1181,10 @@ export function ModpackBuilder({
           </div>
           <div className="flex-1">
             <div className="text-lg font-semibold leading-none">
-              {t({ "zh-CN": "制作", "en-US": "Create" })} {formatLabel}
+              {t("modpack.modpackBuilder.create")} {formatLabel}
             </div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {t({ "zh-CN": `已添加 ${total} 个文件，点击“返回”自动保存为实例`, "en-US": `${total} files added. Click Back to save the instance automatically.` })}
+              {t("modpack.modpackBuilder.totalFilesAddedClickBackToSaveTheInstance", { total: total })}
             </div>
           </div>
         </div>
@@ -1192,9 +1192,9 @@ export function ModpackBuilder({
         {/* 元数据输入 */}
         <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-3">
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-muted-foreground">{t({ "zh-CN": "整合包名称", "en-US": "Modpack name" })} *</label>
+            <label className="text-xs text-muted-foreground">{t("modpack.modpackBuilder.modpackName")} *</label>
             <Input
-              placeholder={t({ "zh-CN": "如：My Fantastic Pack", "en-US": "e.g. My Fantastic Pack" })}
+              placeholder={t("modpack.modpackBuilder.eGMyFantasticPack")}
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
@@ -1223,13 +1223,13 @@ export function ModpackBuilder({
           {/* MC 版本：输入框 + 下拉候选 */}
           <div className="flex flex-col gap-1 relative">
             <label className="text-xs text-muted-foreground flex items-center gap-2">
-              Minecraft {t({ "zh-CN": "版本", "en-US": "version" })} *
+              Minecraft {t("launch.versionSelector.version")} *
               {mcLoading && <Loader2 className="size-3 animate-spin" />}
-              {mcError && <span className="text-red-500">· {t({ "zh-CN": "加载失败", "en-US": "Load failed" })}</span>}
+              {mcError && <span className="text-red-500">· {t("modpack.modpackBuilder.loadFailed")}</span>}
             </label>
             <div className="relative">
               <Input
-                placeholder={mcLoading ? t({ "zh-CN": "加载版本列表...", "en-US": "Loading version list..." }) : t({ "zh-CN": "如：1.21.1、24w10a", "en-US": "e.g. 1.21.1, 24w10a" })}
+                placeholder={mcLoading ? t("modpack.modpackBuilder.loadingVersionList") : t("modpack.modpackBuilder.eG121124w10a")}
                 value={gameVer}
                 onChange={(e) => {
                   setGameVer(e.target.value);
@@ -1287,12 +1287,12 @@ export function ModpackBuilder({
                           className="text-[9px] py-0"
                         >
                           {v.type === "release"
-                            ? t({ "zh-CN": "正式版", "en-US": "Release" })
+                            ? t("modpack.modpackBuilder.release")
                             : v.type === "snapshot"
-                              ? t({ "zh-CN": "快照", "en-US": "Snapshot" })
+                              ? t("modpack.modpackBuilder.snapshot")
                               : v.type === "april_fools"
-                                ? t({ "zh-CN": "愚人节", "en-US": "April Fools" })
-                                : t({ "zh-CN": "远古", "en-US": "Old" })}
+                                ? t("modpack.modpackBuilder.aprilFools")
+                                : t("modpack.modpackBuilder.old")}
                         </Badge>
                         <span className="text-muted-foreground">{v.releaseDate}</span>
                       </span>
@@ -1303,13 +1303,13 @@ export function ModpackBuilder({
             </div>
             {gameVer.trim() && !mcVersionValid && (
               <span className="text-[11px] text-red-500">
-                {t({ "zh-CN": "未匹配到任何 Minecraft 版本，请从下拉中选择或修改输入", "en-US": "No Minecraft version matches. Select one from the list or revise your input." })}
+                {t("modpack.modpackBuilder.noMinecraftVersionMatchesSelectOneFromTheList")}
               </span>
             )}
             {mcVersionValid && (
               <span className="text-[11px] text-green-600 flex items-center gap-1">
                 <CheckCircle2 className="size-3" />
-                {t({ "zh-CN": "已匹配：", "en-US": "Matched: " })}{matchedVersion!.id} ({matchedVersion!.type})
+                {t("modpack.modpackBuilder.matched")}{matchedVersion!.id} ({matchedVersion!.type})
               </span>
             )}
           </div>
@@ -1317,10 +1317,10 @@ export function ModpackBuilder({
           {/* 加载器：forge / neoforge / fabric / quilt / liteloader */}
           <div className="flex flex-col gap-1">
             <label className="text-xs text-muted-foreground flex items-center gap-2">
-              {t({ "zh-CN": "模组加载器", "en-US": "Mod loader" })} *
+              {t("home.modLoader")} *
               {crossLoader && (
                 <Badge variant="outline" className="text-[9px] py-0 text-amber-600 border-amber-400">
-                  {t({ "zh-CN": "互联", "en-US": "Cross-loader" })}
+                  {t("modpack.modpackBuilder.crossLoader")}
                 </Badge>
               )}
             </label>
@@ -1376,10 +1376,10 @@ export function ModpackBuilder({
                 className="size-3 accent-primary"
               />
               <span>
-                {t({ "zh-CN": "开启信雅互联模式", "en-US": "Enable cross-loader mode" })}
+                {t("modpack.modpackBuilder.enableCrossLoaderMode")}
               </span>
               <span className="text-[10px] text-amber-600">
-                · {t({ "zh-CN": "同时搜索 Fabric + Forge 模组，解除加载器限制", "en-US": "search Fabric and Forge mods together without loader restrictions" })}
+                · {t("modpack.modpackBuilder.searchFabricAndForgeModsTogetherWithoutLoaderRestrictions")}
               </span>
             </label>
           </div>
@@ -1396,7 +1396,7 @@ export function ModpackBuilder({
                 }}
                 className="size-3 accent-primary"
               />
-              <span>{t({ "zh-CN": "启用 OptiFine", "en-US": "Enable OptiFine" })}</span>
+              <span>{t("modpack.modpackBuilder.enableOptiFine")}</span>
               {optifineLoading && useOptifine && (
                 <Loader2 className="size-3 animate-spin" />
               )}
@@ -1405,7 +1405,7 @@ export function ModpackBuilder({
               <div className="flex flex-col gap-1">
                 {optifineVersions.length === 0 && (
                   <span className="text-[11px] text-amber-600">
-                    {t({ "zh-CN": `暂时没有适用于 ${matchedVersion?.id} 的 OptiFine 版本`, "en-US": `No OptiFine versions are currently available for ${matchedVersion?.id}` })}
+                    {t("modpack.modpackBuilder.noOptiFineVersionsAreCurrentlyAvailableForId", { id: matchedVersion?.id ?? "?" })}
                   </span>
                 )}
                 {optifineVersions.length > 0 && (
@@ -1416,7 +1416,7 @@ export function ModpackBuilder({
                         onClick={() => setSelectedOptifineVersion(v.filename)}
                         variant={selectedOptifineVersion === v.filename ? "default" : "outline"}
                         className="cursor-pointer text-[11px] py-0.5 px-2 hover:brightness-110"
-                        title={`${v.id} · ${t({ "zh-CN": "类型：", "en-US": "Type: " })}${v.type_}`}
+                        title={`${v.id} · ${t("modpack.modpackBuilder.type")}${v.type_}`}
                       >
                         {v.patch || v.id}
                       </Badge>
@@ -1424,7 +1424,7 @@ export function ModpackBuilder({
                   </div>
                 )}
                 {useOptifine && optifineVersions.length > 0 && !selectedOptifineVersion && (
-                  <span className="text-[11px] text-amber-600">{t({ "zh-CN": "请选择一个 OptiFine 版本", "en-US": "Select an OptiFine version" })}</span>
+                  <span className="text-[11px] text-amber-600">{t("modpack.modpackBuilder.selectAnOptiFineVersion")}</span>
                 )}
               </div>
             )}
@@ -1494,7 +1494,7 @@ export function ModpackBuilder({
         {dir && (
           <div className="mt-2 text-xs text-muted-foreground flex items-center gap-1">
             <Folder className="size-3" />
-            {t({ "zh-CN": "保存至：", "en-US": "Saved in: " })}<span className="font-mono">{dir}</span>
+            {t("modpack.modpackBuilder.savedIn")}<span className="font-mono">{dir}</span>
           </div>
         )}
       </div>
@@ -1505,7 +1505,7 @@ export function ModpackBuilder({
         <div className="lg:col-span-3 overflow-y-auto border-r border-border p-4 space-y-4">
           {/* 搜索栏 */}
           <div>
-            <div className="text-xs text-muted-foreground mb-2">{t({ "zh-CN": "选择资源分类", "en-US": "Choose a resource category" })}</div>
+            <div className="text-xs text-muted-foreground mb-2">{t("modpack.modpackBuilder.chooseAResourceCategory")}</div>
             <div className="flex flex-wrap gap-2 mb-3">
               {(
                 [
@@ -1533,10 +1533,10 @@ export function ModpackBuilder({
                 <Input
                   placeholder={
                     !mcVersionValid
-                      ? t({ "zh-CN": "请先在上方输入 Minecraft 版本", "en-US": "Enter a Minecraft version above first" })
+                      ? t("modpack.modpackBuilder.enterAMinecraftVersionAboveFirst")
                       : format === "modrinth"
-                        ? t({ "zh-CN": `搜索 Modrinth 项目（MC ${matchedVersion?.id || "?"}）`, "en-US": `Search Modrinth projects (MC ${matchedVersion?.id || "?"})` })
-                        : t({ "zh-CN": `搜索 CurseForge 项目（MC ${matchedVersion?.id || "?"}）`, "en-US": `Search CurseForge projects (MC ${matchedVersion?.id || "?"})` })
+                        ? t("modpack.modpackBuilder.searchModrinthProjectsMcValue", { value: matchedVersion?.id || "?" })
+                        : t("modpack.modpackBuilder.searchCurseForgeProjectsMcValue", { value: matchedVersion?.id || "?" })
                   }
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
@@ -1547,7 +1547,7 @@ export function ModpackBuilder({
               </div>
               <Button onClick={doSearch} disabled={searchLoading || !mcVersionValid}>
                 {searchLoading ? <Loader2 className="size-4 animate-spin mr-1" /> : null}
-                {t({ "zh-CN": "搜索", "en-US": "Search" })}
+                {t("modpack.modpackBuilder.search")}
               </Button>
             </div>
             {searchError && (
@@ -1561,7 +1561,7 @@ export function ModpackBuilder({
           {results !== null && (
             <div className="rounded-xl border border-border overflow-hidden">
               <div className="px-3 py-2 border-b bg-muted/30 text-xs text-muted-foreground">
-                {results.length} {t({ "zh-CN": "个结果", "en-US": "results" })} (MC {matchedVersion?.id})
+                {results.length} {t("modpack.modpackBuilder.results")} (MC {matchedVersion?.id})
               </div>
               <div className="divide-y divide-border max-h-[35vh] overflow-y-auto">
                 {results.map((hit, idx) => (
@@ -1606,7 +1606,7 @@ export function ModpackBuilder({
                             ? `支持 ${hit.game_versions?.join(", ") || "未知 MC 版本"}`
                             : `MC ${matchedVersion?.id}`}
                         </Badge>
-                        <span>{hit.downloads?.toLocaleString()} {t({ "zh-CN": "下载", "en-US": "downloads" })}</span>
+                        <span>{hit.downloads?.toLocaleString()} {t("modpack.modpackBuilder.downloads")}</span>
                         {hit.author && <span>· {hit.author}</span>}
                       </div>
                     </div>
@@ -1641,7 +1641,7 @@ export function ModpackBuilder({
 
               {activeLoading ? (
                 <div className="py-4 flex items-center gap-2 text-xs text-muted-foreground">
-                  <Loader2 className="size-4 animate-spin" /> {t({ "zh-CN": "正在加载文件信息...", "en-US": "Loading file information..." })}
+                  <Loader2 className="size-4 animate-spin" /> {t("modpack.modpackBuilder.loadingFileInformation")}
                 </div>
               ) : activeError ? (
                 <div className="py-2 text-xs text-red-500 flex items-center gap-1">
@@ -1701,11 +1701,11 @@ export function ModpackBuilder({
                               ) : already ? (
                                 <>
                                   <CheckCircle2 className="size-4 mr-1 text-green-500" />
-                                  {t({ "zh-CN": "已添加", "en-US": "Added" })}
+                                  {t("modpack.modpackBuilder.added")}
                                 </>
                               ) : (
                                 <>
-                                  <Plus className="size-4 mr-1" /> {t({ "zh-CN": "添加", "en-US": "Add" })}
+                                  <Plus className="size-4 mr-1" /> {t("common.add")}
                                 </>
                               )}
                             </Button>
@@ -1773,11 +1773,11 @@ export function ModpackBuilder({
                               ) : already ? (
                                 <>
                                   <CheckCircle2 className="size-4 mr-1 text-green-500" />
-                                  {t({ "zh-CN": "已添加", "en-US": "Added" })}
+                                  {t("modpack.modpackBuilder.added")}
                                 </>
                               ) : (
                                 <>
-                                  <Plus className="size-4 mr-1" /> {t({ "zh-CN": "添加", "en-US": "Add" })}
+                                  <Plus className="size-4 mr-1" /> {t("common.add")}
                                 </>
                               )}
                             </Button>
@@ -1796,13 +1796,13 @@ export function ModpackBuilder({
         <div className="lg:col-span-2 overflow-y-auto p-4 bg-muted/20">
           <div className="font-medium text-sm mb-2 flex items-center gap-2">
             <Box className="size-4 text-primary" />
-            {t({ "zh-CN": "已添加", "en-US": "Added" })} ({total})
+            {t("modpack.modpackBuilder.added")} ({total})
           </div>
           <div className="space-y-2">
             {format === "modrinth" ? (
               selectedModrinth.length === 0 ? (
                 <div className="text-xs text-muted-foreground py-6 text-center border border-dashed rounded-xl">
-                  {t({ "zh-CN": "还没有文件，从左侧搜索并添加", "en-US": "No files yet. Search and add files from the left." })}
+                  {t("modpack.modpackBuilder.noFilesYetSearchAndAddFilesFromThe")}
                 </div>
               ) : (
                 selectedModrinth.map((f, idx) => (
@@ -1845,7 +1845,7 @@ export function ModpackBuilder({
               )
             ) : selectedCurseforge.length === 0 ? (
               <div className="text-xs text-muted-foreground py-6 text-center border border-dashed rounded-xl">
-                {t({ "zh-CN": "还没有文件，从左侧搜索并添加", "en-US": "No files yet. Search and add files from the left." })}
+                {t("modpack.modpackBuilder.noFilesYetSearchAndAddFilesFromThe")}
               </div>
             ) : (
               selectedCurseforge.map((f, idx) => (
@@ -1879,7 +1879,7 @@ export function ModpackBuilder({
                         onChange={() => toggleCurseforgeRequired(idx)}
                       />
                       <span>
-                        {f.required !== false ? t({ "zh-CN": "✅ 必须安装", "en-US": "✅ Required" }) : t({ "zh-CN": "⚙️ 可选安装", "en-US": "⚙️ Optional" })}
+                        {f.required !== false ? t("modpack.modpackBuilder.required") : t("modpack.modpackBuilder.optional")}
                       </span>
                     </label>
                   </div>

@@ -5,7 +5,7 @@ import { Image } from "lucide-react";
 import { createResourcePage } from "@/components/resource-page-factory";
 
 export default createResourcePage({
-  title: "资源包管理",
+  title: "panel.resourcePacks",
   leftIcon: <Image className="size-5 text-sky-500" />,
   leftIconBg: "bg-sky-500/10",
   leftIconColor: "text-sky-500",

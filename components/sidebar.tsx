@@ -20,7 +20,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { useUIConfigContext } from "@/components/ui-config/ui-config-provider"
-import { useSettings, type AppLanguage } from "@/components/settings/settings-provider"
+import { useI18n, type TranslationKey } from "@/components/i18n/use-i18n"
 
 interface SidebarProps {
   className?: string
@@ -93,25 +93,14 @@ const NAV_ITEM_BASE: Omit<NavItem, "label">[] = [
   { id: "settings", icon: <Settings className="size-4" />, href: "/settings" },
 ]
 
-const NAV_LABELS: Record<AppLanguage, Record<string, string>> = {
-  "zh-CN": {
-    home: "首页",
-    "game-settings": "游戏设置",
-    launch: "启动",
-    download: "下载",
-    multiplayer: "联机",
-    tools: "工具",
-    settings: "设置",
-  },
-  "en-US": {
-    home: "Home",
-    "game-settings": "Game Settings",
-    launch: "Launch",
-    download: "Downloads",
-    multiplayer: "Multiplayer",
-    tools: "Tools",
-    settings: "Settings",
-  },
+const NAV_LABELS: Record<string, TranslationKey> = {
+  home: "sidebar.home",
+  "game-settings": "sidebar.gameSettings",
+  launch: "sidebar.launch",
+  download: "sidebar.downloads",
+  multiplayer: "sidebar.multiplayer",
+  tools: "sidebar.tools",
+  settings: "sidebar.settings",
 }
 
 function NavButton({ item, isActive }: { item: NavItem; isActive: boolean }) {
@@ -222,10 +211,10 @@ function isNavItemActive(pathname: string, href: string) {
 export function Sidebar({ className }: SidebarProps) {
   const pathname = usePathname()
   const { config, configLoaded } = useUIConfigContext()
-  const { settings } = useSettings()
+  const { t } = useI18n()
   const allNavItems = NAV_ITEM_BASE.map((item) => ({
     ...item,
-    label: NAV_LABELS[settings.general.language][item.id] ?? item.id,
+    label: NAV_LABELS[item.id] ? t(NAV_LABELS[item.id]) : item.id,
   }))
 
   const isActive = (href: string) => isNavItemActive(pathname, href)

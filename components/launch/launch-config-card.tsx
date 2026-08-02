@@ -88,7 +88,7 @@ function PathItem({
       )}
       {isDefault && (
         <span className="shrink-0 rounded px-1 py-0.5 text-[9px] font-medium bg-muted text-muted-foreground leading-none">
-          {t({ "zh-CN": "默认", "en-US": "Default" })}
+          {t("launch.config.default")}
         </span>
       )}
       {canRemove && (
@@ -205,7 +205,7 @@ export function LaunchConfigCard() {
   const handleExportLaunchArgs = async () => {
     try {
       if (!selectedProfile) {
-        alert(t({ "zh-CN": "请先选择账户", "en-US": "Select an account first" }));
+        alert(t("launch.config.selectAnAccountFirst"));
         return;
       }
 
@@ -245,9 +245,9 @@ ${result}
 `;
 
       await invoke("write_file", { path: filePath, content: exportData });
-      alert(t({ "zh-CN": "启动命令已导出成功！", "en-US": "Launch command exported." }));
+      alert(t("launch.config.launchCommandExported"));
     } catch (err) {
-      alert(`${t({ "zh-CN": "导出失败", "en-US": "Export failed" })}: ${err}`);
+      alert(`${t("launch.config.exportFailed")}: ${err}`);
     }
   };
 
@@ -296,7 +296,7 @@ ${result}
         <CardTitle className="flex items-center justify-between text-sm">
           <div className="flex items-center gap-2">
             <Package className="size-4 text-primary" />
-            {t({ "zh-CN": "启动配置", "en-US": "Launch configuration" })}
+            {t("launch.config.launchConfiguration")}
           </div>
           <Button
             variant="ghost"
@@ -305,7 +305,7 @@ ${result}
             onClick={handleExportLaunchArgs}
           >
             <Download className="size-3" />
-            {t({ "zh-CN": "导出参数", "en-US": "Export arguments" })}
+            {t("launch.config.exportArguments")}
           </Button>
         </CardTitle>
       </CardHeader>
@@ -315,7 +315,7 @@ ${result}
           <div className="flex items-center justify-between">
             <Label className="text-xs text-muted-foreground">
               <HardDrive className="size-3" />
-              {t({ "zh-CN": "游戏目录", "en-US": "Game directory" })}
+              {t("launch.config.gameDirectory")}
             </Label>
             <Button
               variant="ghost"
@@ -323,7 +323,7 @@ ${result}
               className="h-6 px-2 text-[10px] text-muted-foreground gap-1"
               onClick={() => openDialog("minecraft")}
             >
-              <Plus className="size-3" /> {t({ "zh-CN": "添加", "en-US": "Add" })}
+              <Plus className="size-3" /> {t("common.add")}
             </Button>
           </div>
           {/* 默认路径始终显示 */}
@@ -365,7 +365,7 @@ ${result}
           {!pathsCfg.default_minecraft_path &&
             pathsCfg.minecraft_paths.length === 0 && (
               <p className="text-[10px] text-muted-foreground/60 px-1">
-                {t({ "zh-CN": "点击“添加”选择游戏目录", "en-US": "Click Add to select a game directory" })}
+                {t("launch.config.clickAddToSelectAGameDirectory")}
               </p>
             )}
         </div>
@@ -375,7 +375,7 @@ ${result}
           <div className="flex items-center justify-between">
             <Label className="text-xs text-muted-foreground">
               <Cpu className="size-3" />
-              {t({ "zh-CN": "Java 路径", "en-US": "Java path" })}
+              {t("launch.config.javaPath")}
             </Label>
             <div className="flex gap-1">
               <Button
@@ -386,7 +386,7 @@ ${result}
                 disabled={scanning}
               >
                 <Search className={`size-3 ${scanning ? "animate-spin" : ""}`} />
-                {scanning ? t({ "zh-CN": "扫描中", "en-US": "Scanning" }) : t({ "zh-CN": "扫描", "en-US": "Scan" })}
+                {scanning ? t("launch.config.scanning") : t("launch.config.scan")}
               </Button>
               <Button
                 variant="ghost"
@@ -394,13 +394,13 @@ ${result}
                 className="h-6 px-2 text-[10px] text-muted-foreground gap-1"
                 onClick={() => openDialog("java")}
               >
-                <Plus className="size-3" /> {t({ "zh-CN": "添加", "en-US": "Add" })}
+                <Plus className="size-3" /> {t("common.add")}
               </Button>
             </div>
           </div>
           {pathsCfg.java_paths.length === 0 ? (
             <p className="text-[10px] text-muted-foreground/60 px-1">
-              {t({ "zh-CN": "点击“扫描”自动搜索或“添加”手动选择 Java", "en-US": "Click Scan to search automatically, or Add to choose Java manually" })}
+              {t("launch.config.clickScanToSearchAutomaticallyOrAddToChoose")}
             </p>
           ) : (
             [...new Set(pathsCfg.java_paths)].map((p) => {
@@ -435,12 +435,12 @@ ${result}
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">
             <Package className="size-3" />
-            {t({ "zh-CN": "Wrapper 路径", "en-US": "Wrapper path" })}
-            <span className="text-[10px] text-muted-foreground/60 ml-1">{t({ "zh-CN": "（可选）", "en-US": "(optional)" })}</span>
+            {t("launch.config.wrapperPath")}
+            <span className="text-[10px] text-muted-foreground/60 ml-1">{t("launch.config.optional")}</span>
           </Label>
           <div className="flex gap-2">
             <Input
-              placeholder={t({ "zh-CN": "留空则直接启动，无需 Wrapper", "en-US": "Leave empty to launch directly without a wrapper" })}
+              placeholder={t("launch.config.leaveEmptyToLaunchDirectlyWithoutAWrapper")}
               value={config.wrapperPath}
               onChange={(e) =>
                 updateConfig({ wrapperPath: e.target.value })
@@ -462,15 +462,15 @@ ${result}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
             <Label className="text-xs text-muted-foreground">
-              {t({ "zh-CN": "最大内存", "en-US": "Maximum memory" })} (MB)
+              {t("launch.config.maximumMemory")} (MB)
             </Label>
             {totalMB > 0 && (
               <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                <span>{t({ "zh-CN": "系统总计", "en-US": "System total" })} <span className="text-foreground font-medium">{totalMB >= 1024 ? `${(totalMB / 1024).toFixed(1)} GB` : `${totalMB} MB`}</span></span>
+                <span>{t("launch.config.systemTotal")} <span className="text-foreground font-medium">{totalMB >= 1024 ? `${(totalMB / 1024).toFixed(1)} GB` : `${totalMB} MB`}</span></span>
                 {availableMB > 0 && (
                   <>
                     <span className="text-muted-foreground/40">·</span>
-                    <span>{t({ "zh-CN": "可用", "en-US": "Available" })} <span className="text-foreground font-medium">{availableMB >= 1024 ? `${(availableMB / 1024).toFixed(1)} GB` : `${availableMB} MB`}</span></span>
+                    <span>{t("launch.config.available")} <span className="text-foreground font-medium">{availableMB >= 1024 ? `${(availableMB / 1024).toFixed(1)} GB` : `${availableMB} MB`}</span></span>
                   </>
                 )}
               </div>
@@ -516,7 +516,7 @@ ${result}
                 }
               }}
             >
-              {t({ "zh-CN": "自动分配", "en-US": "Auto allocate" })}
+              {t("launch.config.autoAllocate")}
               {recommendedMB > 0 && (
                 <span className="text-[9px] text-muted-foreground/70">
                   {recommendedMB >= 1024 ? `${(recommendedMB / 1024).toFixed(1)}GB` : `${recommendedMB}MB`}
@@ -525,11 +525,11 @@ ${result}
             </Button>
           </div>
           <p className="text-[10px] text-muted-foreground">
-            {t({ "zh-CN": "建议分配可用内存的 50%–75%", "en-US": "Recommended: 50%–75% of available memory" })}
+            {t("launch.config.recommended5075OfAvailableMemory")}
             {availableMB > 0 && (() => {
               return (
                 <span className="ml-1 text-muted-foreground/60">
-                  {t({ "zh-CN": `（${Math.round(availableMB * 0.5)}–${Math.round(availableMB * 0.75)} MB，推荐 ${recommendedMB} MB）`, "en-US": `(${Math.round(availableMB * 0.5)}–${Math.round(availableMB * 0.75)} MB; recommended ${recommendedMB} MB)` })}
+                  {t("launch.config.valueValue2MbRecommendedRecommendedMbMb", { value: Math.round(availableMB * 0.5), value2: Math.round(availableMB * 0.75), recommendedMb: recommendedMB })}
                 </span>
               );
             })()}
@@ -538,7 +538,7 @@ ${result}
 
         {/* 版本名称 - 使用版本选择对话框（自动识别加载器） */}
         <div className="space-y-1.5">
-          <Label className="text-xs text-muted-foreground">{t({ "zh-CN": "游戏版本", "en-US": "Game version" })}</Label>
+          <Label className="text-xs text-muted-foreground">{t("launch.config.gameVersion")}</Label>
           <VersionSelectorDialog />
         </div>
 
@@ -546,12 +546,12 @@ ${result}
         <div className="space-y-1.5">
           <Label className="text-xs text-muted-foreground">
             <Monitor className="size-3" />
-            {t({ "zh-CN": "游戏窗口尺寸", "en-US": "Game window size" })}
+            {t("launch.config.gameWindowSize")}
           </Label>
           <div className="flex gap-2 items-center">
             <Input
               type="number"
-              placeholder={t({ "zh-CN": "宽度", "en-US": "Width" })}
+              placeholder={t("launch.config.width")}
               value={config.windowWidth}
               onChange={(e) => updateConfig({ windowWidth: e.target.value })}
               className="text-xs h-8 w-24 text-center"
@@ -560,7 +560,7 @@ ${result}
             <span className="text-xs text-muted-foreground">×</span>
             <Input
               type="number"
-              placeholder={t({ "zh-CN": "高度", "en-US": "Height" })}
+              placeholder={t("launch.config.height")}
               value={config.windowHeight}
               onChange={(e) => updateConfig({ windowHeight: e.target.value })}
               className="text-xs h-8 w-24 text-center"
@@ -572,16 +572,16 @@ ${result}
         {/* 玩家身份（可折叠） */}
         <details className="group">
           <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors select-none">
-            {t({ "zh-CN": "高级：玩家身份设置", "en-US": "Advanced: player identity" })}
+            {t("launch.config.advancedPlayerIdentity")}
           </summary>
           <div className="mt-3 space-y-3 border-l-2 border-border pl-3">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">
                 <User className="size-3" />
-                {t({ "zh-CN": "玩家名称", "en-US": "Player name" })}
+                {t("launch.config.playerName")}
               </Label>
               <Input
-                placeholder={t({ "zh-CN": "留空则使用当前账户名", "en-US": "Leave empty to use the current account name" })}
+                placeholder={t("launch.config.leaveEmptyToUseTheCurrentAccountName")}
                 value={config.playerName}
                 onChange={(e) =>
                   updateConfig({ playerName: e.target.value })
@@ -594,7 +594,7 @@ ${result}
                 UUID
               </Label>
               <Input
-                placeholder={t({ "zh-CN": "留空则使用账户 ID", "en-US": "Leave empty to use the account ID" })}
+                placeholder={t("launch.config.leaveEmptyToUseTheAccountId")}
                 value={config.uuid}
                 onChange={(e) =>
                   updateConfig({ uuid: e.target.value })
@@ -604,11 +604,11 @@ ${result}
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">
-                {t({ "zh-CN": "认证令牌", "en-US": "Access token" })} (accessToken)
+                {t("launch.config.accessToken")} (accessToken)
               </Label>
               <Input
                 type="password"
-                placeholder={t({ "zh-CN": "可选", "en-US": "Optional" })}
+                placeholder={t("launch.config.optional2")}
                 value={config.authToken}
                 onChange={(e) =>
                   updateConfig({ authToken: e.target.value })
@@ -622,15 +622,15 @@ ${result}
         {/* 第三方验证（可折叠） */}
         <details className="group">
           <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors select-none">
-            {t({ "zh-CN": "高级：第三方验证设置", "en-US": "Advanced: third-party authentication" })}
+            {t("launch.config.advancedThirdPartyAuthentication")}
           </summary>
           <div className="mt-3 space-y-3 border-l-2 border-border pl-3">
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">
-                {t({ "zh-CN": "Authlib Injector 路径", "en-US": "Authlib Injector path" })}
+                {t("launch.config.authlibInjectorPath")}
               </Label>
               <Input
-                placeholder={t({ "zh-CN": "authlib-injector.jar 路径", "en-US": "authlib-injector.jar path" })}
+                placeholder={t("launch.config.authlibInjectorJarPath")}
                 value={config.authlibInjectorPath}
                 onChange={(e) =>
                   updateConfig({ authlibInjectorPath: e.target.value })
@@ -653,10 +653,10 @@ ${result}
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs text-muted-foreground">
-                {t({ "zh-CN": "预取数据", "en-US": "Prefetched data" })} (Base64)
+                {t("launch.config.prefetchedData")} (Base64)
               </Label>
               <Input
-                placeholder={t({ "zh-CN": "可选", "en-US": "Optional" })}
+                placeholder={t("launch.config.optional2")}
                 value={config.prefetchedData}
                 onChange={(e) =>
                   updateConfig({ prefetchedData: e.target.value })

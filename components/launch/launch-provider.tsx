@@ -214,7 +214,7 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
           id: ++logIdRef.current,
           timestamp: new Date().toLocaleTimeString(),
           level: exitCode === 0 ? "info" : "warn",
-          message: t({ "zh-CN": `游戏已退出，退出码: ${exitCode}`, "en-US": `Game exited with code: ${exitCode}` }),
+          message: t("launch.provider.gameExitedWithCodeExitCode", { exitCode: exitCode }),
         },
       ]);
     }).then((fn) => { unlisten = fn; });
@@ -236,7 +236,7 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
           id: ++logIdRef.current,
           timestamp: new Date().toLocaleTimeString(),
           level: "info",
-          message: t({ "zh-CN": `游戏已完全启动 (PID ${pid})，停止 JVM 追踪`, "en-US": `Game fully started (PID ${pid}); stopped JVM tracking` }),
+          message: t("launch.provider.gameFullyStartedPidPidStoppedJvmTracking", { pid: pid }),
         },
       ]);
     }).then((fn) => { unlisten = fn; });
@@ -289,19 +289,19 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
 
       // 校验必要参数
       if (!merged.minecraftPath) {
-        setErrorMessage(t({ "zh-CN": "请设置 Minecraft 游戏目录", "en-US": "Set the Minecraft game directory" }));
+        setErrorMessage(t("launch.provider.setTheMinecraftGameDirectory"));
         return;
       }
       if (!merged.javaPath) {
-        setErrorMessage(t({ "zh-CN": "请设置 Java 路径", "en-US": "Set a Java path" }));
+        setErrorMessage(t("launch.provider.setAJavaPath"));
         return;
       }
       if (!merged.versionName) {
-        setErrorMessage(t({ "zh-CN": "请选择游戏版本", "en-US": "Select a game version" }));
+        setErrorMessage(t("launch.provider.selectAGameVersion"));
         return;
       }
       if (!selectedProfile) {
-        setErrorMessage(t({ "zh-CN": "请先选择一个玩家账户", "en-US": "Select a player account first" }));
+        setErrorMessage(t("launch.provider.selectAPlayerAccountFirst"));
         return;
       }
 
@@ -309,16 +309,16 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
       setProgress(null);
       log4jParser.reset(); // 重置日志解析器
       setStatus("preparing");
-      addLog("info", t({ "zh-CN": "正在准备启动参数...", "en-US": "Preparing launch arguments..." }));
+      addLog("info", t("launch.provider.preparingLaunchArguments"));
 
       try {
         setStatus("launching");
-        addLog("info", t({ "zh-CN": `启动版本: ${merged.versionName}`, "en-US": `Launch version: ${merged.versionName}` }));
-        addLog("info", t({ "zh-CN": `玩家: ${selectedProfile.name}`, "en-US": `Player: ${selectedProfile.name}` }));
-        addLog("info", t({ "zh-CN": `最大内存: ${merged.maxMemory}MB`, "en-US": `Maximum memory: ${merged.maxMemory}MB` }));
+        addLog("info", t("launch.provider.launchVersionVersionName", { versionName: merged.versionName }));
+        addLog("info", t("launch.provider.playerName", { name: selectedProfile.name }));
+        addLog("info", t("launch.provider.maximumMemoryMaxMemoryMb", { maxMemory: merged.maxMemory }));
 
         if (merged.loadType !== "0") {
-          addLog("info", t({ "zh-CN": `加载器: ${merged.loadName}`, "en-US": `Loader: ${merged.loadName}` }));
+          addLog("info", t("launch.provider.loaderLoadName", { loadName: merged.loadName }));
         }
 
         const result = await invoke<string>("launch_game", {
@@ -341,12 +341,12 @@ export function LaunchProvider({ children }: { children: React.ReactNode }) {
 
         setLastCommandArgs(result);
         setStatus("running");
-        addLog("info", t({ "zh-CN": "游戏已启动！", "en-US": "Game launched!" }));
+        addLog("info", t("launch.provider.gameLaunched"));
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         setStatus("error");
         setErrorMessage(msg);
-        addLog("error", `${t({ "zh-CN": "启动失败", "en-US": "Launch failed" })}: ${msg}`);
+        addLog("error", `${t("launch.provider.launchFailed")}: ${msg}`);
       }
     },
     [config, selectedProfile, addLog, t]

@@ -8,7 +8,7 @@ import { useInstancePath, getMcVersion, getModLoader } from "@/hooks/use-instanc
 import { useResourceManager } from "@/hooks/use-resource-manager";
 import { useLaunchContext } from "@/components/launch/launch-provider";
 import { fadeSlideUp } from "@/lib/motion";
-import { useI18n } from "@/components/i18n/use-i18n";
+import { useI18n, type TranslationKey } from "@/components/i18n/use-i18n";
 
 /**
  * 资源管理页面的配置
@@ -19,7 +19,7 @@ import { useI18n } from "@/components/i18n/use-i18n";
  */
 export interface ResourcePageConfig {
   /** 左列标题 */
-  title: string;
+  title: TranslationKey;
   /** 左列图标 */
   leftIcon: React.ReactNode;
   /** 左列图标背景色样式类（如 "bg-emerald-500/10"） */
@@ -100,8 +100,8 @@ export function createResourcePage(config: ResourcePageConfig): React.FC {
     // 根据 versionSource 决定版本信息的来源
     const versionName =
       versionSource === "instance"
-        ? selectedInstance?.name || t({ "zh-CN": "未选择版本", "en-US": "No version selected" })
-        : launcherConfig.versionName || t({ "zh-CN": "未选择版本", "en-US": "No version selected" });
+        ? selectedInstance?.name || t("launch.noVersionSelected")
+        : launcherConfig.versionName || t("launch.noVersionSelected");
     const mcVersion =
       versionSource === "instance"
         ? selectedInstance?.minecraft_version
@@ -160,8 +160,8 @@ export function createResourcePage(config: ResourcePageConfig): React.FC {
           <div className="size-12 rounded-full bg-muted flex items-center justify-center">
             <Package className="size-6 text-muted-foreground" />
           </div>
-          <p className="text-sm font-medium">{t({ "zh-CN": "正在加载配置...", "en-US": "Loading configuration..." })}</p>
-          <p className="text-xs text-muted-foreground">{t({ "zh-CN": "请稍候", "en-US": "Please wait" })}</p>
+          <p className="text-sm font-medium">{t("pageFactory.loadingConfiguration")}</p>
+          <p className="text-xs text-muted-foreground">{t("pageFactory.pleaseWait")}</p>
         </motion.div>
       );
     }
@@ -177,11 +177,11 @@ export function createResourcePage(config: ResourcePageConfig): React.FC {
           <div className="size-12 rounded-full bg-muted flex items-center justify-center">
             <Package className="size-6 text-muted-foreground" />
           </div>
-          <p className="text-sm font-medium">{t({ "zh-CN": "未配置游戏目录", "en-US": "Game directory is not configured" })}</p>
+          <p className="text-sm font-medium">{t("pageFactory.gameDirectoryIsNotConfigured")}</p>
           <p className="text-xs text-muted-foreground">
             {versionSource === "instance"
-              ? t({ "zh-CN": "请先选择一个实例", "en-US": "Select an instance first" })
-              : t({ "zh-CN": "请先在「启动」页面配置 Minecraft 游戏目录", "en-US": "Configure the Minecraft game directory on the Launch page first" })}
+              ? t("pageFactory.selectAnInstanceFirst")
+              : t("pageFactory.configureTheMinecraftGameDirectoryOnTheLaunchPage")}
           </p>
         </motion.div>
       );
@@ -195,16 +195,16 @@ export function createResourcePage(config: ResourcePageConfig): React.FC {
               ...(modLoader ? [modLoader] : []),
               ...(mcVersion ? [`MC ${mcVersion}`] : []),
             ].join(" · ")
-          : t({ "zh-CN": "请选择一个实例", "en-US": "Select an instance" })
+          : t("pageFactory.selectAnInstance")
         : [
-            t({ "zh-CN": `版本: ${versionName}`, "en-US": `Version: ${versionName}` }),
+            t("pageFactory.versionVersionName", { versionName: versionName }),
             ...(modLoader ? [modLoader] : []),
-            ...(mcVersion && mcVersion !== versionName ? [t({ "zh-CN": `原版: ${mcVersion}`, "en-US": `Vanilla: ${mcVersion}` })] : []),
+            ...(mcVersion && mcVersion !== versionName ? [t("pageFactory.vanillaMcVersion", { mcVersion: mcVersion })] : []),
           ].join(" · ");
 
     return (
       <ResourcePanel
-        leftTitle={title}
+        leftTitle={t(title)}
         leftDescription={description}
         leftIcon={leftIcon}
         leftIconBg={leftIconBg}
@@ -213,7 +213,7 @@ export function createResourcePage(config: ResourcePageConfig): React.FC {
         leftError={instanceError}
         leftSearch={instanceSearch}
         setLeftSearch={setInstanceSearch}
-        leftBadge={t({ "zh-CN": `${instanceFiles.length} 个`, "en-US": `${instanceFiles.length}` })}
+        leftBadge={t("pageFactory.length", { length: instanceFiles.length })}
         leftDirectoryPath={directoryNavigation ? instanceDirectoryPath : undefined}
         onOpenLeftDirectory={directoryNavigation ? openInstanceDirectory : undefined}
         onNavigateUpLeft={directoryNavigation ? goToParentInstanceDirectory : undefined}
@@ -225,7 +225,7 @@ export function createResourcePage(config: ResourcePageConfig): React.FC {
         rightError={cacheError}
         rightSearch={cacheSearch}
         setRightSearch={setCacheSearch}
-        rightBadge={t({ "zh-CN": `${cacheFiles.length} 个`, "en-US": `${cacheFiles.length}` })}
+        rightBadge={t("pageFactory.length", { length: cacheFiles.length })}
         onMoveRightToLeft={addToInstance}
         onMoveLeftToRight={removeFromInstance}
         onDeleteLeft={deleteFromInstance}
@@ -282,8 +282,8 @@ export function useResourcePage(config: ResourcePageConfig): {
 
   const versionName =
     versionSource === "instance"
-      ? selectedInstance?.name || t({ "zh-CN": "未选择版本", "en-US": "No version selected" })
-      : launcherConfig.versionName || t({ "zh-CN": "未选择版本", "en-US": "No version selected" });
+      ? selectedInstance?.name || t("launch.noVersionSelected")
+      : launcherConfig.versionName || t("launch.noVersionSelected");
   const mcVersion =
     versionSource === "instance"
       ? selectedInstance?.minecraft_version
@@ -317,16 +317,16 @@ export function useResourcePage(config: ResourcePageConfig): {
             ...(modLoader ? [modLoader] : []),
             ...(mcVersion ? [`MC ${mcVersion}`] : []),
           ].join(" · ")
-        : t({ "zh-CN": "请选择一个实例", "en-US": "Select an instance" })
+        : t("pageFactory.selectAnInstance")
       : [
-          t({ "zh-CN": `版本: ${versionName}`, "en-US": `Version: ${versionName}` }),
+          t("pageFactory.versionVersionName", { versionName: versionName }),
           ...(modLoader ? [modLoader] : []),
-          ...(mcVersion && mcVersion !== versionName ? [t({ "zh-CN": `原版: ${mcVersion}`, "en-US": `Vanilla: ${mcVersion}` })] : []),
+          ...(mcVersion && mcVersion !== versionName ? [t("pageFactory.vanillaMcVersion", { mcVersion: mcVersion })] : []),
         ].join(" · ");
 
   return {
     panel: {
-      leftTitle: title,
+      leftTitle: t(title),
       leftDescription: description,
       leftIcon,
       leftIconBg,
@@ -335,7 +335,7 @@ export function useResourcePage(config: ResourcePageConfig): {
       leftError: manager.instanceError,
       leftSearch: manager.instanceSearch,
       setLeftSearch: manager.setInstanceSearch,
-      leftBadge: t({ "zh-CN": `${manager.instanceFiles.length} 个`, "en-US": `${manager.instanceFiles.length}` }),
+      leftBadge: t("pageFactory.length", { length: manager.instanceFiles.length }),
       leftDirectoryPath: directoryNavigation ? manager.instanceDirectoryPath : undefined,
       onOpenLeftDirectory: directoryNavigation ? manager.openInstanceDirectory : undefined,
       onNavigateUpLeft: directoryNavigation ? manager.goToParentInstanceDirectory : undefined,
@@ -348,7 +348,7 @@ export function useResourcePage(config: ResourcePageConfig): {
       rightError: manager.cacheError,
       rightSearch: manager.cacheSearch,
       setRightSearch: manager.setCacheSearch,
-      rightBadge: t({ "zh-CN": `${manager.cacheFiles.length} 个`, "en-US": `${manager.cacheFiles.length}` }),
+      rightBadge: t("pageFactory.length", { length: manager.cacheFiles.length }),
       rightModInfo: manager.cacheModInfo,
       onMoveRightToLeft: manager.addToInstance,
       onMoveLeftToRight: manager.removeFromInstance,
@@ -387,20 +387,10 @@ export function ResourcePageFallback({
   title,
   subtitle,
 }: {
-  title: string;
-  subtitle: string;
+  title: TranslationKey;
+  subtitle: TranslationKey;
 }) {
   const { t } = useI18n();
-  const copy = (value: string) => {
-    const translations: Record<string, { "zh-CN": string; "en-US": string }> = {
-      "正在加载配置...": { "zh-CN": "正在加载配置...", "en-US": "Loading configuration..." },
-      "未配置游戏目录": { "zh-CN": "未配置游戏目录", "en-US": "Game directory is not configured" },
-      "请稍候": { "zh-CN": "请稍候", "en-US": "Please wait" },
-      "请先在「启动」页面配置 Minecraft 游戏目录": { "zh-CN": "请先在「启动」页面配置 Minecraft 游戏目录", "en-US": "Configure the Minecraft game directory on the Launch page first" },
-    };
-    return translations[value] ? t(translations[value]) : value;
-  };
-
   return (
     <motion.div
       variants={fadeSlideUp}
@@ -411,8 +401,8 @@ export function ResourcePageFallback({
       <div className="size-12 rounded-full bg-muted flex items-center justify-center">
         <Package className="size-6 text-muted-foreground" />
       </div>
-      <p className="text-sm font-medium">{copy(title)}</p>
-      <p className="text-xs text-muted-foreground">{copy(subtitle)}</p>
+      <p className="text-sm font-medium">{t(title)}</p>
+      <p className="text-xs text-muted-foreground">{t(subtitle)}</p>
     </motion.div>
   );
 }

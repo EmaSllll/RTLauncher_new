@@ -5,7 +5,16 @@ import { useSettings, type AppLanguage } from "@/components/settings/settings-pr
 import zhCN from "@/components/i18n/locales/zh-CN.json";
 import enUS from "@/components/i18n/locales/en-US.json";
 
-export type Translation = Record<AppLanguage, string>;
+type TranslationKeyOf<T> = {
+  [Key in keyof T & string]: T[Key] extends string
+    ? Key
+    : T[Key] extends Record<string, unknown>
+      ? `${Key}.${TranslationKeyOf<T[Key]>}`
+      : never;
+}[keyof T & string];
+
+export type TranslationKey = TranslationKeyOf<typeof enUS>;
+export type Translation = TranslationKey;
 type TranslationValues = Record<string, string | number>;
 
 const dictionaries: Record<AppLanguage, Record<string, unknown>> = {
@@ -13,7 +22,7 @@ const dictionaries: Record<AppLanguage, Record<string, unknown>> = {
   "en-US": enUS,
 };
 
-function resolveTranslation(key: string, language: AppLanguage): string | undefined {
+function resolveTranslation(key: TranslationKey, language: AppLanguage): string | undefined {
   const value = key.split(".").reduce<unknown>(
     (current, segment) =>
       current && typeof current === "object"
@@ -40,12 +49,8 @@ export function useI18n() {
   const { settings } = useSettings();
   const language = settings.general.language;
   const t = useCallback(
-    (translation: Translation | string, values?: TranslationValues) => {
-      if (typeof translation === "string") {
-        return interpolate(resolveTranslation(translation, language) ?? translation, values);
-      }
-      return interpolate(translation[language], values);
-    },
+    (key: TranslationKey, values?: TranslationValues) =>
+      interpolate(resolveTranslation(key, language) ?? key, values),
     [language],
   );
 

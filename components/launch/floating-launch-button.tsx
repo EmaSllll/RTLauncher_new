@@ -43,7 +43,7 @@ export function FloatingLaunchButton() {
   const displayName = (
     config.loadName ||
     config.versionName ||
-    t({ "zh-CN": "未选择版本", "en-US": "No version selected" })
+    t("launch.noVersionSelected")
   );
 
   // 初始化位置：横轴 1/2、纵轴 1/3（按钮初始为收起态 60×60，居中放置）
@@ -248,17 +248,17 @@ export function FloatingLaunchButton() {
                     {isLaunching ? (
                       <>
                         <Loader2 className="size-3 animate-spin" />
-                        {status === "preparing" ? t({ "zh-CN": "准备中", "en-US": "Preparing" }) : "Launching"}
+                        {status === "preparing" ? t("launch.status.preparing") : "Launching"}
                       </>
                     ) : isRunning ? (
                       <>
                         <Square className="size-3" />
-                        {t({ "zh-CN": "停止游戏", "en-US": "Stop game" })}
+                        {t("launch.stopGame")}
                       </>
                     ) : (
                       <>
                         <Play className="size-3" />
-                        {t({ "zh-CN": "启动游戏", "en-US": "Launch game" })}
+                        {t("launch.launchGame")}
                       </>
                     )}
                   </Button>

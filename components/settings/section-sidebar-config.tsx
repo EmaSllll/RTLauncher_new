@@ -33,10 +33,7 @@ export function SidebarConfigSection() {
   const { isEnglish, t } = useI18n();
 
   const handleReset = () => {
-    if (confirm(t({
-      "zh-CN": "确定要重置所有标签页配置吗？这将恢复默认设置。",
-      "en-US": "Reset all sidebar tabs to their default visibility?",
-    }))) {
+    if (confirm(t("settings.sidebarConfig.resetAllSidebarTabsToTheirDefaultVisibility"))) {
       resetConfig();
     }
   };
@@ -44,12 +41,9 @@ export function SidebarConfigSection() {
   return (
     <Card id="section-sidebar-config" size="sm">
       <CardHeader>
-        <CardTitle>{t({ "zh-CN": "侧边栏标签页配置", "en-US": "Sidebar tabs" })}</CardTitle>
+        <CardTitle>{t("settings.sidebarConfig.sidebarTabs")}</CardTitle>
         <CardDescription>
-          {t({
-            "zh-CN": "自定义左侧导航栏中显示的标签页，隐藏不常用的功能以简化界面",
-            "en-US": "Choose which tabs appear in the sidebar and hide features you do not use.",
-          })}
+          {t("settings.sidebarConfig.chooseWhichTabsAppearInTheSidebarAndHide")}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -70,7 +64,7 @@ export function SidebarConfigSection() {
                   <p className="text-sm font-medium">{isEnglish ? TAB_NAMES_EN[tab.id] ?? tab.name : tab.name}</p>
                   {!tab.canHide && (
                     <p className="text-[10px] text-muted-foreground">
-                      {t({ "zh-CN": "核心功能，不可隐藏", "en-US": "Core feature — always visible" })}
+                      {t("settings.sidebarConfig.coreFeatureAlwaysVisible")}
                     </p>
                   )}
                 </div>
@@ -86,7 +80,7 @@ export function SidebarConfigSection() {
 
         <div className="flex items-center justify-between pt-2 border-t">
           <p className="text-xs text-muted-foreground">
-            {config.sidebarTabs.filter(t => t.visible).length} / {config.sidebarTabs.length} {t({ "zh-CN": "个标签页可见", "en-US": "tabs visible" })}
+            {config.sidebarTabs.filter(t => t.visible).length} / {config.sidebarTabs.length} {t("settings.sidebarConfig.tabsVisible")}
           </p>
           <Button
             variant="outline"
@@ -95,7 +89,7 @@ export function SidebarConfigSection() {
             className="gap-2"
           >
             <RotateCcw className="size-3.5" />
-            {t({ "zh-CN": "重置默认", "en-US": "Reset" })}
+            {t("settings.sidebarConfig.reset")}
           </Button>
         </div>
       </CardContent>

@@ -13,7 +13,7 @@ import { Switch } from "@/components/ui/switch";
 import { invoke } from "@tauri-apps/api/core";
 
 const WORLDS_CONFIG = {
-  title: "存档管理",
+  title: "panel.worlds" as const,
   leftIcon: <Map className="size-5 text-amber-500" />,
   leftIconBg: "bg-amber-500/10",
   leftIconColor: "text-amber-500",
@@ -246,8 +246,8 @@ export default function WorldsPage() {
   if (!loadingState.configLoaded || !loadingState.minecraftPath) {
     return (
       <ResourcePageFallback
-        title={!loadingState.configLoaded ? "正在加载配置..." : "未配置游戏目录"}
-        subtitle={!loadingState.configLoaded ? "请稍候" : "请先在「启动」页面配置 Minecraft 游戏目录"}
+        title={!loadingState.configLoaded ? "pageFactory.loadingConfiguration" : "pageFactory.gameDirectoryIsNotConfigured"}
+        subtitle={!loadingState.configLoaded ? "pageFactory.pleaseWait" : "pageFactory.configureTheMinecraftGameDirectoryOnTheLaunchPage"}
       />
     );
   }

@@ -1,5 +1,3 @@
-// NBT compatibility helpers are shared with optional instance-management flows.
-#[allow(dead_code)]
 pub mod resource_checker;
 
 use base64::Engine;
