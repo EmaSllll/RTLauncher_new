@@ -2,8 +2,7 @@ use reqwest::header;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{OnceCell, Semaphore};
-pub const CURSEFORGE_API_KEY: &str =
-    "$2a$10$VTAFCxje5a1Jkqv0aGWjQ.fULedAEPctDqppOkNMRVv.edVnG7KQ6";
+pub const CURSEFORGE_API_KEY: &str = "$2a$10$VTAFCxje5a1Jkqv0aGWjQ.fULedAEPctDqppOkNMRVv.edVnG7KQ6";
 pub const DEFAULT_MAX_CONCURRENT: usize = 256;
 static SHARED_CLIENT: OnceCell<Arc<reqwest::Client>> = OnceCell::const_new();
 static MODRINTH_CLIENT: OnceCell<Arc<reqwest::Client>> = OnceCell::const_new();
@@ -11,7 +10,9 @@ static CURSEFORGE_CLIENT: OnceCell<Arc<reqwest::Client>> = OnceCell::const_new()
 static GLOBAL_SEMAPHORE: OnceCell<Arc<Semaphore>> = OnceCell::const_new();
 fn base_client_builder() -> reqwest::ClientBuilder {
     reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (compatible; RTLauncher/1.0; +https://github.com/bubulaladdi/RTLauncher)")
+        .user_agent(
+            "Mozilla/5.0 (compatible; RTLauncher/1.0; +https://github.com/bubulaladdi/RTLauncher)",
+        )
         .connect_timeout(Duration::from_secs(15))
         .pool_idle_timeout(Duration::from_secs(300))
         .pool_max_idle_per_host(128)
@@ -56,7 +57,10 @@ pub async fn modrinth_client() -> Arc<reqwest::Client> {
         .get_or_init(|| async {
             let mut headers = header::HeaderMap::new();
             if let Ok(api_value) = "v2".parse::<header::HeaderValue>() {
-                headers.insert(header::HeaderName::from_static("x-modrinth-api-version"), api_value);
+                headers.insert(
+                    header::HeaderName::from_static("x-modrinth-api-version"),
+                    api_value,
+                );
             }
             Arc::new(
                 base_client_builder()
@@ -77,7 +81,9 @@ pub async fn global_semaphore() -> Arc<Semaphore> {
 }
 pub async fn resolve_redirect_url(url: &str) -> Result<String, String> {
     let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (compatible; RTLauncher/1.0; +https://github.com/bubulaladdi/RTLauncher)")
+        .user_agent(
+            "Mozilla/5.0 (compatible; RTLauncher/1.0; +https://github.com/bubulaladdi/RTLauncher)",
+        )
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::limited(8))
@@ -140,10 +146,7 @@ pub async fn get_with_retry(
         if attempt >= cfg.max_retries {
             break;
         }
-        let delay_ms = std::cmp::min(
-            cfg.initial_delay_ms * (1u64 << attempt),
-            cfg.max_delay_ms,
-        );
+        let delay_ms = std::cmp::min(cfg.initial_delay_ms * (1u64 << attempt), cfg.max_delay_ms);
         tokio::time::sleep(Duration::from_millis(delay_ms)).await;
     }
     Err(last_error.unwrap_or_else(|| "请求失败".to_string()))
@@ -182,7 +185,9 @@ pub mod curseforge_class_ids {
         let url = website_url.to_lowercase();
         match type_name {
             n if n == TYPE_MODPACK => url.contains("/modpacks/"),
-            n if n == TYPE_RESOURCE_PACK => url.contains("/texture-packs/") || url.contains("/resource-packs/"),
+            n if n == TYPE_RESOURCE_PACK => {
+                url.contains("/texture-packs/") || url.contains("/resource-packs/")
+            }
             n if n == TYPE_SHADER => url.contains("/shaders/"),
             n if n == TYPE_DATAPACK => url.contains("/data-packs/"),
             n if n == TYPE_WORLD => url.contains("/worlds/"),

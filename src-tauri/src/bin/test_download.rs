@@ -1,4 +1,4 @@
-use std::sync::{Arc, atomic::AtomicBool};
+use std::sync::{atomic::AtomicBool, Arc};
 use std::time::Instant;
 
 #[tokio::main]
@@ -18,12 +18,20 @@ async fn main() {
     let resp = client.head(url).send().await;
     match resp {
         Ok(r) => {
-            println!("HEAD 状态: {} | 耗时: {:.1}s", r.status(), start.elapsed().as_secs_f64());
+            println!(
+                "HEAD 状态: {} | 耗时: {:.1}s",
+                r.status(),
+                start.elapsed().as_secs_f64()
+            );
             println!("最终 URL: {}", r.url());
             println!("Headers:");
             for (k, v) in r.headers() {
                 let vs = v.to_str().unwrap_or("<binary>");
-                if k.as_str().contains("content") || k.as_str().contains("range") || k.as_str().contains("location") || k.as_str().contains("accept") {
+                if k.as_str().contains("content")
+                    || k.as_str().contains("range")
+                    || k.as_str().contains("location")
+                    || k.as_str().contains("accept")
+                {
                     println!("  {}: {}", k, vs);
                 }
             }
@@ -33,17 +41,35 @@ async fn main() {
 
     println!("\n=== 测试 2: GET + Range 请求 ===");
     let start = Instant::now();
-    let resp = client.get(url).header(reqwest::header::RANGE, "bytes=0-2097151").timeout(std::time::Duration::from_secs(15)).send().await;
+    let resp = client
+        .get(url)
+        .header(reqwest::header::RANGE, "bytes=0-2097151")
+        .timeout(std::time::Duration::from_secs(15))
+        .send()
+        .await;
     match resp {
         Ok(r) => {
-            println!("GET+Range 状态: {} | 耗时: {:.1}s", r.status(), start.elapsed().as_secs_f64());
+            println!(
+                "GET+Range 状态: {} | 耗时: {:.1}s",
+                r.status(),
+                start.elapsed().as_secs_f64()
+            );
             println!("最终 URL: {}", r.url());
             println!("Content-Length: {:?}", r.content_length());
-            println!("Content-Range: {:?}", r.headers().get(reqwest::header::CONTENT_RANGE).and_then(|v| v.to_str().ok()));
+            println!(
+                "Content-Range: {:?}",
+                r.headers()
+                    .get(reqwest::header::CONTENT_RANGE)
+                    .and_then(|v| v.to_str().ok())
+            );
             let start_body = Instant::now();
             let body = r.bytes().await;
             match body {
-                Ok(b) => println!("Body 大小: {} bytes | 读取耗时: {:.1}s", b.len(), start_body.elapsed().as_secs_f64()),
+                Ok(b) => println!(
+                    "Body 大小: {} bytes | 读取耗时: {:.1}s",
+                    b.len(),
+                    start_body.elapsed().as_secs_f64()
+                ),
                 Err(e) => println!("Body 读取失败: {}", e),
             }
         }
@@ -52,10 +78,18 @@ async fn main() {
 
     println!("\n=== 测试 3: 裸 GET（不带 Range，模拟浏览器） ===");
     let start = Instant::now();
-    let resp = client.get(url).timeout(std::time::Duration::from_secs(60)).send().await;
+    let resp = client
+        .get(url)
+        .timeout(std::time::Duration::from_secs(60))
+        .send()
+        .await;
     match resp {
         Ok(r) => {
-            println!("GET 状态: {} | 耗时: {:.1}s", r.status(), start.elapsed().as_secs_f64());
+            println!(
+                "GET 状态: {} | 耗时: {:.1}s",
+                r.status(),
+                start.elapsed().as_secs_f64()
+            );
             println!("最终 URL: {}", r.url());
             let size = r.content_length().unwrap_or(0);
             println!("Content-Length: {} bytes", size);
@@ -64,20 +98,33 @@ async fn main() {
             let mut stream = r.bytes_stream();
             let mut received: u64 = 0;
             let mut last_report = Instant::now();
-            while let Ok(Some(chunk_result)) = tokio::time::timeout(std::time::Duration::from_secs(30), stream.next()).await {
+            while let Ok(Some(chunk_result)) =
+                tokio::time::timeout(std::time::Duration::from_secs(30), stream.next()).await
+            {
                 match chunk_result {
                     Ok(data) => {
                         received += data.len() as u64;
                         if last_report.elapsed() > std::time::Duration::from_millis(500) {
-                            let pct = if size > 0 { received as f64 / size as f64 * 100.0 } else { 0.0 };
+                            let pct = if size > 0 {
+                                received as f64 / size as f64 * 100.0
+                            } else {
+                                0.0
+                            };
                             println!("  进度: {:.1}% ({}/{})", pct, received, size);
                             last_report = Instant::now();
                         }
                     }
-                    Err(e) => { println!("  流错误: {}", e); break; }
+                    Err(e) => {
+                        println!("  流错误: {}", e);
+                        break;
+                    }
                 }
             }
-            println!("总下载: {} bytes | 总耗时: {:.1}s", received, start.elapsed().as_secs_f64());
+            println!(
+                "总下载: {} bytes | 总耗时: {:.1}s",
+                received,
+                start.elapsed().as_secs_f64()
+            );
             let out = std::path::PathBuf::from(".\\test_download_fabrickotlin.jar");
             let _ = std::fs::remove_file(&out);
         }

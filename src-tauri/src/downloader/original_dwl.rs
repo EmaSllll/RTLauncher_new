@@ -1,3 +1,8 @@
+use super::decompression::extract_library_paths;
+use crate::http_client::shared_client;
+use futures::stream::{self, StreamExt};
+use serde::{Deserialize, Serialize};
+use sha1::{Digest, Sha1};
 use std::collections::HashMap;
 use std::env;
 use std::error::Error;
@@ -6,14 +11,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use futures::stream::{self, StreamExt};
-use serde::{Deserialize, Serialize};
-use sha1::{Digest, Sha1};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{mpsc, Semaphore};
-use crate::http_client::shared_client;
-use super::decompression::extract_library_paths;
 const MOJANG_MANIFEST: &str = "https://launchermeta.mojang.com/mc/game/version_manifest.json";
 const MIRROR_URL: &str = "https://bmclapi2.bangbang93.com";
 
@@ -193,10 +193,7 @@ async fn download_with_url(
     task: &DownloadTask,
     client: &reqwest::Client,
 ) -> Result<bool, Box<dyn Error + Send + Sync>> {
-    let response = client.get(url)
-        .send()
-        .await?
-        .error_for_status()?;
+    let response = client.get(url).send().await?.error_for_status()?;
     let content_length = response.content_length().unwrap_or(0);
     if task.size > 0 && content_length != task.size {
         return Err(format!("文件大小不匹配: 预期{} 实际{}", task.size, content_length).into());
@@ -213,10 +210,7 @@ async fn download_with_url(
     let computed = format!("{:x}", hasher.finalize());
     Ok(computed == task.sha1)
 }
-async fn check_sha1(
-    file: &mut File,
-    expected: &str
-) -> Result<bool, Box<dyn Error + Send + Sync>> {
+async fn check_sha1(file: &mut File, expected: &str) -> Result<bool, Box<dyn Error + Send + Sync>> {
     let mut hasher = Sha1::new();
     let mut buf = vec![0u8; 8192];
     let mut reader = tokio::io::BufReader::new(file);
@@ -243,7 +237,10 @@ pub async fn process_version(
     let json_content = reqwest::get(&json_url).await?.text().await?;
     fs::write(version_dir.join(format!("{}.json", version)), &json_content)?;
     let version_data: VersionJson = serde_json::from_str(&json_content)?;
-    let assets_content = reqwest::get(&version_data.asset_index.url).await?.text().await?;
+    let assets_content = reqwest::get(&version_data.asset_index.url)
+        .await?
+        .text()
+        .await?;
     let indexes_dir = minecraft_path.join("assets").join("indexes");
     fs::create_dir_all(&indexes_dir)?;
     let index_path = indexes_dir.join(format!("{}.json", version_data.asset_index.id));
@@ -263,11 +260,16 @@ pub async fn process_version(
     if let Some(logging) = &version_data.logging {
         tasks.push(DownloadTask {
             urls: vec![logging.client.file.url.clone()],
-            target_path: version_dir.join(&logging.client.file.url
-                .split('/')
-                .last()
-                .unwrap_or("log_config.xml")
-                .to_string()),
+            target_path: version_dir.join(
+                &logging
+                    .client
+                    .file
+                    .url
+                    .split('/')
+                    .last()
+                    .unwrap_or("log_config.xml")
+                    .to_string(),
+            ),
             sha1: logging.client.file.sha1.clone(),
             size: 0,
         });
@@ -354,7 +356,13 @@ pub async fn process_version(
         let progress = progress.clone();
         let client = client.clone();
         let cancel = cancel.clone();
-        futures.push(download_task(task, client, semaphore, Some(progress), cancel));
+        futures.push(download_task(
+            task,
+            client,
+            semaphore,
+            Some(progress),
+            cancel,
+        ));
     }
     let results = stream::iter(futures)
         .buffer_unordered(MAX_CONCURRENT_DOWNLOADS)
@@ -371,11 +379,18 @@ pub async fn process_version(
     }
     let done = progress.done.load(Ordering::SeqCst);
     let failed = errors.len();
-    println!("下载完成: {}/{} ({:.1}%), 失败: {}", done, total, (done as f64 / total as f64) * 100.0, failed);
+    println!(
+        "下载完成: {}/{} ({:.1}%), 失败: {}",
+        done,
+        total,
+        (done as f64 / total as f64) * 100.0,
+        failed
+    );
     let extract_result = extract_library_paths(
         minecraft_path.to_string_lossy().to_string(),
-        version.to_string()
-    ).await;
+        version.to_string(),
+    )
+    .await;
     match extract_result {
         Ok(paths) => {
             println!("成功解压 {} 个原生库", paths.len());
@@ -416,13 +431,14 @@ async fn ensure_options_lang(version_dir: &Path) -> Result<(), Box<dyn Error + S
 fn check_rules(rules: &[Rule], os_type: &str) -> bool {
     let mut allowed = true;
     for rule in rules {
-        let os_match = rule.os.as_ref().map_or(true, |os|
-            os.name.as_deref() == Some(os_type)
-        );
+        let os_match = rule
+            .os
+            .as_ref()
+            .map_or(true, |os| os.name.as_deref() == Some(os_type));
         match rule.action.as_str() {
             "allow" => allowed = os_match,
             "disallow" => allowed = !os_match,
-            _ => ()
+            _ => (),
         }
     }
     allowed
@@ -430,9 +446,9 @@ fn check_rules(rules: &[Rule], os_type: &str) -> bool {
 fn get_system_tags() -> Vec<&'static str> {
     match env::consts::OS {
         "windows" => vec!["-windows"],
-        "linux"   => vec!["-linux"],
-        "macos"   => vec!["-macos", "-osx"],
-        _         => vec![],
+        "linux" => vec!["-linux"],
+        "macos" => vec!["-macos", "-osx"],
+        _ => vec![],
     }
 }
 fn match_native_system(path: &str) -> bool {
@@ -461,7 +477,11 @@ fn extract_arch_info(path: &str) -> (Option<String>, bool) {
         })
         .unwrap_or(("", false));
     (
-        if has_arch { Some(arch_part.to_lowercase()) } else { None },
+        if has_arch {
+            Some(arch_part.to_lowercase())
+        } else {
+            None
+        },
         !has_arch,
     )
 }
@@ -476,16 +496,17 @@ fn should_download_native(path: &str) -> bool {
     }
     let current_arch = env::consts::ARCH;
     let (arch_opt, is_implicit) = extract_arch_info(path);
-    is_win64_case || match (arch_opt.as_deref(), is_implicit) {
-        (_, true) => current_arch == "x86_64",
-        (Some(arch), false) => match current_arch {
-            "x86_64"  => arch == "x86_64",
-            "x86"     => arch == "x86",
-            "aarch64" => arch == "arm64" || arch == "aarch_64",
-            _         => false,
-        },
-        _ => false,
-    }
+    is_win64_case
+        || match (arch_opt.as_deref(), is_implicit) {
+            (_, true) => current_arch == "x86_64",
+            (Some(arch), false) => match current_arch {
+                "x86_64" => arch == "x86_64",
+                "x86" => arch == "x86",
+                "aarch64" => arch == "arm64" || arch == "aarch_64",
+                _ => false,
+            },
+            _ => false,
+        }
 }
 async fn fetch_version_url(version: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
     let client = shared_client().await;
@@ -495,15 +516,22 @@ async fn fetch_version_url(version: &str) -> Result<String, Box<dyn Error + Send
             return Ok(format!("{}/mc/game/version_manifest.json", MIRROR_URL));
         }
     };
-    let manifest = response.json::<VersionManifest>().await
+    let manifest = response
+        .json::<VersionManifest>()
+        .await
         .map_err(|_| "Failed to parse version manifest")?;
-    manifest.versions
+    manifest
+        .versions
         .iter()
         .find(|v| v.id == version)
         .map(|e| e.url.clone())
-        .or_else(|| manifest.versions.iter()
-            .find(|v| v.id.replace(".", "") == version.replace(".", ""))
-            .map(|e| e.url.clone()))
+        .or_else(|| {
+            manifest
+                .versions
+                .iter()
+                .find(|v| v.id.replace(".", "") == version.replace(".", ""))
+                .map(|e| e.url.clone())
+        })
         .map(Ok)
         .unwrap_or_else(|| Ok(format!("{}/version/{}/json", MIRROR_URL, version)))
 }

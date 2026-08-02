@@ -1,10 +1,10 @@
+use anyhow::{anyhow, Context, Result};
+use regex::Regex;
+use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
-use reqwest::blocking::Client;
-use anyhow::{Context, Result, anyhow};
-use regex::Regex;
 
 const OPTIFINE_API_URL: &str = "https://optifine.net/api/versions";
 
@@ -29,7 +29,10 @@ pub fn install_optifine_alone(
     opt_wrapper_path: &str,
     mc_version: &str,
 ) -> Result<()> {
-    println!("正在安装 OptiFine {}，Minecraft 版本: {}", optifine_version, mc_version);
+    println!(
+        "正在安装 OptiFine {}，Minecraft 版本: {}",
+        optifine_version, mc_version
+    );
     println!("Wrapper 路径: {}", opt_wrapper_path);
     let client = Client::builder()
         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36")
@@ -40,10 +43,14 @@ pub fn install_optifine_alone(
         })
         .build()
         .context("构造 reqwest 客户端失败")?;
-    println!("请求 OptiFine adloadx 页面: https://optifine.net/adloadx?f={}", optifine_version);
+    println!(
+        "请求 OptiFine adloadx 页面: https://optifine.net/adloadx?f={}",
+        optifine_version
+    );
     // 获取下载页面
     let adload_url = format!("https://optifine.net/adloadx?f={}", optifine_version);
-    let response = client.get(&adload_url)
+    let response = client
+        .get(&adload_url)
         .send()
         .context("请求 OptiFine adloadx 页面失败")?;
 
@@ -57,21 +64,26 @@ pub fn install_optifine_alone(
         link = link.replace("&amp;", "&");
         format!("https://optifine.net/{}", link)
     } else {
-        return Err(anyhow!("未在 HTML 中找到下载链接 (Download)\n完整 HTML:\n{}", html));
+        return Err(anyhow!(
+            "未在 HTML 中找到下载链接 (Download)\n完整 HTML:\n{}",
+            html
+        ));
     };
     // 下载OptiFine安装器到临时位置
     let jar_filename = optifine_version;
     let temp_dir = std::env::temp_dir();
     let target_path = temp_dir.join(jar_filename);
-    println!("开始下载 OptiFine 安装器: {} -> {}", download_url, target_path.display());
+    println!(
+        "开始下载 OptiFine 安装器: {} -> {}",
+        download_url,
+        target_path.display()
+    );
 
     // 使用多线程下载OptiFine安装器
     download_file_with_progress(&download_url, &target_path, 16)?;
     println!("OptiFine 安装器下载完成，正在启动安装器...");
     // 构造 classpath: 使用系统特定的分隔符连接多个路径
-    let format_path = |p: &PathBuf| -> String {
-        p.to_string_lossy().replace("\\", "/")
-    };
+    let format_path = |p: &PathBuf| -> String { p.to_string_lossy().replace("\\", "/") };
 
     let sep = if cfg!(windows) { ";" } else { ":" };
     let target_str = format_path(&target_path);
@@ -128,16 +140,19 @@ pub fn install_optifine_alone(
 
     // 检查退出状态
     if !output.status.success() {
-        return Err(anyhow!("OptiFine 安装器执行失败,退出码: {:?}\n标准错误: {}", 
+        return Err(anyhow!(
+            "OptiFine 安装器执行失败,退出码: {:?}\n标准错误: {}",
             output.status.code(), 
-            String::from_utf8_lossy(&output.stderr)));
+            String::from_utf8_lossy(&output.stderr)
+        ));
     }
 
     // 检查输出中是否包含成功安装的信息
     let stdout = String::from_utf8_lossy(&output.stdout);
-    if stdout.contains("OptiFine installed successfully") || 
-       stdout.contains("安装成功") ||
-       stdout.contains("Installation completed") {
+    if stdout.contains("OptiFine installed successfully")
+        || stdout.contains("安装成功")
+        || stdout.contains("Installation completed")
+    {
         println!("OptiFine 安装成功");
     } else {
         // 即使没有明确的成功消息，如果退出码为0，也认为安装成功

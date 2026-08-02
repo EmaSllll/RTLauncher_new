@@ -67,19 +67,19 @@ fn extract_arch_info(path: &str) -> (Option<String>, bool) {
         } else {
             None
         },
-        !has_arch
+        !has_arch,
     )
 }
 #[tauri::command]
 pub async fn extract_library_paths(
     minecraft_path: String,
-    version: String
+    version: String,
 ) -> Result<Vec<String>, String> {
     extract_library_paths_inner(&minecraft_path, &version).map_err(|e| e.to_string())
 }
 fn extract_library_paths_inner(
     minecraft_path: &str,
-    version: &str
+    version: &str,
 ) -> Result<Vec<String>, Box<dyn Error>> {
     let json_path = Path::new(minecraft_path)
         .join("versions")
@@ -104,19 +104,19 @@ fn extract_library_paths_inner(
                 let (arch_opt, is_implicit) = extract_arch_info(path);
                 let should_keep = match (arch_opt.as_deref(), is_implicit) {
                     (_, true) if current_arch == "x86_64" => true,
-                    (Some(arch), false) => {
-                        match current_arch {
-                            "x86_64" => arch == "x86_64",
-                            "x86" => arch == "x86",
-                            "aarch64" => arch == "arm64" || arch == "aarch_64",
-                            _ => false
-                        }
-                    }
-                    _ => false
+                    (Some(arch), false) => match current_arch {
+                        "x86_64" => arch == "x86_64",
+                        "x86" => arch == "x86",
+                        "aarch64" => arch == "arm64" || arch == "aarch_64",
+                        _ => false,
+                    },
+                    _ => false,
                 };
                 if should_keep {
                     let full_path = base_path.join(path).to_string_lossy().into_owned();
-                    println!("[Native][{}][Arch: {}] {}", system_name, 
+                    println!(
+                        "[Native][{}][Arch: {}] {}",
+                        system_name,
                         arch_opt.unwrap_or_else(|| "x86_64".into()), 
                         full_path
                     );
@@ -132,24 +132,27 @@ fn extract_library_paths_inner(
                     let is_win64_case = is_windows && path.contains("natives-windows-64");
                     if match_system(path) || is_win64_case {
                         let (arch_opt, is_implicit) = extract_arch_info(path);
-                        let should_keep = 
-                            is_win64_case || 
-                            match (arch_opt.as_deref(), is_implicit) {
+                        let should_keep = is_win64_case
+                            || match (arch_opt.as_deref(), is_implicit) {
                                 (_, true) if current_arch == "x86_64" => true,
-                                (Some(arch), false) => {
-                                    match current_arch {
-                                        "x86_64" => arch == "x86_64",
-                                        "x86" => arch == "x86",
-                                        "aarch64" => arch == "arm64" || arch == "aarch_64",
-                                        _ => false
-                                    }
-                                }
-                                _ => false
+                                (Some(arch), false) => match current_arch {
+                                    "x86_64" => arch == "x86_64",
+                                    "x86" => arch == "x86",
+                                    "aarch64" => arch == "arm64" || arch == "aarch_64",
+                                    _ => false,
+                                },
+                                _ => false,
                             };
                         if should_keep {
                             let full_path = base_path.join(path).to_string_lossy().into_owned();
-                            println!("[Native][{}][Arch: {}] {}", system_name,
-                                if is_win64_case {  "x86_64".to_string() } else { arch_opt.unwrap_or_else(|| "x86_64".to_string())},
+                            println!(
+                                "[Native][{}][Arch: {}] {}",
+                                system_name,
+                                if is_win64_case {
+                                    "x86_64".to_string()
+                                } else {
+                                    arch_opt.unwrap_or_else(|| "x86_64".to_string())
+                                },
                                 full_path
                             );
                             process_jar_file(&full_path, &target_dir)?;
@@ -167,32 +170,49 @@ fn process_jar_file(jar_path: &str, target_dir: &Path) -> Result<(), Box<dyn Err
         return Err(format!("JAR 文件不存在: {}\n请重新下载该版本", jar_path).into());
     }
     let file = File::open(jar_path).map_err(|e| {
-        format!("无法打开 JAR 文件: {}\n错误: {}\n请重新下载该版本", jar_path, e)
+        format!(
+            "无法打开 JAR 文件: {}\n错误: {}\n请重新下载该版本",
+            jar_path, e
+        )
     })?;
     let mut zip = ZipArchive::new(file).map_err(|e| {
-        format!("损坏的 JAR 文件: {}\n错误: {}\n请重新下载该版本", jar_path, e)
+        format!(
+            "损坏的 JAR 文件: {}\n错误: {}\n请重新下载该版本",
+            jar_path, e
+        )
     })?;
     let target_ext = match std::env::consts::OS {
         "windows" => "dll",
         "macos" => "dylib",
         "linux" => "so",
-        _ => return Ok(())
+        _ => return Ok(()),
     };
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i).map_err(|e| {
-            format!("损坏的 ZIP 条目: {}\n错误: {}\n请重新下载该版本", jar_path, e)
+            format!(
+                "损坏的 ZIP 条目: {}\n错误: {}\n请重新下载该版本",
+                jar_path, e
+            )
         })?;
         let entry_path = PathBuf::from(entry.name());
-        if entry_path.extension() == Some(OsStr::new(target_ext)) ||
-           entry_path.file_name() == Some(OsStr::new("Tracy_LICENSE")) 
+        if entry_path.extension() == Some(OsStr::new(target_ext))
+            || entry_path.file_name() == Some(OsStr::new("Tracy_LICENSE"))
         {
             let dest_path = target_dir.join(entry_path.file_name().unwrap());
             let mut buffer = Vec::with_capacity(entry.size() as usize);
             entry.read_to_end(&mut buffer).map_err(|e| {
-                format!("读取文件失败: {}\n错误: {}\n请重新下载该版本", entry.name(), e)
+                format!(
+                    "读取文件失败: {}\n错误: {}\n请重新下载该版本",
+                    entry.name(),
+                    e
+                )
             })?;
             fs::write(&dest_path, &buffer).map_err(|e| {
-                format!("写入文件失败: {}\n错误: {}\n请检查文件权限", dest_path.display(), e)
+                format!(
+                    "写入文件失败: {}\n错误: {}\n请检查文件权限",
+                    dest_path.display(),
+                    e
+                )
             })?;
         }
     }

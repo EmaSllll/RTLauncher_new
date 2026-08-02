@@ -1,7 +1,6 @@
-
-use crate::downloader::fabric_installer;
 use crate::downloader::dwPatch::get_minecraft_dir;
-use crate::downloader::shared_utils::{sanitize_instance_name, merge_version_jsons_to_instance};
+use crate::downloader::fabric_installer;
+use crate::downloader::shared_utils::{merge_version_jsons_to_instance, sanitize_instance_name};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -50,25 +49,31 @@ pub async fn get_fabric_loader_versions(
     mc_version: String,
     use_mirror: bool,
 ) -> Result<Vec<FabricVersion>, String> {
-    let version_names = fabric_installer::get_fabric_loader_versions(&mc_version, use_mirror).await
+    let version_names = fabric_installer::get_fabric_loader_versions(&mc_version, use_mirror)
+        .await
         .map_err(|e| format!("获取 Fabric Loader 版本失败: {}", e))?;
-    Ok(version_names.into_iter().map(|v| FabricVersion {
-        id: v.clone(),
-        version: v,
-    }).collect())
+    Ok(version_names
+        .into_iter()
+        .map(|v| FabricVersion {
+            id: v.clone(),
+            version: v,
+        })
+        .collect())
 }
 
 /// 获取指定Minecraft版本的Fabric API版本列表
 #[tauri::command]
-pub async fn get_fabric_api_versions(
-    mc_version: String,
-) -> Result<Vec<FabricVersion>, String> {
-    let version_names = fabric_installer::get_fabric_api_versions(&mc_version).await
+pub async fn get_fabric_api_versions(mc_version: String) -> Result<Vec<FabricVersion>, String> {
+    let version_names = fabric_installer::get_fabric_api_versions(&mc_version)
+        .await
         .map_err(|e| format!("获取 Fabric API 版本失败: {}", e))?;
-    Ok(version_names.into_iter().map(|v| FabricVersion {
-        id: v.clone(),
-        version: v,
-    }).collect())
+    Ok(version_names
+        .into_iter()
+        .map(|v| FabricVersion {
+            id: v.clone(),
+            version: v,
+        })
+        .collect())
 }
 
 /// 安装Fabric Loader
@@ -91,7 +96,10 @@ pub async fn install_fabric_loader(
     .map_err(|e| format!("安装 Fabric Loader 失败: {}", e))?;
 
     Ok(FabricInstallResult {
-        message: format!("Fabric Loader {} 已成功安装到 Minecraft {}", loader_version, mc_version)
+        message: format!(
+            "Fabric Loader {} 已成功安装到 Minecraft {}",
+            loader_version, mc_version
+        ),
     })
 }
 
@@ -113,7 +121,10 @@ pub async fn install_fabric_api(
     .map_err(|e| format!("安装 Fabric API 失败: {}", e))?;
 
     Ok(FabricInstallResult {
-        message: format!("Fabric API {} 已成功安装到 Minecraft {}", api_version, mc_version)
+        message: format!(
+            "Fabric API {} 已成功安装到 Minecraft {}",
+            api_version, mc_version
+        ),
     })
 }
 
@@ -146,18 +157,24 @@ pub async fn download_and_install_fabric(
     let task_id_clone = task_id;
     tokio::spawn(async move {
         while let Some(percent) = rx.recv().await {
-            let _ = app_clone.emit("fabric-download-progress", FabricDownloadProgressPayload {
-                task_id: task_id_clone,
-                percent,
-            });
+            let _ = app_clone.emit(
+                "fabric-download-progress",
+                FabricDownloadProgressPayload {
+                    task_id: task_id_clone,
+                    percent,
+                },
+            );
         }
     });
 
     // 立即发送初始进度事件
-    let _ = app.emit("fabric-download-progress", FabricDownloadProgressPayload {
-        task_id,
-        percent: 0.0,
-    });
+    let _ = app.emit(
+        "fabric-download-progress",
+        FabricDownloadProgressPayload {
+            task_id,
+            percent: 0.0,
+        },
+    );
 
     let app_finish = app.clone();
     let version = mc_version.clone();
@@ -182,10 +199,15 @@ pub async fn download_and_install_fabric(
                     let _ = tx_for_original.send(percent * 0.6).await;
                 }
             });
-            crate::downloader::original_dwl::process_version(&version_a, &mc_path_a, tx1, cancel_clone_a.clone())
-                .await
-                .map(|_| ())
-                .map_err(|e| e.to_string())
+            crate::downloader::original_dwl::process_version(
+                &version_a,
+                &mc_path_a,
+                tx1,
+                cancel_clone_a.clone(),
+            )
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string())
         });
 
         // --- Task B: Fabric 安装 (60-100%) ---
@@ -213,13 +235,9 @@ pub async fn download_and_install_fabric(
 
             // 安装 Fabric API (80-100%)
             if let Some(api_ver) = api_ver_b {
-                fabric_installer::install_fabric_api(
-                    &version_b,
-                    &api_ver,
-                    &minecraft_path_str,
-                )
-                .await
-                .map_err(|e| format!("Fabric API 安装失败: {}", e))?;
+                fabric_installer::install_fabric_api(&version_b, &api_ver, &minecraft_path_str)
+                    .await
+                    .map_err(|e| format!("Fabric API 安装失败: {}", e))?;
             }
 
             let _ = tx_for_fabric.send(100.0).await;
@@ -240,21 +258,27 @@ pub async fn download_and_install_fabric(
         let was_cancelled = cancel_clone.load(Ordering::SeqCst);
 
         if was_cancelled {
-            let _ = app_finish.emit("fabric-download-finished", FabricDownloadFinishedPayload {
-                task_id,
-                success: false,
-                error: Some("已取消".to_string()),
-            });
+            let _ = app_finish.emit(
+                "fabric-download-finished",
+                FabricDownloadFinishedPayload {
+                    task_id,
+                    success: false,
+                    error: Some("已取消".to_string()),
+                },
+            );
             return;
         }
 
         // 优先报告原版下载错误
         if let Err(e) = original_result {
-            let _ = app_finish.emit("fabric-download-finished", FabricDownloadFinishedPayload {
-                task_id,
-                success: false,
-                error: Some(format!("原版下载失败: {}", e)),
-            });
+            let _ = app_finish.emit(
+                "fabric-download-finished",
+                FabricDownloadFinishedPayload {
+                    task_id,
+                    success: false,
+                    error: Some(format!("原版下载失败: {}", e)),
+                },
+            );
             return;
         }
 
@@ -283,19 +307,25 @@ pub async fn download_and_install_fabric(
                     }
                 }
 
-                let _ = app_finish.emit("fabric-download-finished", FabricDownloadFinishedPayload {
-                    task_id,
-                    success: true,
-                    error: None,
-                });
+                let _ = app_finish.emit(
+                    "fabric-download-finished",
+                    FabricDownloadFinishedPayload {
+                        task_id,
+                        success: true,
+                        error: None,
+                    },
+                );
             }
             Err(e) => {
                 println!("Fabric 安装失败: {}", e);
-                let _ = app_finish.emit("fabric-download-finished", FabricDownloadFinishedPayload {
-                    task_id,
-                    success: false,
-                    error: Some(e),
-                });
+                let _ = app_finish.emit(
+                    "fabric-download-finished",
+                    FabricDownloadFinishedPayload {
+                        task_id,
+                        success: false,
+                        error: Some(e),
+                    },
+                );
             }
         }
     });

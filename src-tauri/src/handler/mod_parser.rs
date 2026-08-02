@@ -100,7 +100,10 @@ fn simplify_version_range(ver: &str) -> String {
     }
     trimmed.to_string()
 }
-fn read_jar_entry(archive: &mut ZipArchive<&mut BufReader<fs::File>>, name: &str) -> Option<String> {
+fn read_jar_entry(
+    archive: &mut ZipArchive<&mut BufReader<fs::File>>,
+    name: &str,
+) -> Option<String> {
     let mut entry = archive.by_name(name).ok()?;
     let mut content = String::new();
     entry.read_to_string(&mut content).ok()?;
@@ -157,7 +160,9 @@ pub fn parse_mod_file(path: &Path) -> Result<ModInfo, String> {
         let display_name = file_name.trim_end_matches(".jar").to_string();
         Ok(ModInfo {
             file_name: file_name.clone(),
-            mod_id: display_name.to_lowercase().replace(|c: char| !c.is_alphanumeric(), "_"),
+            mod_id: display_name
+                .to_lowercase()
+                .replace(|c: char| !c.is_alphanumeric(), "_"),
             name: display_name,
             version: "unknown".to_string(),
             description: None,
@@ -254,16 +259,13 @@ fn parse_mods_toml(content: &str, file_name: &str) -> Result<ModInfo, String> {
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
         .filter(|s| !s.is_empty());
-    let mod_loader = parsed
-        .get("modLoader")
-        .and_then(|v| v.as_str())
-        .map(|s| {
-            let loader_name = if s == "javafml" { "Forge/NeoForge" } else { s };
-            match parsed.get("loaderVersion").and_then(|v| v.as_str()) {
-                Some(lv) => format!("{} ({})", loader_name, simplify_version_range(lv)),
-                None => loader_name.to_string(),
-            }
-        });
+    let mod_loader = parsed.get("modLoader").and_then(|v| v.as_str()).map(|s| {
+        let loader_name = if s == "javafml" { "Forge/NeoForge" } else { s };
+        match parsed.get("loaderVersion").and_then(|v| v.as_str()) {
+            Some(lv) => format!("{} ({})", loader_name, simplify_version_range(lv)),
+            None => loader_name.to_string(),
+        }
+    });
     let dep_key = format!("dependencies.{}", mod_id);
     let mut dependencies: Vec<ModDependency> = Vec::new();
     let mut optional_dependencies: Vec<ModDependency> = Vec::new();
@@ -342,7 +344,11 @@ fn parse_toml_dep(obj: &serde_json::Map<String, JsonValue>) -> Option<(String, M
             .get("mandatory")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        let k = if m { "required".to_string() } else { "optional".to_string() };
+        let k = if m {
+            "required".to_string()
+        } else {
+            "optional".to_string()
+        };
         (k, m)
     };
     let version_range = obj
@@ -359,17 +365,20 @@ fn parse_toml_dep(obj: &serde_json::Map<String, JsonValue>) -> Option<(String, M
         .get("side")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
-    Some((kind, ModDependency {
-        mod_id: dep_mod_id,
-        version_range,
-        mandatory,
-        ordering,
-        side,
-    }))
+    Some((
+        kind,
+        ModDependency {
+            mod_id: dep_mod_id,
+            version_range,
+            mandatory,
+            ordering,
+            side,
+        },
+    ))
 }
 fn parse_fabric_mod_json(content: &str, file_name: &str) -> Result<ModInfo, String> {
-    let json: JsonValue = serde_json::from_str(content)
-        .map_err(|e| format!("解析 JSON 失败: {}", e))?;
+    let json: JsonValue =
+        serde_json::from_str(content).map_err(|e| format!("解析 JSON 失败: {}", e))?;
     let mod_id = json
         .get("id")
         .and_then(|v| v.as_str())
@@ -535,8 +544,8 @@ fn parse_fabric_mod_json(content: &str, file_name: &str) -> Result<ModInfo, Stri
     })
 }
 fn parse_mcmod_info(content: &str, file_name: &str) -> Result<ModInfo, String> {
-    let json: JsonValue = serde_json::from_str(content)
-        .map_err(|e| format!("解析 JSON 失败: {}", e))?;
+    let json: JsonValue =
+        serde_json::from_str(content).map_err(|e| format!("解析 JSON 失败: {}", e))?;
     let mods = json
         .as_array()
         .or_else(|| json.get("modList").and_then(|v| v.as_array()))
@@ -702,7 +711,14 @@ fn parse_toml(content: &str) -> HashMap<String, JsonValue> {
                 if rest.ends_with("\"\"\"") && rest.len() >= 3 {
                     let inner = &rest[..rest.len() - 3];
                     let value = JsonValue::String(inner.trim().to_string());
-                    insert_toml_value(&mut result, &mut current_table, &mut current_array, &mut current_obj, key, value);
+                    insert_toml_value(
+                        &mut result,
+                        &mut current_table,
+                        &mut current_array,
+                        &mut current_obj,
+                        key,
+                        value,
+                    );
                 } else {
                     multiline_buffer = Some((key, rest.to_string()));
                     multiline_end_marker = Some("\"\"\"".to_string());
@@ -714,7 +730,14 @@ fn parse_toml(content: &str) -> HashMap<String, JsonValue> {
                 if rest.ends_with("'''") && rest.len() >= 3 {
                     let inner = &rest[..rest.len() - 3];
                     let value = JsonValue::String(inner.trim().to_string());
-                    insert_toml_value(&mut result, &mut current_table, &mut current_array, &mut current_obj, key, value);
+                    insert_toml_value(
+                        &mut result,
+                        &mut current_table,
+                        &mut current_array,
+                        &mut current_obj,
+                        key,
+                        value,
+                    );
                 } else {
                     multiline_buffer = Some((key, rest.to_string()));
                     multiline_end_marker = Some("'''".to_string());
@@ -722,7 +745,14 @@ fn parse_toml(content: &str) -> HashMap<String, JsonValue> {
                 continue;
             }
             let value = parse_toml_value(raw_value);
-            insert_toml_value(&mut result, &mut current_table, &mut current_array, &mut current_obj, key, value);
+            insert_toml_value(
+                &mut result,
+                &mut current_table,
+                &mut current_array,
+                &mut current_obj,
+                key,
+                value,
+            );
         }
     }
     if let Some((key, buf)) = multiline_buffer.take() {
@@ -871,8 +901,8 @@ pub fn save_incompatible_mods(game_folder: String, infos: Vec<ModInfo>) -> Resul
             }
         }
     }
-    let json_str = serde_json::to_string_pretty(&entries)
-        .map_err(|e| format!("序列化失败: {}", e))?;
+    let json_str =
+        serde_json::to_string_pretty(&entries).map_err(|e| format!("序列化失败: {}", e))?;
     let file_path = PathBuf::from(format!(
         "versions{}{}{}incompatible_mods.json",
         std::path::MAIN_SEPARATOR,
@@ -887,5 +917,9 @@ pub fn save_incompatible_mods(game_folder: String, infos: Vec<ModInfo>) -> Resul
         }
     }
     fs::write(&file_path, json_str).map_err(|e| format!("写入文件失败: {}", e))?;
-    Ok(format!("已保存 {} 个不兼容模组到 {}", entries.len(), file_path.display()))
+    Ok(format!(
+        "已保存 {} 个不兼容模组到 {}",
+        entries.len(),
+        file_path.display()
+    ))
 }

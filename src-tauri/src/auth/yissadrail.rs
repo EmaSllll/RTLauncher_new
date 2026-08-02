@@ -17,12 +17,12 @@ You should have received a copy of the GNU General Public License
 along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-use log::{info, error};
-use sha2::{Sha256, Digest};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use log::{error, info};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::fs::File;
 use std::io::Write;
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 const FOLDER_PATH: &str = "./.minecraft/versions";
 
@@ -56,7 +56,10 @@ pub fn get_or_download_authlib_injector() -> String {
     
     // 尝试yushi源
     if jsonResponse.is_err() {
-        eprintln!("[AuthlibInjector] BMCL源失败，尝试Yushi源: {}", jsonResponse.err().unwrap());
+        eprintln!(
+            "[AuthlibInjector] BMCL源失败，尝试Yushi源: {}",
+            jsonResponse.err().unwrap()
+        );
         jsonResponse = httpClient.get(URL_YUSHI).send();
         if jsonResponse.is_err() {
             error!("两个 authlib-injector 下载源都连接失败了");
@@ -81,8 +84,7 @@ pub fn get_or_download_authlib_injector() -> String {
     }
     
     // 获取下载地址
-    let downloadUrl = jsonData.get("download_url")
-        .and_then(|u| u.as_str());
+    let downloadUrl = jsonData.get("download_url").and_then(|u| u.as_str());
     if downloadUrl.is_none() {
         error!("JSON中没有下载地址");
         return String::new();
@@ -99,18 +101,19 @@ pub fn get_or_download_authlib_injector() -> String {
     // 检查文件是否已存在
     if fs::metadata(&filePath).is_ok() {
         if let Ok(fileContent) = fs::read(&filePath) {
-        let fileSha256 = hex::encode(Sha256::digest(&fileContent));
+            let fileSha256 = hex::encode(Sha256::digest(&fileContent));
         
-        // 获取校验和
-            if let Some(checksumValue) = jsonData.get("checksums")
-            .and_then(|c| c.get("sha256"))
+            // 获取校验和
+            if let Some(checksumValue) = jsonData
+                .get("checksums")
+                .and_then(|c| c.get("sha256"))
                 .and_then(|s| s.as_str()) 
             {
-        if fileSha256 == checksumValue {
+                if fileSha256 == checksumValue {
                     info!("[AuthlibInjector] 文件已存在且校验成功: {}", filePath);
                     return filePath;
                 }
-        }
+            }
         }
     }
     
@@ -118,7 +121,10 @@ pub fn get_or_download_authlib_injector() -> String {
     eprintln!("[AuthlibInjector] 开始下载: {}", downloadUrl);
     let downloadResponse = httpClient.get(downloadUrl).send();
     if downloadResponse.is_err() {
-        error!("[AuthlibInjector] 下载文件失败: {}", downloadResponse.err().unwrap());
+        error!(
+            "[AuthlibInjector] 下载文件失败: {}",
+            downloadResponse.err().unwrap()
+        );
         return String::new();
     }
     
@@ -143,14 +149,15 @@ pub fn get_or_download_authlib_injector() -> String {
     }
     
     // 验证文件
-    if let Some(checksumValue) = jsonData.get("checksums")
+    if let Some(checksumValue) = jsonData
+        .get("checksums")
         .and_then(|c| c.get("sha256"))
         .and_then(|s| s.as_str())
     {
         let fileSha256 = hex::encode(Sha256::digest(&bytes));
-    if fileSha256 == checksumValue {
+        if fileSha256 == checksumValue {
             info!("[AuthlibInjector] 文件下载成功，校验成功: {}", filePath);
-    } else {
+        } else {
             error!("[AuthlibInjector] 校验失败，但仍返回路径供尝试使用");
         }
     }
@@ -182,7 +189,11 @@ pub fn thirdPartyLogin(url: String) -> String {
     // 查找返回的json中是否有signaturePublickey
     let jsonResult = serde_json::from_str::<serde_json::Value>(&bodyText);
     if jsonResult.is_err() {
-        error!("JSON解析失败: {}，收到的内容: {}", jsonResult.err().unwrap(), bodyText);
+        error!(
+            "JSON解析失败: {}，收到的内容: {}",
+            jsonResult.err().unwrap(),
+            bodyText
+        );
         return String::new();
     }
     
@@ -201,7 +212,11 @@ pub fn thirdPartyLogin(url: String) -> String {
 
 // 返回一个字符串和两个字符串数组
 #[tauri::command]
-pub fn getAccountList(url: String, user: String, pwd: String) -> Result<super::ThirdPartyAccountList, String> {
+pub fn getAccountList(
+    url: String,
+    user: String,
+    pwd: String,
+) -> Result<super::ThirdPartyAccountList, String> {
     // 初始化
     let fullUrl = format!("{}/{}", url, "authserver/authenticate");
     let client = reqwest::blocking::Client::new();
@@ -212,23 +227,28 @@ pub fn getAccountList(url: String, user: String, pwd: String) -> Result<super::T
         user, pwd
     );
     
-    let response = client.post(fullUrl)
+    let response = client
+        .post(fullUrl)
         .header("Content-Type", "application/json")
         .body(requestBody)
         .send()
         .map_err(|e| format!("发送POST请求失败: {}", e))?;
 
-    let bodyText = response.text().map_err(|e| format!("获取响应体失败: {}", e))?;
+    let bodyText = response
+        .text()
+        .map_err(|e| format!("获取响应体失败: {}", e))?;
 
-    let json: serde_json::Value = serde_json::from_str(&bodyText)
-        .map_err(|e| format!("JSON解析失败: {}", e))?;
+    let json: serde_json::Value =
+        serde_json::from_str(&bodyText).map_err(|e| format!("JSON解析失败: {}", e))?;
 
-    let accessToken = json.get("accessToken")
+    let accessToken = json
+        .get("accessToken")
         .and_then(|v| v.as_str())
         .ok_or("JSON中没有accessToken".to_string())?
         .to_string();
 
-    let availableProfiles = json.get("availableProfiles")
+    let availableProfiles = json
+        .get("availableProfiles")
         .and_then(|v| v.as_array())
         .ok_or("JSON中没有availableProfiles".to_string())?;
 
@@ -296,7 +316,13 @@ pub fn getPlayerSkin(url: String, uuid: String) -> String {
         return String::new();
     }
     let properties = properties.unwrap().as_array().unwrap();
-    let value = properties.get(0).unwrap().get("value").unwrap().as_str().unwrap();
+    let value = properties
+        .get(0)
+        .unwrap()
+        .get("value")
+        .unwrap()
+        .as_str()
+        .unwrap();
     info!("获取到的base64编码值: {}", value);
 
     // base64解码
@@ -321,9 +347,13 @@ pub fn getPlayerSkin(url: String, uuid: String) -> String {
         return String::new();
     }
     let textures = textures.unwrap().as_object().unwrap();
-    let skin = textures.get("SKIN").unwrap()
-        .get("url").unwrap()
-        .as_str().unwrap();
+    let skin = textures
+        .get("SKIN")
+        .unwrap()
+        .get("url")
+        .unwrap()
+        .as_str()
+        .unwrap();
     
     info!("获取到的皮肤URL: {}", skin);
     

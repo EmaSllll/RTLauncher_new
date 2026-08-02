@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CacheResourceKind {
     Mod,
@@ -87,7 +87,10 @@ pub fn get_cache_dir_for_kind(kind: CacheResourceKind) -> Result<PathBuf, String
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
 }
-pub fn get_cache_dir_for_version(kind: CacheResourceKind, mc_version: &str) -> Result<PathBuf, String> {
+pub fn get_cache_dir_for_version(
+    kind: CacheResourceKind,
+    mc_version: &str,
+) -> Result<PathBuf, String> {
     let version_dir = cache_dir_path_for_version(kind, mc_version)?;
     std::fs::create_dir_all(&version_dir).map_err(|e| e.to_string())?;
     Ok(version_dir)
@@ -308,9 +311,7 @@ pub fn cache_to_instance(
 ) -> Result<(), String> {
     let resource_kind = parse_resource_kind(&kind)?;
     let src_dir = if resource_kind == CacheResourceKind::Mod {
-        let loader_str = mod_loader.as_ref()
-            .map(|s| s.as_str())
-            .unwrap_or("forge");
+        let loader_str = mod_loader.as_ref().map(|s| s.as_str()).unwrap_or("forge");
         let loader = parse_mod_loader(loader_str)?;
         get_mod_cache_dir(&mc_version, loader)?
     } else {
@@ -332,8 +333,14 @@ pub fn cache_to_instance(
         match std::fs::rename(&src_path, &dest_path) {
             Ok(_) => Ok(()),
             Err(_) => {
-                copy_dir_recursive(&src_path, &dest_path)
-                    .map_err(|e| format!("从 {} 复制目录到 {} 失败: {}", src_path.display(), dest_path.display(), e))?;
+                copy_dir_recursive(&src_path, &dest_path).map_err(|e| {
+                    format!(
+                        "从 {} 复制目录到 {} 失败: {}",
+                        src_path.display(),
+                        dest_path.display(),
+                        e
+                    )
+                })?;
                 std::fs::remove_dir_all(&src_path)
                     .map_err(|e| format!("删除源目录 {} 失败: {}", src_path.display(), e))?;
                 Ok(())
@@ -344,11 +351,15 @@ pub fn cache_to_instance(
             Ok(_) => Ok(()),
             Err(_) => {
                 std::fs::copy(&src_path, &dest_path).map_err(|e2| {
-                    format!("从 {} 复制到 {} 失败: {}", src_path.display(), dest_path.display(), e2)
+                    format!(
+                        "从 {} 复制到 {} 失败: {}",
+                        src_path.display(),
+                        dest_path.display(),
+                        e2
+                    )
                 })?;
-                std::fs::remove_file(&src_path).map_err(|e2| {
-                    format!("删除源文件 {} 失败: {}", src_path.display(), e2)
-                })?;
+                std::fs::remove_file(&src_path)
+                    .map_err(|e2| format!("删除源文件 {} 失败: {}", src_path.display(), e2))?;
                 Ok(())
             }
         }
@@ -384,9 +395,7 @@ pub fn instance_to_cache(
         return Err(format!("源文件不存在: {}", src_path.display()));
     }
     let dest_dir = if resource_kind == CacheResourceKind::Mod {
-        let loader_str = mod_loader.as_ref()
-            .map(|s| s.as_str())
-            .unwrap_or("forge");
+        let loader_str = mod_loader.as_ref().map(|s| s.as_str()).unwrap_or("forge");
         let loader = parse_mod_loader(loader_str)?;
         let dir = get_mod_cache_dir(&mc_version, loader)?;
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -405,8 +414,14 @@ pub fn instance_to_cache(
         match std::fs::rename(&src_path, &dest_path) {
             Ok(_) => Ok(()),
             Err(_) => {
-                copy_dir_recursive(&src_path, &dest_path)
-                    .map_err(|e| format!("从 {} 复制目录到 {} 失败: {}", src_path.display(), dest_path.display(), e))?;
+                copy_dir_recursive(&src_path, &dest_path).map_err(|e| {
+                    format!(
+                        "从 {} 复制目录到 {} 失败: {}",
+                        src_path.display(),
+                        dest_path.display(),
+                        e
+                    )
+                })?;
                 std::fs::remove_dir_all(&src_path)
                     .map_err(|e| format!("删除源目录 {} 失败: {}", src_path.display(), e))?;
                 Ok(())
@@ -417,11 +432,15 @@ pub fn instance_to_cache(
             Ok(_) => Ok(()),
             Err(_) => {
                 std::fs::copy(&src_path, &dest_path).map_err(|e2| {
-                    format!("从 {} 复制到 {} 失败: {}", src_path.display(), dest_path.display(), e2)
+                    format!(
+                        "从 {} 复制到 {} 失败: {}",
+                        src_path.display(),
+                        dest_path.display(),
+                        e2
+                    )
                 })?;
-                std::fs::remove_file(&src_path).map_err(|e2| {
-                    format!("删除源文件 {} 失败: {}", src_path.display(), e2)
-                })?;
+                std::fs::remove_file(&src_path)
+                    .map_err(|e2| format!("删除源文件 {} 失败: {}", src_path.display(), e2))?;
                 Ok(())
             }
         }
@@ -493,20 +512,50 @@ mod tests {
         assert_eq!(ModLoaderKind::LiteLoader.dir_name(), "liteloader");
         assert_eq!(ModLoaderKind::Ornithe.dir_name(), "ornithe");
         assert_eq!(ModLoaderKind::Vanilla.dir_name(), "vanilla");
-        assert_eq!(ModLoaderKind::Custom("my_loader".to_string()).dir_name(), "my_loader");
+        assert_eq!(
+            ModLoaderKind::Custom("my_loader".to_string()).dir_name(),
+            "my_loader"
+        );
     }
     #[test]
     fn test_parse_mod_loader_variants() {
-        assert!(matches!(parse_mod_loader("forge"), Ok(ModLoaderKind::Forge)));
-        assert!(matches!(parse_mod_loader("NEOFORGE"), Ok(ModLoaderKind::NeoForge)));
-        assert!(matches!(parse_mod_loader("Fabric"), Ok(ModLoaderKind::Fabric)));
-        assert!(matches!(parse_mod_loader("quilt"), Ok(ModLoaderKind::Quilt)));
-        assert!(matches!(parse_mod_loader("liteloader"), Ok(ModLoaderKind::LiteLoader)));
-        assert!(matches!(parse_mod_loader("ornithe"), Ok(ModLoaderKind::Ornithe)));
+        assert!(matches!(
+            parse_mod_loader("forge"),
+            Ok(ModLoaderKind::Forge)
+        ));
+        assert!(matches!(
+            parse_mod_loader("NEOFORGE"),
+            Ok(ModLoaderKind::NeoForge)
+        ));
+        assert!(matches!(
+            parse_mod_loader("Fabric"),
+            Ok(ModLoaderKind::Fabric)
+        ));
+        assert!(matches!(
+            parse_mod_loader("quilt"),
+            Ok(ModLoaderKind::Quilt)
+        ));
+        assert!(matches!(
+            parse_mod_loader("liteloader"),
+            Ok(ModLoaderKind::LiteLoader)
+        ));
+        assert!(matches!(
+            parse_mod_loader("ornithe"),
+            Ok(ModLoaderKind::Ornithe)
+        ));
         assert!(matches!(parse_mod_loader(""), Ok(ModLoaderKind::Vanilla)));
-        assert!(matches!(parse_mod_loader("通用"), Ok(ModLoaderKind::Vanilla)));
-        assert!(matches!(parse_mod_loader("my_custom_loader"), Ok(ModLoaderKind::Custom(_))));
-        assert!(matches!(parse_mod_loader("Rift"), Ok(ModLoaderKind::Custom(_))));
+        assert!(matches!(
+            parse_mod_loader("通用"),
+            Ok(ModLoaderKind::Vanilla)
+        ));
+        assert!(matches!(
+            parse_mod_loader("my_custom_loader"),
+            Ok(ModLoaderKind::Custom(_))
+        ));
+        assert!(matches!(
+            parse_mod_loader("Rift"),
+            Ok(ModLoaderKind::Custom(_))
+        ));
     }
     #[test]
     fn test_get_mod_cache_dir_creates_nested_structure() {

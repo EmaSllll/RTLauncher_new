@@ -37,7 +37,11 @@ pub fn default_minecraft_dir() -> PathBuf {
         return std::env::var_os("HOME")
             .map(PathBuf::from)
             .filter(|path| path.is_absolute())
-            .map(|home| home.join("Library").join("Application Support").join("minecraft"))
+            .map(|home| {
+                home.join("Library")
+                    .join("Application Support")
+                    .join("minecraft")
+            })
             .unwrap_or_else(|| std::env::temp_dir().join("RTLauncher").join("minecraft"));
     }
     #[cfg(target_os = "linux")]
@@ -64,7 +68,11 @@ pub fn get_minecraft_dir() -> Result<PathBuf, String> {
     Ok(default_minecraft_dir())
 }
 #[tauri::command]
-pub async fn download_patcher(app: AppHandle, mcVersion: String, instance_name: Option<String>) -> Result<u64, String> {
+pub async fn download_patcher(
+    app: AppHandle,
+    mcVersion: String,
+    instance_name: Option<String>,
+) -> Result<u64, String> {
     let task_id = TASK_COUNTER.fetch_add(1, Ordering::SeqCst);
     let minecraft_path = get_minecraft_dir()?;
     std::fs::create_dir_all(&minecraft_path).map_err(|e| format!("创建目录失败: {}", e))?;
@@ -72,16 +80,22 @@ pub async fn download_patcher(app: AppHandle, mcVersion: String, instance_name: 
     let cancel = Arc::new(AtomicBool::new(false));
     {
         let mut tasks = active_tasks().lock().unwrap();
-        tasks.insert(task_id, ActiveTaskInfo {
-            cancel: cancel.clone(),
-            mc_version: mcVersion.clone(),
-            minecraft_path: minecraft_path.clone(),
-        });
+        tasks.insert(
+            task_id,
+            ActiveTaskInfo {
+                cancel: cancel.clone(),
+                mc_version: mcVersion.clone(),
+                minecraft_path: minecraft_path.clone(),
+            },
+        );
     }
     let app_clone = app.clone();
     tokio::spawn(async move {
         while let Some(percent) = rx.recv().await {
-            let _ = app_clone.emit("download-progress", DownloadProgressPayload { task_id, percent });
+            let _ = app_clone.emit(
+                "download-progress",
+                DownloadProgressPayload { task_id, percent },
+            );
         }
     });
     let app_finish = app.clone();
@@ -90,7 +104,8 @@ pub async fn download_patcher(app: AppHandle, mcVersion: String, instance_name: 
     let minecraft_path_cloned = minecraft_path.clone();
     let instance_name_cloned = instance_name.clone();
     tokio::spawn(async move {
-        let result = process_version(&version, &minecraft_path_cloned, tx, cancel_clone.clone()).await;
+        let result =
+            process_version(&version, &minecraft_path_cloned, tx, cancel_clone.clone()).await;
         {
             let mut tasks = active_tasks().lock().unwrap();
             tasks.remove(&task_id);
@@ -99,12 +114,15 @@ pub async fn download_patcher(app: AppHandle, mcVersion: String, instance_name: 
         if was_cancelled {
             let version_dir = minecraft_path_cloned.join("versions").join(&version);
             let _ = std::fs::remove_dir_all(&version_dir);
-            let _ = app_finish.emit("download-finished", DownloadFinishedPayload {
-                task_id,
-                success: false,
-                error: Some("已取消".to_string()),
-                failed_count: 0,
-            });
+            let _ = app_finish.emit(
+                "download-finished",
+                DownloadFinishedPayload {
+                    task_id,
+                    success: false,
+                    error: Some("已取消".to_string()),
+                    failed_count: 0,
+                },
+            );
         } else {
             match result {
                 Ok(warnings) => {
@@ -134,9 +152,12 @@ pub async fn download_patcher(app: AppHandle, mcVersion: String, instance_name: 
                                 // 修改复制的 version.json 中的 id 字段
                                 let dst_json = dst_dir.join(format!("{}.json", final_name));
                                 if let Ok(content) = std::fs::read_to_string(&dst_json) {
-                                    if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&content) {
+                                    if let Ok(mut json) =
+                                        serde_json::from_str::<serde_json::Value>(&content)
+                                    {
                                         json["id"] = serde_json::Value::String(final_name.clone());
-                                        if let Ok(new_content) = serde_json::to_string_pretty(&json) {
+                                        if let Ok(new_content) = serde_json::to_string_pretty(&json)
+                                        {
                                             let _ = std::fs::write(&dst_json, new_content);
                                             println!("[Vanilla] 实例创建完成: {}", final_name);
                                         }
@@ -146,24 +167,30 @@ pub async fn download_patcher(app: AppHandle, mcVersion: String, instance_name: 
                         }
                     }
                     let failed_count = warnings.len();
-                    let _ = app_finish.emit("download-finished", DownloadFinishedPayload {
-                        task_id,
-                        success: true,
-                        error: if failed_count > 0 {
-                            Some(format!("{} 个文件下载失败", failed_count))
-                        } else {
-                            None
+                    let _ = app_finish.emit(
+                        "download-finished",
+                        DownloadFinishedPayload {
+                            task_id,
+                            success: true,
+                            error: if failed_count > 0 {
+                                Some(format!("{} 个文件下载失败", failed_count))
+                            } else {
+                                None
+                            },
+                            failed_count,
                         },
-                        failed_count,
-                    });
+                    );
                 }
                 Err(e) => {
-                    let _ = app_finish.emit("download-finished", DownloadFinishedPayload {
-                        task_id,
-                        success: false,
-                        error: Some(e.to_string()),
-                        failed_count: 0,
-                    });
+                    let _ = app_finish.emit(
+                        "download-finished",
+                        DownloadFinishedPayload {
+                            task_id,
+                            success: false,
+                            error: Some(e.to_string()),
+                            failed_count: 0,
+                        },
+                    );
                 }
             }
         }

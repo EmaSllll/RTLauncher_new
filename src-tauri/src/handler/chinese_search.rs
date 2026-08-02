@@ -1,9 +1,9 @@
+use reqwest;
 use serde::{Deserialize, Serialize};
 use sqlite::{Connection, State};
+use std::fs;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
-use std::fs;
-use reqwest;
 
 /// moddata.db 的全局连接（单例，延迟初始化）
 fn get_moddata_connection() -> &'static Mutex<Option<Connection>> {
@@ -30,23 +30,31 @@ fn resolve_moddata_path() -> Option<PathBuf> {
     // 1) 当前工作目录
     let cwd = PathBuf::from(".");
     let p1 = cwd.join("moddata.db");
-    if p1.exists() { return Some(p1); }
+    if p1.exists() {
+        return Some(p1);
+    }
 
     // 2) 可执行文件目录
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             let p = dir.join("moddata.db");
-            if p.exists() { return Some(p); }
+            if p.exists() {
+                return Some(p);
+            }
         }
     }
 
     // 3) 上层目录（开发环境，项目根）
     let p3 = cwd.join("..").join("moddata.db");
-    if p3.exists() { return Some(p3); }
+    if p3.exists() {
+        return Some(p3);
+    }
 
     // 4) src-tauri 上层
     let p4 = cwd.join("..").join("..").join("moddata.db");
-    if p4.exists() { return Some(p4); }
+    if p4.exists() {
+        return Some(p4);
+    }
 
     None
 }
@@ -58,24 +66,22 @@ fn download_moddata_db() -> Result<PathBuf, String> {
     
     println!("[moddata] 正在下载数据库文件: {}", url);
     
-    let response = reqwest::blocking::get(url)
-        .map_err(|e| format!("下载数据库失败: {}", e))?;
+    let response = reqwest::blocking::get(url).map_err(|e| format!("下载数据库失败: {}", e))?;
     
     if !response.status().is_success() {
         return Err(format!("下载数据库失败，HTTP状态码: {}", response.status()));
     }
     
-    let bytes = response.bytes()
+    let bytes = response
+        .bytes()
         .map_err(|e| format!("读取下载内容失败: {}", e))?;
     
     // 确保目标目录存在
     if let Some(parent) = target_path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| format!("创建目录失败: {}", e))?;
+        fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {}", e))?;
     }
     
-    fs::write(&target_path, bytes)
-        .map_err(|e| format!("写入数据库文件失败: {}", e))?;
+    fs::write(&target_path, bytes).map_err(|e| format!("写入数据库文件失败: {}", e))?;
     
     println!("[moddata] 数据库文件已下载到: {}", target_path.display());
     Ok(target_path)
@@ -85,7 +91,9 @@ fn download_moddata_db() -> Result<PathBuf, String> {
 fn ensure_moddata_connection() -> Result<(), String> {
     let lock = get_moddata_connection();
     let mut guard = lock.lock().map_err(|e| e.to_string())?;
-    if guard.is_some() { return Ok(()); }
+    if guard.is_some() {
+        return Ok(());
+    }
 
     let path = match resolve_moddata_path() {
         Some(p) => p,
@@ -126,7 +134,8 @@ pub fn search_moddata(keyword: String) -> Result<String, String> {
 
     let lock = get_moddata_connection();
     let guard = lock.lock().map_err(|e| e.to_string())?;
-    let conn = guard.as_ref()
+    let conn = guard
+        .as_ref()
         .ok_or_else(|| "数据库连接未初始化".to_string())?;
 
     // 同时按 chinese_name 和 slug 做 LIKE 模糊匹配
@@ -140,10 +149,15 @@ pub fn search_moddata(keyword: String) -> Result<String, String> {
                           id ASC \
                  LIMIT 200";
 
-    let mut statement = conn.prepare(query).map_err(|e| format!("准备查询失败: {}", e))?;
+    let mut statement = conn
+        .prepare(query)
+        .map_err(|e| format!("准备查询失败: {}", e))?;
     let startswith_pattern = format!("{}%", keyword_trimmed);
-    statement.bind((1, like_pattern.as_str())).map_err(|e| format!("绑定参数失败: {}", e))?;
-    statement.bind((2, startswith_pattern.as_str()))
+    statement
+        .bind((1, like_pattern.as_str()))
+        .map_err(|e| format!("绑定参数失败: {}", e))?;
+    statement
+        .bind((2, startswith_pattern.as_str()))
         .map_err(|e| format!("绑定参数失败: {}", e))?;
 
     let mut results: Vec<ModSearchResult> = Vec::new();
@@ -151,7 +165,11 @@ pub fn search_moddata(keyword: String) -> Result<String, String> {
         let slug = statement.read::<String, _>(0).unwrap_or_default();
         let chinese_name = statement.read::<String, _>(1).unwrap_or_default();
         let mcmod_id: Option<i64> = statement.read::<i64, _>(2).ok();
-        results.push(ModSearchResult { slug, chinese_name, mcmod_id });
+        results.push(ModSearchResult {
+            slug,
+            chinese_name,
+            mcmod_id,
+        });
     }
 
     serde_json::to_string(&results).map_err(|e| format!("序列化结果失败: {}", e))
@@ -164,10 +182,12 @@ pub fn get_moddata_info() -> Result<String, String> {
 
     let lock = get_moddata_connection();
     let guard = lock.lock().map_err(|e| e.to_string())?;
-    let conn = guard.as_ref()
+    let conn = guard
+        .as_ref()
         .ok_or_else(|| "数据库连接未初始化".to_string())?;
 
-    let mut statement = conn.prepare("SELECT COUNT(*) FROM mod_names")
+    let mut statement = conn
+        .prepare("SELECT COUNT(*) FROM mod_names")
         .map_err(|e| format!("准备查询失败: {}", e))?;
 
     if let State::Row = statement.next().map_err(|e| format!("查询失败: {}", e))? {

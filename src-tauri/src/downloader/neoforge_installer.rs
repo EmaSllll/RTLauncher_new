@@ -25,10 +25,13 @@ async fn fetch_bmcl_neoforge_versions(mc_version: &str) -> Option<Vec<String>> {
             let mut versions: Vec<String> = list
                 .into_iter()
                 .map(|e| e.build.unwrap_or(e.version))
+                .filter(|version| neoforge_version_matches_mc(mc_version, version))
                 .collect();
-            versions.sort_by(|a, b| b.cmp(a));
-            versions.dedup();
-            return Some(versions);
+            if !versions.is_empty() {
+                versions.sort_by(|a, b| b.cmp(a));
+                versions.dedup();
+                return Some(versions);
+            }
         }
     }
     None
@@ -67,6 +70,51 @@ struct NeoForgeMavenVersions {
     versions: Option<Vec<String>>,
 }
 
+fn neoforge_version_matches_mc(mc_version: &str, neoforge_version: &str) -> bool {
+    let legacy_prefix = format!("{}-", mc_version);
+    if neoforge_version.starts_with(&legacy_prefix) {
+        return true;
+    }
+
+    let parts: Vec<&str> = mc_version.split('.').collect();
+    let short_prefix = if parts.first() == Some(&"1") {
+        let Some(minor) = parts.get(1) else {
+            return false;
+        };
+        let patch = parts.get(2).copied().unwrap_or("0");
+        format!("{}.{}.", minor, patch)
+    } else {
+        format!("{}.", mc_version)
+    };
+
+    neoforge_version.starts_with(&short_prefix)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::neoforge_version_matches_mc;
+
+    #[test]
+    fn matches_short_neoforge_versions_to_minecraft() {
+        assert!(neoforge_version_matches_mc("1.20.2", "20.2.93"));
+        assert!(neoforge_version_matches_mc("1.21", "21.0.167"));
+        assert!(neoforge_version_matches_mc("1.21.1", "21.1.215"));
+        assert!(neoforge_version_matches_mc("26.2", "26.2.0.40-beta"));
+        assert!(neoforge_version_matches_mc("26.1.2", "26.1.2.93"));
+    }
+
+    #[test]
+    fn rejects_versions_for_other_minecraft_releases() {
+        assert!(!neoforge_version_matches_mc("1.20.2", "26.2.0.40-beta"));
+        assert!(!neoforge_version_matches_mc("1.21.1", "21.0.167"));
+    }
+
+    #[test]
+    fn keeps_legacy_minecraft_prefixed_versions() {
+        assert!(neoforge_version_matches_mc("1.20.1", "1.20.1-47.1.106"));
+    }
+}
+
 async fn fetch_official_neoforge_versions(mc_version: &str) -> Result<Vec<String>> {
     let client = shared_client().await;
 
@@ -81,7 +129,9 @@ async fn fetch_official_neoforge_versions(mc_version: &str) -> Result<Vec<String
     );
     let v2_all = "https://meta.neoforged.net/v2/versions/neo-forge".to_string();
     let v1_latest = "https://meta.neoforged.net/v1/versions/neo-forge".to_string();
-    let maven_url = "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge".to_string();
+    let maven_url =
+        "https://maven.neoforged.net/api/maven/versions/releases/net/neoforged/neoforge"
+            .to_string();
     let urls = [v2_filtered, v2_all, v1_latest, maven_url];
 
     for (idx, url) in urls.iter().enumerate() {
@@ -109,14 +159,12 @@ async fn fetch_official_neoforge_versions(mc_version: &str) -> Result<Vec<String
                         for entry in list {
                             // 如果是按 mc_version 查询（idx==0），所有结果都应匹配；
                             // 但为了保险还是做一次过滤
-                            if idx == 1 {
-                                let matches = match &entry.mc_version {
-                                    Some(v) => v == mc_version || v.starts_with(mc_version),
-                                    None => false,
-                                };
-                                if !matches {
-                                    continue;
-                                }
+                            let matches = match &entry.mc_version {
+                                Some(v) => v == mc_version,
+                                None => idx == 0,
+                            };
+                            if !matches {
+                                continue;
                             }
                             if let Some(v) = &entry.neoforgeVersion {
                                 versions.push(v.clone());
@@ -129,9 +177,7 @@ async fn fetch_official_neoforge_versions(mc_version: &str) -> Result<Vec<String
                     if versions.is_empty() {
                         if let Some(obj) = &v2.latest {
                             if let Some(map) = obj.as_object() {
-                                if let Some(v) =
-                                    map.get(mc_version).and_then(|v| v.as_str())
-                                {
+                                if let Some(v) = map.get(mc_version).and_then(|v| v.as_str()) {
                                     versions.push(v.to_string());
                                 } else {
                                     for (k, v) in map {
@@ -166,14 +212,13 @@ async fn fetch_official_neoforge_versions(mc_version: &str) -> Result<Vec<String
                 if let Ok(v1) = serde_json::from_str::<NeoForgeMetaV1Response>(&text) {
                     if let Some(obj) = &v1.latest {
                         if let Some(map) = obj.as_object() {
-                            if let Some(v) =
-                                map.get(mc_version).and_then(|v| v.as_str())
-                            {
+                            if let Some(v) = map.get(mc_version).and_then(|v| v.as_str()) {
                                 return Ok(vec![v.to_string()]);
                             }
                             let mut versions: Vec<String> = map
-                                .values()
-                                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                                .iter()
+                                .filter(|(key, _)| key.as_str() == mc_version)
+                                .filter_map(|(_, v)| v.as_str().map(|s| s.to_string()))
                                 .collect();
                             if !versions.is_empty() {
                                 versions.sort_by(|a, b| b.cmp(a));
@@ -188,35 +233,17 @@ async fn fetch_official_neoforge_versions(mc_version: &str) -> Result<Vec<String
             3 => {
                 if let Ok(mv) = serde_json::from_str::<NeoForgeMavenVersions>(&text) {
                     if let Some(list) = &mv.versions {
-                        // maven 版本形如 "21.0.144"，我们需要按 mc_version 前缀过滤
+                        // maven 版本形如 "21.0.144"，需要按 Minecraft 版本过滤。
                         // NeoForge 版本格式：
                         //   - 1.20.1 时代："{mc_version}-{build}"（例如 "1.20.1-47.3.7"）
                         //   - 之后使用简短版本号（例如 "21.0.144"）
-                        // 所以这里优先用 mc_version 前缀匹配，匹配不到则返回 top N
-                        let mc_prefix_1 = format!("{}-", mc_version);
-                        let mc_prefix_2 = {
-                            // "1.21.1" -> "21.1."（简略数字开头）
-                            let parts: Vec<&str> = mc_version.split('.').collect();
-                            if parts.len() >= 2 {
-                                Some(format!("{}.{}.", parts[0].trim_start_matches("1."), parts[1]))
-                            } else {
-                                None
-                            }
-                        };
                         let mut filtered: Vec<String> = list
                             .iter()
-                            .filter(|v| {
-                                v.starts_with(&mc_prefix_1)
-                                    || mc_prefix_2
-                                        .as_ref()
-                                        .map(|p| v.starts_with(p))
-                                        .unwrap_or(false)
-                            })
+                            .filter(|v| neoforge_version_matches_mc(mc_version, v))
                             .cloned()
                             .collect();
                         if filtered.is_empty() {
-                            // maven 查询失败时回退到全部版本（不做前缀过滤）
-                            filtered = list.clone();
+                            continue;
                         }
                         filtered.sort_by(|a, b| b.cmp(a));
                         filtered.dedup();
@@ -245,10 +272,7 @@ pub async fn get_neoforge_versions(mc_version: &str) -> Result<Vec<String>> {
     }
     fetch_official_neoforge_versions(mc_version).await
 }
-async fn download_installer(
-    neoforge_version: &str,
-    mc_dir: &PathBuf,
-) -> Result<PathBuf> {
+async fn download_installer(neoforge_version: &str, mc_dir: &PathBuf) -> Result<PathBuf> {
     let cache_dir = mc_dir.join("cache").join("neoforge_installer");
     std::fs::create_dir_all(&cache_dir).ok();
     let file_name = format!("neoforge-{}-installer.jar", neoforge_version);
@@ -286,9 +310,9 @@ async fn download_installer(
         urls,
         sha1: None,
     };
-    concurrent_download::download_one(task).await.with_context(|| {
-        format!("下载 NeoForge Installer JAR 失败: {}", file_name)
-    })
+    concurrent_download::download_one(task)
+        .await
+        .with_context(|| format!("下载 NeoForge Installer JAR 失败: {}", file_name))
 }
 pub async fn install_neoforge(
     mc_version: &str,

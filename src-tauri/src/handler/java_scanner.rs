@@ -109,11 +109,7 @@ fn try_version_flag(detect_exe: &str, java_path: &str) -> Option<ValidatedJava> 
         stdout.to_string()
     };
     let version_re = regex::Regex::new(r#"version "([^"]+)""#).ok()?;
-    let version = version_re
-        .captures(&text)?
-        .get(1)?
-        .as_str()
-        .to_string();
+    let version = version_re.captures(&text)?.get(1)?.as_str().to_string();
     let major_version = parse_major_version(&version)?;
     let vendor = infer_vendor_from_version_output(&text);
     let architecture = if text.contains("64-Bit") {
@@ -234,11 +230,7 @@ fn find_java_exe(dir: &Path) -> Option<PathBuf> {
     }
     #[cfg(target_os = "macos")]
     {
-        let macos = dir
-            .join("Contents")
-            .join("Home")
-            .join("bin")
-            .join(bin_name);
+        let macos = dir.join("Contents").join("Home").join("bin").join(bin_name);
         if macos.exists() {
             return Some(macos);
         }
@@ -444,7 +436,12 @@ fn get_windows_search_paths(paths: &mut Vec<PathBuf>) {
         paths.push(PathBuf::from(&profile).join(".jdks"));
     }
     if let Ok(localappdata) = std::env::var("LOCALAPPDATA") {
-        paths.push(PathBuf::from(&localappdata).join("scoop").join("apps").join("java"));
+        paths.push(
+            PathBuf::from(&localappdata)
+                .join("scoop")
+                .join("apps")
+                .join("java"),
+        );
         paths.push(
             PathBuf::from(&localappdata)
                 .join("scoop")
@@ -511,9 +508,7 @@ fn get_macos_search_paths(paths: &mut Vec<PathBuf>) {
         if sdkman_java.exists() {
             paths.push(sdkman_java);
         }
-        paths.push(
-            PathBuf::from(&home).join("Library/Application Support/RTLauncher/java"),
-        );
+        paths.push(PathBuf::from(&home).join("Library/Application Support/RTLauncher/java"));
     }
 }
 #[allow(unused)]
@@ -562,7 +557,8 @@ pub async fn search_java_installations() -> Result<Vec<JavaInstallation>, String
                 validated.java_home
             };
             let existing = home_map.get(&key);
-            if existing.is_none() || validated.installation.path.len() > existing.unwrap().path.len()
+            if existing.is_none()
+                || validated.installation.path.len() > existing.unwrap().path.len()
             {
                 home_map.insert(key, validated.installation);
             }

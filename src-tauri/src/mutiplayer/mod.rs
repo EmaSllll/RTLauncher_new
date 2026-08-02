@@ -1,8 +1,8 @@
 use std::env;
 use std::fs;
-use std::io::{BufRead, BufReader, Read, Seek};
 #[cfg(target_os = "windows")]
 use std::io::Error;
+use std::io::{BufRead, BufReader, Read, Seek};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
@@ -297,20 +297,23 @@ fn start_openp2p_with_args(args: &[&str]) -> Result<String, String> {
             Ok(path_str)
         }
         Err(e) => {
-            let is_elevation_error = cfg!(target_os = "windows")
-                && e.raw_os_error() == Some(740);
+            let is_elevation_error = cfg!(target_os = "windows") && e.raw_os_error() == Some(740);
             if is_elevation_error {
                 append_log_str("[RTLauncher] ⚠ openp2p.exe 需要管理员权限才能运行\n");
                 append_log_str("[RTLauncher]   正在以管理员身份重新启动（会弹出 UAC 提示）...\n");
-                append_log_str("[RTLauncher]   注意：以管理员权限启动后，无法通过管道捕获 stdout\n");
-                append_log_str("[RTLauncher]   将改为读取 openp2p 自己生成的日志文件来获取反馈\n\n");
+                append_log_str(
+                    "[RTLauncher]   注意：以管理员权限启动后，无法通过管道捕获 stdout\n",
+                );
+                append_log_str(
+                    "[RTLauncher]   将改为读取 openp2p 自己生成的日志文件来获取反馈\n\n",
+                );
                 #[cfg(target_os = "windows")]
                 {
+                    use std::ffi::OsStr;
+                    use std::os::windows::ffi::OsStrExt;
+                    use std::ptr;
                     use winapi::um::shellapi::ShellExecuteW;
                     use winapi::um::winuser::SW_HIDE;
-                    use std::os::windows::ffi::OsStrExt;
-                    use std::ffi::OsStr;
-                    use std::ptr;
                     let exe_path = std::path::PathBuf::from(&path_str);
                     let exe_wide: Vec<u16> = OsStr::new(&exe_path)
                         .encode_wide()
@@ -402,11 +405,9 @@ pub fn mp_check_openp2p() -> bool {
 #[command]
 pub fn mp_install_openp2p(src_path: String) -> Result<String, String> {
     let bridge_dir = get_bridge_dir()?;
-    std::fs::create_dir_all(&bridge_dir)
-        .map_err(|e| format!("创建 bridge 目录失败: {}", e))?;
+    std::fs::create_dir_all(&bridge_dir).map_err(|e| format!("创建 bridge 目录失败: {}", e))?;
     let dest = bridge_dir.join(OPENP2P_BIN);
-    std::fs::copy(&src_path, &dest)
-        .map_err(|e| format!("复制文件失败: {}", e))?;
+    std::fs::copy(&src_path, &dest).map_err(|e| format!("复制文件失败: {}", e))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -414,8 +415,7 @@ pub fn mp_install_openp2p(src_path: String) -> Result<String, String> {
             .map_err(|e| format!("获取文件属性失败: {}", e))?
             .permissions();
         perms.set_mode(0o755);
-        std::fs::set_permissions(&dest, perms)
-            .map_err(|e| format!("设置执行权限失败: {}", e))?;
+        std::fs::set_permissions(&dest, perms).map_err(|e| format!("设置执行权限失败: {}", e))?;
     }
     Ok(dest.to_string_lossy().to_string())
 }
@@ -426,13 +426,13 @@ pub fn mp_start_openp2p_host(room_name: String) -> Result<String, String> {
 }
 #[command]
 pub fn mp_encode_room_info(room_name: String, port_count: String) -> String {
-    use base64::{Engine as _, engine::general_purpose};
+    use base64::{engine::general_purpose, Engine as _};
     let combined = format!("{},{}", room_name, port_count);
     general_purpose::STANDARD.encode(combined)
 }
 #[command]
 pub fn mp_start_openp2p_join(encoded_value: String, player_name: String) -> Result<String, String> {
-    use base64::{Engine as _, engine::general_purpose};
+    use base64::{engine::general_purpose, Engine as _};
     let decoded = general_purpose::STANDARD
         .decode(&encoded_value)
         .map_err(|e| format!("Base64 解码失败: {}", e))?;
@@ -487,11 +487,10 @@ for ($i = 0; $i -lt 20; $i++) {
   Start-Sleep -Milliseconds 250
 }
 "#;
-        fs::write(&stop_script, script)
-            .map_err(|e| format!("写入 OpenP2P 停止脚本失败: {}", e))?;
+        fs::write(&stop_script, script).map_err(|e| format!("写入 OpenP2P 停止脚本失败: {}", e))?;
 
-        let windows_dir = env::var_os("WINDIR")
-            .unwrap_or_else(|| OsStr::new("C:\\Windows").to_os_string());
+        let windows_dir =
+            env::var_os("WINDIR").unwrap_or_else(|| OsStr::new("C:\\Windows").to_os_string());
         let powershell_path = PathBuf::from(windows_dir)
             .join("System32")
             .join("WindowsPowerShell")
@@ -566,8 +565,7 @@ for ($i = 0; $i -lt 20; $i++) {
             let mut found = false;
             for process in system.processes().values().filter(|process| {
                 let name = process.name().to_string_lossy();
-                name.eq_ignore_ascii_case("openp2p")
-                    || name.eq_ignore_ascii_case("openp2p.exe")
+                name.eq_ignore_ascii_case("openp2p") || name.eq_ignore_ascii_case("openp2p.exe")
             }) {
                 found = true;
                 if attempt < 4 {
@@ -636,14 +634,8 @@ pub fn mp_poll_log() -> String {
 
     if let Ok(working_dir) = get_openp2p_dir() {
         for chunk in [
-            read_log_increment(
-                &openp2p_log_file(&working_dir),
-                &OPENP2P_TXT_OFFSET,
-            ),
-            read_log_increment(
-                &openp2p_legacy_log_file(&working_dir),
-                &OPENP2P_LOG_OFFSET,
-            ),
+            read_log_increment(&openp2p_log_file(&working_dir), &OPENP2P_TXT_OFFSET),
+            read_log_increment(&openp2p_legacy_log_file(&working_dir), &OPENP2P_LOG_OFFSET),
         ] {
             if !chunk.is_empty() {
                 if !content.is_empty() && !content.ends_with(b"\n") {
@@ -682,9 +674,9 @@ pub fn ensure_openp2p_stopped() {
 
 #[cfg(test)]
 mod tests {
-    use super::read_log_increment;
     #[cfg(target_os = "windows")]
     use super::quote_windows_argument;
+    use super::read_log_increment;
     use std::fs::{self, OpenOptions};
     use std::io::Write;
     use std::sync::Mutex;
@@ -727,6 +719,9 @@ mod tests {
         assert_eq!(quote_windows_argument("plain"), "plain");
         assert_eq!(quote_windows_argument("two words"), "\"two words\"");
         assert_eq!(quote_windows_argument("a\"b"), "\"a\\\"b\"");
-        assert_eq!(quote_windows_argument("C:\\room path\\"), "\"C:\\room path\\\\\"");
+        assert_eq!(
+            quote_windows_argument("C:\\room path\\"),
+            "\"C:\\room path\\\\\""
+        );
     }
 }

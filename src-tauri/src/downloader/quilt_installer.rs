@@ -1,7 +1,7 @@
-use anyhow::{anyhow, Result};
 use crate::downloader::concurrent_download::{self, DownloadTask};
 use crate::downloader::shared_utils::{self, Library, MetaResponse};
 use crate::http_client::shared_client;
+use anyhow::{anyhow, Result};
 use serde_json;
 use std::fs;
 use std::path::PathBuf;
@@ -47,7 +47,10 @@ pub async fn install_quilt_loader(
     mc_folder_path: &str,
     progress_tx: Option<mpsc::Sender<f64>>,
 ) -> Result<String> {
-    let url = format!("https://meta.quiltmc.org/v3/versions/loader/{}/{}/profile/json", mc_version, quilt_version);
+    let url = format!(
+        "https://meta.quiltmc.org/v3/versions/loader/{}/{}/profile/json",
+        mc_version, quilt_version
+    );
     let client = shared_client().await;
     let resp = client.get(&url).send().await?;
     if !resp.status().is_success() {
@@ -56,7 +59,9 @@ pub async fn install_quilt_loader(
     let profile_json_text = resp.text().await?;
 
     let version_id = format!("{}-{}-quilt", mc_version, quilt_version);
-    let versions_dir = PathBuf::from(mc_folder_path).join("versions").join(&version_id);
+    let versions_dir = PathBuf::from(mc_folder_path)
+        .join("versions")
+        .join(&version_id);
     fs::create_dir_all(&versions_dir)?;
     let profile_json_path = versions_dir.join(format!("{}.json", version_id));
     fs::write(&profile_json_path, &profile_json_text)?;
@@ -74,7 +79,8 @@ pub async fn install_quilt_loader(
         "https://maven.quiltmc.org/repository/release",
         mc_folder_path,
         progress_tx,
-    ).await?;
+    )
+    .await?;
 
     // 确保 options.txt 存在并设置语言为中文
     let options_path = versions_dir.join("options.txt");
@@ -115,7 +121,10 @@ pub async fn install_quilt_api(
         "https://maven.quiltmc.org/repository/release/org/quiltmc/quilted-fabric-api/quilted-fabric-api/{0}/quilted-fabric-api-{0}.jar",
         quilt_api_version
     );
-    let mods_dir = PathBuf::from(mc_folder_path).join("versions").join(mc_version).join("mods");
+    let mods_dir = PathBuf::from(mc_folder_path)
+        .join("versions")
+        .join(mc_version)
+        .join("mods");
     fs::create_dir_all(&mods_dir)?;
     let jar_name = format!("quilted-fabric-api-{}.jar", quilt_api_version);
 
@@ -167,10 +176,16 @@ async fn download_libraries(
 ) -> Result<()> {
     let mut tasks = Vec::new();
     for lib in libraries {
-        let base_url = lib.url.as_deref().unwrap_or(default_url).trim_end_matches('/');
+        let base_url = lib
+            .url
+            .as_deref()
+            .unwrap_or(default_url)
+            .trim_end_matches('/');
         let name = lib.name.clone();
         let (sub_path, jar_name) = shared_utils::parse_library_path_for_fs(&name)?;
-        let library_dir = PathBuf::from(mc_folder_path).join("libraries").join(&sub_path);
+        let library_dir = PathBuf::from(mc_folder_path)
+            .join("libraries")
+            .join(&sub_path);
         let url_sub_path = shared_utils::parse_library_path_for_url(&name)?;
         let download_url = format!("{}/{}", base_url, url_sub_path);
 
@@ -178,7 +193,11 @@ async fn download_libraries(
             file_name: jar_name,
             target_dir: library_dir,
             urls: vec![download_url],
-            sha1: lib.downloads.as_ref().and_then(|d| d.artifact.as_ref()).map(|a| a.sha1.clone()),
+            sha1: lib
+                .downloads
+                .as_ref()
+                .and_then(|d| d.artifact.as_ref())
+                .map(|a| a.sha1.clone()),
         });
     }
 

@@ -65,7 +65,9 @@ pub struct BmclEntry {
 
 /// 解析 Maven 坐标字符串："groupId:artifactId:version[:classifier][@extension]"
 /// 返回 `(group_path, artifact_id, version, classifier, extension)`
-pub fn parse_maven_coordinate(coord: &str) -> Result<(String, String, String, Option<String>, String)> {
+pub fn parse_maven_coordinate(
+    coord: &str,
+) -> Result<(String, String, String, Option<String>, String)> {
     let (coord_clean, ext) = match coord.rsplit_once('@') {
         Some((c, e)) => (c, e.to_string()),
         None => (coord, "jar".to_string()),
@@ -82,7 +84,13 @@ pub fn parse_maven_coordinate(coord: &str) -> Result<(String, String, String, Op
     let classifier = parts.get(3).map(|s| s.to_string());
 
     let group_path = group_id.replace('.', "/");
-    Ok((group_path, artifact_id.to_string(), version.to_string(), classifier, ext))
+    Ok((
+        group_path,
+        artifact_id.to_string(),
+        version.to_string(),
+        classifier,
+        ext,
+    ))
 }
 
 /// 解析库文件路径为文件系统路径
@@ -112,7 +120,10 @@ pub fn parse_library_path_for_url(name: &str) -> Result<String> {
         None => format!("{}-{}.{}", artifact_id, version, ext),
     };
     
-    Ok(format!("{}/{}/{}/{}", group_path, artifact_id, version, jar_name))
+    Ok(format!(
+        "{}/{}/{}/{}",
+        group_path, artifact_id, version, jar_name
+    ))
 }
 
 // ============= 版本列表获取工具 =============
@@ -156,7 +167,11 @@ pub fn parse_maven_metadata(xml_text: &str) -> Result<Vec<String>> {
     let re = Regex::new(r"<version>([^<]+)</version>")?;
     let mut versions: Vec<String> = re
         .find_iter(xml_text)
-        .filter_map(|m| m.as_str().strip_prefix("<version>")?.strip_suffix("</version>"))
+        .filter_map(|m| {
+            m.as_str()
+                .strip_prefix("<version>")?
+                .strip_suffix("</version>")
+        })
         .map(|s| s.trim().to_string())
         .collect();
     
@@ -192,7 +207,10 @@ pub fn safe_json_parse<T: serde::de::DeserializeOwned>(text: &str) -> Option<T> 
 }
 
 /// 安全解析 JSON，带错误信息
-pub fn json_parse_with_error<T: serde::de::DeserializeOwned>(text: &str, context: &str) -> Result<T> {
+pub fn json_parse_with_error<T: serde::de::DeserializeOwned>(
+    text: &str,
+    context: &str,
+) -> Result<T> {
     serde_json::from_str(text).with_context(|| format!("解析 JSON 失败 ({})", context))
 }
 // ============= 实例名称处理 =============
@@ -201,7 +219,8 @@ pub fn json_parse_with_error<T: serde::de::DeserializeOwned>(text: &str, context
 pub fn sanitize_instance_name(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len());
     for ch in raw.chars() {
-        if matches!(ch,
+        if matches!(
+            ch,
             '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '\0' | '\n' | '\r' | '\t'
         ) {
             out.push('_');
@@ -219,7 +238,9 @@ pub fn sanitize_instance_name(raw: &str) -> String {
 
 fn current_iso_time() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
-    let duration = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let duration = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
     let secs = duration.as_secs() as i64;
     // 使用简单的 ISO 格式时间戳，无需额外依赖
     let years = 1970 + secs / 31536000;
@@ -253,7 +274,9 @@ pub fn merge_version_jsons_to_instance(
     minecraft_path: &Path,
 ) -> Result<()> {
     let versions_root = minecraft_path.join("versions");
-    let vanilla_json_path = versions_root.join(mc_version).join(format!("{}.json", mc_version));
+    let vanilla_json_path = versions_root
+        .join(mc_version)
+        .join(format!("{}.json", mc_version));
     let vanilla: Value = if vanilla_json_path.exists() {
         let text = fs::read_to_string(&vanilla_json_path)
             .with_context(|| format!("读取原版 version.json 失败: {:?}", vanilla_json_path))?;
@@ -312,10 +335,7 @@ pub fn merge_version_jsons_to_instance(
                 if let Ok(text) = fs::read_to_string(p) {
                     if let Ok(v) = serde_json::from_str::<Value>(&text) {
                         if v.get("mainClass").is_some() {
-                            println!(
-                                "[Instance] 找到 loader version.json: {}",
-                                p.display()
-                            );
+                            println!("[Instance] 找到 loader version.json: {}", p.display());
                             result = Some(v);
                             break;
                         }
@@ -335,7 +355,10 @@ pub fn merge_version_jsons_to_instance(
         obj.insert("time".to_string(), Value::String(current_iso_time()));
         obj.insert("releaseTime".to_string(), Value::String(current_iso_time()));
         if !obj.contains_key("minimumLauncherVersion") {
-            obj.insert("minimumLauncherVersion".to_string(), Value::Number(21.into()));
+            obj.insert(
+                "minimumLauncherVersion".to_string(),
+                Value::Number(21.into()),
+            );
         }
         // 合并 JSON 时移除 inheritsFrom，避免启动时递归引用 parent 并覆盖我们合并好的参数
         obj.remove("inheritsFrom");
@@ -345,10 +368,7 @@ pub fn merge_version_jsons_to_instance(
                 obj.insert("mainClass".to_string(), mc.clone());
             }
             if let Some(loader_args) = loader_obj.get("arguments").and_then(|v| v.as_object()) {
-                let vanilla_args_obj = obj
-                    .get("arguments")
-                    .and_then(|v| v.as_object())
-                    .cloned();
+                let vanilla_args_obj = obj.get("arguments").and_then(|v| v.as_object()).cloned();
                 let get_array = |o: &serde_json::Map<String, Value>, key: &str| -> Vec<Value> {
                     o.get(key)
                         .and_then(|v| v.as_array())
@@ -410,8 +430,7 @@ pub fn merge_version_jsons_to_instance(
             }
         }
         let mut merged_libs: Vec<Value> = Vec::new();
-        let mut seen_keys: std::collections::HashSet<String> =
-            std::collections::HashSet::new();
+        let mut seen_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
         let extract_gac = |name: &str| -> String {
             let parts: Vec<&str> = name.split(':').collect();
             match parts.len() {
@@ -441,11 +460,11 @@ pub fn merge_version_jsons_to_instance(
                         if seen_keys.insert(key) {
                             merged_libs.push(lib.clone());
                         }
-                    } else if let Some(artifact_path) =
-                        lib.get("downloads")
-                            .and_then(|d| d.get("artifact"))
-                            .and_then(|a| a.get("path"))
-                            .and_then(|p| p.as_str())
+                    } else if let Some(artifact_path) = lib
+                        .get("downloads")
+                        .and_then(|d| d.get("artifact"))
+                        .and_then(|a| a.get("path"))
+                        .and_then(|p| p.as_str())
                     {
                         let key = extract_path_key(artifact_path);
                         if seen_keys.insert(key) {
@@ -464,11 +483,11 @@ pub fn merge_version_jsons_to_instance(
                     if seen_keys.insert(key) {
                         merged_libs.push(lib.clone());
                     }
-                } else if let Some(artifact_path) =
-                    lib.get("downloads")
-                        .and_then(|d| d.get("artifact"))
-                        .and_then(|a| a.get("path"))
-                        .and_then(|p| p.as_str())
+                } else if let Some(artifact_path) = lib
+                    .get("downloads")
+                    .and_then(|d| d.get("artifact"))
+                    .and_then(|a| a.get("path"))
+                    .and_then(|p| p.as_str())
                 {
                     let key = extract_path_key(artifact_path);
                     if seen_keys.insert(key) {
@@ -485,16 +504,19 @@ pub fn merge_version_jsons_to_instance(
     let version_dir = versions_root.join(instance_name);
     fs::create_dir_all(&version_dir).ok();
     let json_path = version_dir.join(format!("{}.json", instance_name));
-    let text = serde_json::to_string_pretty(&result)
-        .context("序列化合并后的 version.json 失败")?;
+    let text = serde_json::to_string_pretty(&result).context("序列化合并后的 version.json 失败")?;
     fs::write(&json_path, text)
         .with_context(|| format!("写入合并后的 version.json 失败: {:?}", json_path))?;
-    let vanilla_jar = versions_root.join(mc_version).join(format!("{}.jar", mc_version));
+    let vanilla_jar = versions_root
+        .join(mc_version)
+        .join(format!("{}.jar", mc_version));
     let target_jar = version_dir.join(format!("{}.jar", instance_name));
     if vanilla_jar.exists() {
         let _ = fs::copy(&vanilla_jar, &target_jar);
     }
-    let vanilla_natives = versions_root.join(mc_version).join(format!("{}-natives", mc_version));
+    let vanilla_natives = versions_root
+        .join(mc_version)
+        .join(format!("{}-natives", mc_version));
     let target_natives = version_dir.join(format!("{}-natives", instance_name));
     if vanilla_natives.exists() {
         let _ = dircpy(&vanilla_natives, &target_natives);
@@ -518,8 +540,12 @@ pub fn create_vanilla_instance(
     minecraft_path: &Path,
 ) -> Result<()> {
     let versions_root = minecraft_path.join("versions");
-    let vanilla_json_path = versions_root.join(mc_version).join(format!("{}.json", mc_version));
-    let vanilla_jar_path = versions_root.join(mc_version).join(format!("{}.jar", mc_version));
+    let vanilla_json_path = versions_root
+        .join(mc_version)
+        .join(format!("{}.json", mc_version));
+    let vanilla_jar_path = versions_root
+        .join(mc_version)
+        .join(format!("{}.jar", mc_version));
 
     if !vanilla_json_path.exists() {
         bail!("找不到原版 version.json: {:?}", vanilla_json_path);
@@ -532,8 +558,7 @@ pub fn create_vanilla_instance(
     // 读取并修改 JSON
     let text = fs::read_to_string(&vanilla_json_path)
         .with_context(|| format!("读取原版 version.json 失败"))?;
-    let mut json: Value = serde_json::from_str(&text)
-        .context("解析原版 version.json 失败")?;
+    let mut json: Value = serde_json::from_str(&text).context("解析原版 version.json 失败")?;
     
     if let Some(obj) = json.as_object_mut() {
         obj.insert("id".to_string(), Value::String(instance_name.to_string()));
@@ -542,8 +567,11 @@ pub fn create_vanilla_instance(
     }
 
     let json_target = version_dir.join(format!("{}.json", instance_name));
-    fs::write(&json_target, serde_json::to_string_pretty(&json).unwrap_or_default())
-        .with_context(|| format!("写入实例 version.json 失败"))?;
+    fs::write(
+        &json_target,
+        serde_json::to_string_pretty(&json).unwrap_or_default(),
+    )
+    .with_context(|| format!("写入实例 version.json 失败"))?;
 
     // 复制 JAR
     if vanilla_jar_path.exists() {
@@ -552,7 +580,9 @@ pub fn create_vanilla_instance(
     }
 
     // 复制 natives
-    let vanilla_natives = versions_root.join(mc_version).join(format!("{}-natives", mc_version));
+    let vanilla_natives = versions_root
+        .join(mc_version)
+        .join(format!("{}-natives", mc_version));
     let target_natives = version_dir.join(format!("{}-natives", instance_name));
     if vanilla_natives.exists() {
         let _ = dircpy(&vanilla_natives, &target_natives);

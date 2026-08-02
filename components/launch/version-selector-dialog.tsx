@@ -24,7 +24,6 @@ import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useI18n, type TranslationKey } from "@/components/i18n/use-i18n";
 import { useLaunchContext } from "./launch-provider";
-import type { DirEntry } from "@/types";
 
 /** 解析后的版本信息 */
 interface ParsedVersion {
@@ -120,6 +119,24 @@ const LOADER_DISPLAY: Record<string, { label: TranslationKey; color: string; ord
   liteloader: { label: "launch.versionSelector.liteLoader", color: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400", order: 6 },
 };
 
+function parsedVersionFromInstance(instance: ScannedInstance): ParsedVersion {
+  const fromName = parseVersionDir(instance.name);
+  const detectedLoader = instance.loader.trim().toLowerCase();
+  const loaderType = Object.prototype.hasOwnProperty.call(LOADER_DISPLAY, detectedLoader)
+    ? detectedLoader
+    : fromName.loaderType;
+
+  return {
+    name: instance.name,
+    mcVersion: instance.minecraft_version || fromName.mcVersion,
+    loaderType,
+    loaderVersion:
+      fromName.loaderType === loaderType && fromName.loaderVersion !== instance.name
+        ? fromName.loaderVersion
+        : instance.name,
+  };
+}
+
 export function VersionSelectorDialog({ open: controlledOpen, onOpenChange, compact }: VersionSelectorDialogProps = {}) {
   const { t } = useI18n();
   const { config, updateConfig } = useLaunchContext();
@@ -167,14 +184,11 @@ export function VersionSelectorDialog({ open: controlledOpen, onOpenChange, comp
       setLoading(true);
       const versionsPath = `${config.minecraftPath}/versions`;
 
-      const entries = await invoke<DirEntry[]>("vm_list_dir", {
-        dirPath: versionsPath,
-        extensionsFilter: [],
+      const instances = await invoke<ScannedInstance[]>("vm_scan_instances", {
+        instancesPath: versionsPath,
       });
 
-      const parsedList: ParsedVersion[] = entries
-        .filter((entry) => entry.is_dir)
-        .map((entry) => parseVersionDir(entry.name));
+      const parsedList = instances.map(parsedVersionFromInstance);
 
       setVersions(parsedList);
     } catch (error) {
@@ -619,4 +633,10 @@ function compareMcVersionDesc(a: string, b: string): number {
     if (pa[i] !== pb[i]) return pb[i] - pa[i];
   }
   return 0;
+}
+interface ScannedInstance {
+  name: string;
+  minecraft_version: string;
+  loader: string;
+  mods_count: number;
 }

@@ -19,9 +19,43 @@ export function useMinecraftVersions() {
     setLoading(true);
     setError(null);
     try {
-      const data = await invoke<ClassifiedVersions>(
-        "classify_minecraft_versions"
-      );
+      let data: ClassifiedVersions;
+      try {
+        data = await invoke<ClassifiedVersions>("classify_minecraft_versions");
+      } catch (invokeError) {
+        // 浏览器预览中没有 Tauri IPC，直接读取与后端相同的 Mojang 清单。
+        // 这样开发界面和桌面软件都能正常选择 Minecraft 版本。
+        const response = await fetch(
+          "https://launchermeta.mojang.com/mc/game/version_manifest.json",
+          { cache: "no-store" },
+        );
+        if (!response.ok) {
+          throw new Error(
+            `Minecraft 版本清单请求失败 (${response.status})：${String(invokeError)}`,
+          );
+        }
+        const manifest = (await response.json()) as {
+          versions?: Array<{ id: string; type: string; time: string }>;
+        };
+        const releases: ClassifiedVersions[0] = [];
+        const snapshots: ClassifiedVersions[1] = [];
+        const aprilFools: ClassifiedVersions[2] = [];
+        const oldVersions: ClassifiedVersions[3] = [];
+
+        for (const entry of manifest.versions || []) {
+          const item = { id: entry.id, releaseTime: entry.time };
+          if (entry.type === "old_alpha" || entry.type === "old_beta") {
+            oldVersions.push(item);
+          } else if (entry.time.includes("-04-01")) {
+            aprilFools.push(item);
+          } else if (entry.type === "release") {
+            releases.push(item);
+          } else if (entry.type === "snapshot") {
+            snapshots.push(item);
+          }
+        }
+        data = [releases, snapshots, aprilFools, oldVersions];
+      }
 
       const [releases, snapshots, aprilFools, oldVersions] = data;
 

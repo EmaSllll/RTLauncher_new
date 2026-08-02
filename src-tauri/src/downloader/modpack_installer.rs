@@ -1,3 +1,4 @@
+use crate::downloader::concurrent_download::{self, DownloadTask};
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -5,10 +6,10 @@ use std::fs;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use zip::ZipArchive;
-use crate::downloader::concurrent_download::{self, DownloadTask};
 
 fn detect_file_category(file_path: &Path) -> &'static str {
-    let extension = file_path.extension()
+    let extension = file_path
+        .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_lowercase();
@@ -234,15 +235,17 @@ fn parse_modrinth_zip(path: &Path) -> Result<ParsedModpack> {
         let mut entry = zip.by_index(i).context("读取 ZIP 条目失败")?;
         if entry.name() == "modrinth.index.json" {
             use std::io::Read;
-            entry.read_to_string(&mut index_content).context("读取 index 失败")?;
+            entry
+                .read_to_string(&mut index_content)
+                .context("读取 index 失败")?;
             break;
         }
     }
     if index_content.is_empty() {
         bail!("未找到 modrinth.index.json");
     }
-    let index: ModrinthIndex = serde_json::from_str(&index_content)
-        .context("解析 modrinth.index.json 失败")?;
+    let index: ModrinthIndex =
+        serde_json::from_str(&index_content).context("解析 modrinth.index.json 失败")?;
     let mc_version = index
         .dependencies
         .minecraft
@@ -392,15 +395,17 @@ fn parse_curseforge_zip(path: &Path) -> Result<ParsedModpack> {
         let mut entry = zip.by_index(i).context("读取 ZIP 条目失败")?;
         if entry.name() == "manifest.json" {
             use std::io::Read;
-            entry.read_to_string(&mut manifest_content).context("读取 manifest 失败")?;
+            entry
+                .read_to_string(&mut manifest_content)
+                .context("读取 manifest 失败")?;
             break;
         }
     }
     if manifest_content.is_empty() {
         bail!("未找到 manifest.json");
     }
-    let manifest: CurseForgeManifest = serde_json::from_str(&manifest_content)
-        .context("解析 manifest.json 失败")?;
+    let manifest: CurseForgeManifest =
+        serde_json::from_str(&manifest_content).context("解析 manifest.json 失败")?;
     let mc_version = if !manifest.minecraft.version.is_empty() {
         manifest.minecraft.version.clone()
     } else {
@@ -421,7 +426,10 @@ fn parse_curseforge_zip(path: &Path) -> Result<ParsedModpack> {
         let pid = cf.projectID as u64;
         let fid = cf.fileID as u64;
         let cdn_url = format!("https://edge.forgecdn.net/files/{}/{:03}/", first4, last3);
-        let files_cf_url = format!("https://files-cf.curseforge.com/file/curseforge-files/{}/{:03}/", first4, last3);
+        let files_cf_url = format!(
+            "https://files-cf.curseforge.com/file/curseforge-files/{}/{:03}/",
+            first4, last3
+        );
         let www_redirect_url = format!(
             "https://www.curseforge.com/minecraft/mc-mods/{}/download/{}/file",
             pid, fid
@@ -432,12 +440,7 @@ fn parse_curseforge_zip(path: &Path) -> Result<ParsedModpack> {
         );
         external_files.push(ModpackExternalFile {
             relative_path: String::new(),
-            urls: vec![
-                www_redirect_url,
-                files_cf_url,
-                cdn_url,
-                api_redirect_url,
-            ],
+            urls: vec![www_redirect_url, files_cf_url, cdn_url, api_redirect_url],
             sha1: None,
             size: None,
             project_id: Some(pid),
@@ -462,8 +465,7 @@ fn parse_curseforge_zip(path: &Path) -> Result<ParsedModpack> {
         if name.ends_with('/') {
             continue;
         }
-        let relative = if let Some(rest) = name.strip_prefix(&format!("{}/", overrides_prefix))
-        {
+        let relative = if let Some(rest) = name.strip_prefix(&format!("{}/", overrides_prefix)) {
             rest.to_string()
         } else {
             continue;
@@ -580,10 +582,7 @@ pub async fn install_parsed_modpack(
     progress_tx: Option<tokio::sync::mpsc::Sender<(usize, usize, String, String)>>,
     java_path: Option<&str>,
 ) -> Result<(String, usize)> {
-    let instance_name = sanitize_instance_name(&format!(
-        "{}-{}",
-        parsed.name, parsed.mc_version
-    ));
+    let instance_name = sanitize_instance_name(&format!("{}-{}", parsed.name, parsed.mc_version));
     let version_dir = minecraft_path.join("versions").join(&instance_name);
     fs::create_dir_all(&version_dir)
         .with_context(|| format!("创建版本目录失败: {:?}", version_dir))?;
@@ -612,11 +611,18 @@ pub async fn install_parsed_modpack(
         "[Modpack] 已写入 {} 个内置文件",
         parsed.extracted_files.len()
     );
-    let task_count: usize = parsed.external_files.iter().filter(|f| !f.urls.is_empty()).count();
+    let task_count: usize = parsed
+        .external_files
+        .iter()
+        .filter(|f| !f.urls.is_empty())
+        .count();
     let total_files: usize = 2 + task_count;
     fn send_progress(
         tx: &Option<tokio::sync::mpsc::Sender<(usize, usize, String, String)>>,
-        downloaded: usize, total: usize, fname: String, stage: String
+        downloaded: usize,
+        total: usize,
+        fname: String,
+        stage: String,
     ) {
         if let Some(ref t) = tx {
             let _ = t.try_send((downloaded, total, fname, stage));
@@ -630,7 +636,13 @@ pub async fn install_parsed_modpack(
         let tx_clone = progress_tx.clone();
         tokio::spawn(async move {
             println!("[Modpack] [并行] 下载原版 Minecraft {}...", mc_ver);
-            send_progress(&tx_clone, 0, total_files, String::new(), "下载原版 Minecraft".to_string());
+            send_progress(
+                &tx_clone,
+                0,
+                total_files,
+                String::new(),
+                "下载原版 Minecraft".to_string(),
+            );
             let version_dir = mc_dir_clone.join("versions").join(&mc_ver);
             let json_path = version_dir.join(format!("{}.json", mc_ver));
             let jar_path = version_dir.join(format!("{}.jar", mc_ver));
@@ -640,15 +652,33 @@ pub async fn install_parsed_modpack(
                 let tx_forward = tx_clone.clone();
                 let forward = tokio::spawn(async move {
                     while let Some(_p) = rx_local.recv().await {
-                        send_progress(&tx_forward, 0, total_files, String::new(), "下载原版 Minecraft".to_string());
+                        send_progress(
+                            &tx_forward,
+                            0,
+                            total_files,
+                            String::new(),
+                            "下载原版 Minecraft".to_string(),
+                        );
                     }
                 });
-                let _ = crate::downloader::original_dwl::process_version(&mc_ver, &mc_dir_clone, tx_local, cancel).await;
+                let _ = crate::downloader::original_dwl::process_version(
+                    &mc_ver,
+                    &mc_dir_clone,
+                    tx_local,
+                    cancel,
+                )
+                .await;
                 forward.abort();
             } else {
                 println!("[Modpack] 原版 Minecraft {} 已存在，跳过", mc_ver);
             }
-            send_progress(&tx_clone, 1, total_files, String::new(), "原版 Minecraft 完成".to_string());
+            send_progress(
+                &tx_clone,
+                1,
+                total_files,
+                String::new(),
+                "原版 Minecraft 完成".to_string(),
+            );
         })
     };
     let parsed_loader = parsed.loader_type.clone();
@@ -659,66 +689,156 @@ pub async fn install_parsed_modpack(
         let mc_dir_str = mc_dir.to_string_lossy().to_string();
         let tx_clone = progress_tx.clone();
         tokio::spawn(async move {
-            send_progress(&tx_clone, 1, total_files, String::new(), "安装 ModLoader".to_string());
+            send_progress(
+                &tx_clone,
+                1,
+                total_files,
+                String::new(),
+                "安装 ModLoader".to_string(),
+            );
             match parsed_loader {
                 ModpackLoaderType::Vanilla => {
-                    send_progress(&tx_clone, 2, total_files, String::new(), "ModLoader 安装完成".to_string());
+                    send_progress(
+                        &tx_clone,
+                        2,
+                        total_files,
+                        String::new(),
+                        "ModLoader 安装完成".to_string(),
+                    );
                     Ok((parsed_mc.clone(), String::new()))
                 }
                 ModpackLoaderType::Forge => {
                     let forge_ver = parsed_loader_ver.unwrap_or_else(|| "latest".to_string());
                     println!("[Modpack] [并行] 安装 Forge {}...", forge_ver);
-                    let version_id = crate::downloader::forge_installer::install_forge(&parsed_mc, &forge_ver, &mc_dir_str, &java_path_str, None, None).await
-                        .map_err(|e| anyhow!("Forge 安装失败: {}", e))?;
+                    let version_id = crate::downloader::forge_installer::install_forge(
+                        &parsed_mc,
+                        &forge_ver,
+                        &mc_dir_str,
+                        &java_path_str,
+                        None,
+                        None,
+                    )
+                    .await
+                    .map_err(|e| anyhow!("Forge 安装失败: {}", e))?;
                     println!("[Modpack] Forge 安装完成, 实际版本目录: {}", version_id);
-                    send_progress(&tx_clone, 2, total_files, String::new(), "ModLoader 安装完成".to_string());
+                    send_progress(
+                        &tx_clone,
+                        2,
+                        total_files,
+                        String::new(),
+                        "ModLoader 安装完成".to_string(),
+                    );
                     Ok((version_id, "forge".to_string()))
                 }
                 ModpackLoaderType::Neoforge => {
                     let neo_ver = parsed_loader_ver.unwrap_or_else(|| "latest".to_string());
                     println!("[Modpack] [并行] 安装 NeoForge {}...", neo_ver);
-                    let version_id = crate::downloader::neoforge_installer::install_neoforge(&parsed_mc, &neo_ver, &mc_dir_str, &java_path_str, None, None).await
-                        .map_err(|e| anyhow!("NeoForge 安装失败: {}", e))?;
+                    let version_id = crate::downloader::neoforge_installer::install_neoforge(
+                        &parsed_mc,
+                        &neo_ver,
+                        &mc_dir_str,
+                        &java_path_str,
+                        None,
+                        None,
+                    )
+                    .await
+                    .map_err(|e| anyhow!("NeoForge 安装失败: {}", e))?;
                     println!("[Modpack] Neoforge 安装完成, 实际版本目录: {}", version_id);
-                    send_progress(&tx_clone, 2, total_files, String::new(), "ModLoader 安装完成".to_string());
+                    send_progress(
+                        &tx_clone,
+                        2,
+                        total_files,
+                        String::new(),
+                        "ModLoader 安装完成".to_string(),
+                    );
                     Ok((version_id, "neoforge".to_string()))
                 }
                 ModpackLoaderType::Fabric => {
                     let mut fabric_ver = parsed_loader_ver.unwrap_or_else(|| "latest".to_string());
                     if fabric_ver != "latest" {
-                        let recommended_ver = recommend_fabric_loader_version(&parsed_mc, &fabric_ver);
+                        let recommended_ver =
+                            recommend_fabric_loader_version(&parsed_mc, &fabric_ver);
                         if recommended_ver != fabric_ver {
-                            println!("[Modpack] [并行] Fabric Loader {} 版本过旧，升级到 {}...", fabric_ver, recommended_ver);
+                            println!(
+                                "[Modpack] [并行] Fabric Loader {} 版本过旧，升级到 {}...",
+                                fabric_ver, recommended_ver
+                            );
                             fabric_ver = recommended_ver;
                         }
                     }
                     println!("[Modpack] [并行] 安装 Fabric Loader {}...", fabric_ver);
-                    let version_id = crate::downloader::fabric_installer::install_fabric_loader(&parsed_mc, &fabric_ver, &mc_dir_str, true).await
-                        .map_err(|e| anyhow!("Fabric 安装失败: {}", e))?;
+                    let version_id = crate::downloader::fabric_installer::install_fabric_loader(
+                        &parsed_mc,
+                        &fabric_ver,
+                        &mc_dir_str,
+                        true,
+                    )
+                    .await
+                    .map_err(|e| anyhow!("Fabric 安装失败: {}", e))?;
                     println!("[Modpack] Fabric 安装完成, 实际版本目录: {}", version_id);
-                    send_progress(&tx_clone, 2, total_files, String::new(), "ModLoader 安装完成".to_string());
+                    send_progress(
+                        &tx_clone,
+                        2,
+                        total_files,
+                        String::new(),
+                        "ModLoader 安装完成".to_string(),
+                    );
                     Ok((version_id, "fabric".to_string()))
                 }
                 ModpackLoaderType::Quilt => {
                     let quilt_ver = parsed_loader_ver.unwrap_or_else(|| "latest".to_string());
                     println!("[Modpack] [并行] 安装 Quilt Loader {}...", quilt_ver);
-                    let version_id = crate::downloader::quilt_installer::install_quilt_loader(&parsed_mc, &quilt_ver, &mc_dir_str, None).await
-                        .map_err(|e| anyhow!("Quilt 安装失败: {}", e))?;
+                    let version_id = crate::downloader::quilt_installer::install_quilt_loader(
+                        &parsed_mc,
+                        &quilt_ver,
+                        &mc_dir_str,
+                        None,
+                    )
+                    .await
+                    .map_err(|e| anyhow!("Quilt 安装失败: {}", e))?;
                     println!("[Modpack] Quilt 安装完成, 实际版本目录: {}", version_id);
-                    send_progress(&tx_clone, 2, total_files, String::new(), "ModLoader 安装完成".to_string());
+                    send_progress(
+                        &tx_clone,
+                        2,
+                        total_files,
+                        String::new(),
+                        "ModLoader 安装完成".to_string(),
+                    );
                     Ok((version_id, "quilt".to_string()))
                 }
                 ModpackLoaderType::LiteLoader => {
                     let lite_ver = parsed_loader_ver.unwrap_or_else(|| parsed_mc.clone());
                     println!("[Modpack] [并行] 安装 LiteLoader {}...", lite_ver);
-                    let version_id = crate::downloader::liteloader_installer::install_liteloader(&parsed_mc, &lite_ver, &mc_dir_str, &java_path_str, None).await
-                        .map_err(|e| anyhow!("LiteLoader 安装失败: {}", e))?;
-                    println!("[Modpack] LiteLoader 安装完成, 实际版本目录: {}", version_id);
-                    send_progress(&tx_clone, 2, total_files, String::new(), "ModLoader 安装完成".to_string());
+                    let version_id = crate::downloader::liteloader_installer::install_liteloader(
+                        &parsed_mc,
+                        &lite_ver,
+                        &mc_dir_str,
+                        &java_path_str,
+                        None,
+                    )
+                    .await
+                    .map_err(|e| anyhow!("LiteLoader 安装失败: {}", e))?;
+                    println!(
+                        "[Modpack] LiteLoader 安装完成, 实际版本目录: {}",
+                        version_id
+                    );
+                    send_progress(
+                        &tx_clone,
+                        2,
+                        total_files,
+                        String::new(),
+                        "ModLoader 安装完成".to_string(),
+                    );
                     Ok((version_id, "liteloader".to_string()))
                 }
                 ModpackLoaderType::Optifine => {
-                    send_progress(&tx_clone, 2, total_files, String::new(), "ModLoader 安装完成".to_string());
+                    send_progress(
+                        &tx_clone,
+                        2,
+                        total_files,
+                        String::new(),
+                        "ModLoader 安装完成".to_string(),
+                    );
                     Ok((parsed_mc.clone(), String::new()))
                 }
             }
@@ -736,7 +856,10 @@ pub async fn install_parsed_modpack(
             let _ = ensure_dir(&mods_dir);
 
             // --- 阶段 1: 预解析 CurseForge 文件信息 ---
-            let total_cf = external_files.iter().filter(|f| f.project_id.is_some()).count();
+            let total_cf = external_files
+                .iter()
+                .filter(|f| f.project_id.is_some())
+                .count();
             println!("[Modpack] 预解析 {} 个 CurseForge 文件...", total_cf);
 
             let mut cf_futures = Vec::new();
@@ -746,42 +869,57 @@ pub async fn install_parsed_modpack(
                         (
                             pid,
                             fid,
-                            crate::downloader::modular_download::resolve_cf_download_info(pid, fid).await,
+                            crate::downloader::modular_download::resolve_cf_download_info(pid, fid)
+                                .await,
                         )
                     });
                 }
             }
 
             let cf_results = futures::future::join_all(cf_futures).await;
-            let mut cf_map: std::collections::HashMap<(u64, u64), String> = std::collections::HashMap::new();
+            let mut cf_map: std::collections::HashMap<(u64, u64), String> =
+                std::collections::HashMap::new();
             for (pid, fid, result) in cf_results {
                 if let Some((name, _sha, cdn)) = result {
                     cf_map.insert((pid, fid), name);
                     drop(cdn);
                 }
             }
-            println!("[Modpack] CurseForge 预解析完成: 成功 {}/{}", cf_map.len(), total_cf);
+            println!(
+                "[Modpack] CurseForge 预解析完成: 成功 {}/{}",
+                cf_map.len(),
+                total_cf
+            );
 
             // --- 阶段 2: 构造下载任务，直接下载到目标目录 ---
             let mut download_tasks: Vec<DownloadTask> = Vec::new();
             for f in &external_files {
-                if f.urls.is_empty() { continue; }
+                if f.urls.is_empty() {
+                    continue;
+                }
                 let rel = f.relative_path.trim();
-                if rel.contains("..") || rel.starts_with('/') || rel.starts_with('\\') { continue; }
+                if rel.contains("..") || rel.starts_with('/') || rel.starts_with('\\') {
+                    continue;
+                }
 
                 let (file_name, target_dir) = if !rel.is_empty() {
                     // 有明确相对路径（来自 Modrinth/其他）
                     let full = instance_root_clone.join(rel);
-                    let dir = full.parent()
+                    let dir = full
+                        .parent()
                         .map(|p| p.to_path_buf())
                         .unwrap_or_else(|| mods_dir.clone());
-                    let name = full.file_name()
+                    let name = full
+                        .file_name()
                         .map(|s| s.to_string_lossy().to_string())
                         .unwrap_or_default();
                     (name, dir)
                 } else if let (Some(pid), Some(fid)) = (f.project_id, f.file_id) {
                     // CurseForge 文件 - 用预解析的文件名
-                    let name = cf_map.get(&(pid, fid)).cloned().unwrap_or_else(|| format!("mod_{}.jar", fid));
+                    let name = cf_map
+                        .get(&(pid, fid))
+                        .cloned()
+                        .unwrap_or_else(|| format!("mod_{}.jar", fid));
                     // 根据扩展名判断目录
                     let lower = name.to_lowercase();
                     let dir = if lower.ends_with(".zip") {
@@ -795,7 +933,9 @@ pub async fn install_parsed_modpack(
                     continue;
                 };
 
-                if file_name.is_empty() { continue; }
+                if file_name.is_empty() {
+                    continue;
+                }
                 let _ = ensure_dir(&target_dir);
 
                 download_tasks.push(DownloadTask {
@@ -822,13 +962,24 @@ pub async fn install_parsed_modpack(
                 if let Some(ref ext_tx) = tx {
                     while let Some((done, _total, fname)) = inner_rx.recv().await {
                         println!("[Modpack] 进度: {}/{} | {}", done, tf, fname);
-                        let _ = ext_tx.try_send((2 + done, tf, fname.clone(), "下载资源文件".to_string()));
+                        let _ = ext_tx.try_send((
+                            2 + done,
+                            tf,
+                            fname.clone(),
+                            "下载资源文件".to_string(),
+                        ));
                     }
                 }
             });
-            let result = concurrent_download::download_all_with_file_info(download_tasks, Some(inner_tx)).await;
+            let result =
+                concurrent_download::download_all_with_file_info(download_tasks, Some(inner_tx))
+                    .await;
             forward.abort();
-            println!("[Modpack] 下载完成: 成功 {}, 失败 {}", result.success_count, result.failures.len());
+            println!(
+                "[Modpack] 下载完成: 成功 {}, 失败 {}",
+                result.success_count,
+                result.failures.len()
+            );
             for fail in &result.failures {
                 println!("[Modpack] ✗ 失败: {} | {}", fail.file_name, fail.error);
             }
@@ -841,16 +992,24 @@ pub async fn install_parsed_modpack(
                 if let Ok(entries) = std::fs::read_dir(dir) {
                     for entry in entries.flatten() {
                         let src = entry.path();
-                        if src.is_dir() { continue; }
-                        let ext = src.extension()
+                        if src.is_dir() {
+                            continue;
+                        }
+                        let ext = src
+                            .extension()
                             .and_then(|e| e.to_str())
                             .unwrap_or("")
                             .to_lowercase();
-                        if ext != "zip" { continue; }
-                        let fname = src.file_name()
+                        if ext != "zip" {
+                            continue;
+                        }
+                        let fname = src
+                            .file_name()
                             .map(|s| s.to_string_lossy().to_string())
                             .unwrap_or_default();
-                        if fname.is_empty() { continue; }
+                        if fname.is_empty() {
+                            continue;
+                        }
                         let category = detect_file_category(&src);
                         let target_dir = match category {
                             "datapacks" => Some(&datapacks_dir),
@@ -878,9 +1037,11 @@ pub async fn install_parsed_modpack(
                 match fs::rename(src, dest) {
                     Ok(_) => {
                         moved += 1;
-                        println!("[Modpack] 移动: {} -> {}", 
+                        println!(
+                            "[Modpack] 移动: {} -> {}",
                             src.file_name().unwrap().to_string_lossy(),
-                            dest.display());
+                            dest.display()
+                        );
                     }
                     Err(_) => {
                         // rename 失败，尝试 copy + remove
@@ -998,13 +1159,17 @@ pub async fn install_parsed_modpack(
         fs::write(&options_path, "lang:zh_cn")?;
     }
     
-    println!("[Modpack] 整合包安装完成: {} (版本名: {})", parsed.name, instance_name);
+    println!(
+        "[Modpack] 整合包安装完成: {} (版本名: {})",
+        parsed.name, instance_name
+    );
     Ok((instance_name, task_count))
 }
 fn sanitize_instance_name(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len());
     for ch in raw.chars() {
-        if matches!(ch,
+        if matches!(
+            ch,
             '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '\0' | '\n' | '\r' | '\t'
         ) {
             out.push('_');
@@ -1028,7 +1193,9 @@ fn merge_version_jsons_for_modpack(
 ) -> Result<()> {
     use serde_json::Value;
     let versions_root = minecraft_path.join("versions");
-    let vanilla_json_path = versions_root.join(mc_version).join(format!("{}.json", mc_version));
+    let vanilla_json_path = versions_root
+        .join(mc_version)
+        .join(format!("{}.json", mc_version));
     let vanilla: Value = if vanilla_json_path.exists() {
         let text = fs::read_to_string(&vanilla_json_path)
             .with_context(|| format!("读取原版 version.json 失败: {:?}", vanilla_json_path))?;
@@ -1086,10 +1253,7 @@ fn merge_version_jsons_for_modpack(
                 if let Ok(text) = fs::read_to_string(p) {
                     if let Ok(v) = serde_json::from_str::<Value>(&text) {
                         if v.get("mainClass").is_some() {
-                            println!(
-                                "[Modpack] 找到 loader version.json: {}",
-                                p.display()
-                            );
+                            println!("[Modpack] 找到 loader version.json: {}", p.display());
                             result = Some(v);
                             break;
                         }
@@ -1108,7 +1272,10 @@ fn merge_version_jsons_for_modpack(
         obj.insert("time".to_string(), Value::String(current_iso_time()));
         obj.insert("releaseTime".to_string(), Value::String(current_iso_time()));
         if !obj.contains_key("minimumLauncherVersion") {
-            obj.insert("minimumLauncherVersion".to_string(), Value::Number(21.into()));
+            obj.insert(
+                "minimumLauncherVersion".to_string(),
+                Value::Number(21.into()),
+            );
         }
         obj.remove("inheritsFrom");
         obj.remove("inherits-from");
@@ -1117,10 +1284,7 @@ fn merge_version_jsons_for_modpack(
                 obj.insert("mainClass".to_string(), mc.clone());
             }
             if let Some(loader_args) = loader_obj.get("arguments").and_then(|v| v.as_object()) {
-                let vanilla_args_obj = obj
-                    .get("arguments")
-                    .and_then(|v| v.as_object())
-                    .cloned();
+                let vanilla_args_obj = obj.get("arguments").and_then(|v| v.as_object()).cloned();
                 let get_array = |o: &serde_json::Map<String, Value>, key: &str| -> Vec<Value> {
                     o.get(key)
                         .and_then(|v| v.as_array())
@@ -1182,8 +1346,7 @@ fn merge_version_jsons_for_modpack(
             }
         }
         let mut merged_libs: Vec<Value> = Vec::new();
-        let mut seen_keys: std::collections::HashSet<String> =
-            std::collections::HashSet::new();
+        let mut seen_keys: std::collections::HashSet<String> = std::collections::HashSet::new();
         let extract_gac = |name: &str| -> String {
             let parts: Vec<&str> = name.split(':').collect();
             match parts.len() {
@@ -1213,11 +1376,11 @@ fn merge_version_jsons_for_modpack(
                         if seen_keys.insert(key) {
                             merged_libs.push(lib.clone());
                         }
-                    } else if let Some(artifact_path) =
-                        lib.get("downloads")
-                            .and_then(|d| d.get("artifact"))
-                            .and_then(|a| a.get("path"))
-                            .and_then(|p| p.as_str())
+                    } else if let Some(artifact_path) = lib
+                        .get("downloads")
+                        .and_then(|d| d.get("artifact"))
+                        .and_then(|a| a.get("path"))
+                        .and_then(|p| p.as_str())
                     {
                         let key = extract_path_key(artifact_path);
                         if seen_keys.insert(key) {
@@ -1236,11 +1399,11 @@ fn merge_version_jsons_for_modpack(
                     if seen_keys.insert(key) {
                         merged_libs.push(lib.clone());
                     }
-                } else if let Some(artifact_path) =
-                    lib.get("downloads")
-                        .and_then(|d| d.get("artifact"))
-                        .and_then(|a| a.get("path"))
-                        .and_then(|p| p.as_str())
+                } else if let Some(artifact_path) = lib
+                    .get("downloads")
+                    .and_then(|d| d.get("artifact"))
+                    .and_then(|a| a.get("path"))
+                    .and_then(|p| p.as_str())
                 {
                     let key = extract_path_key(artifact_path);
                     if seen_keys.insert(key) {
@@ -1256,16 +1419,19 @@ fn merge_version_jsons_for_modpack(
     let version_dir = versions_root.join(instance_name);
     fs::create_dir_all(&version_dir).ok();
     let json_path = version_dir.join(format!("{}.json", instance_name));
-    let text = serde_json::to_string_pretty(&result)
-        .context("序列化合并后的 version.json 失败")?;
+    let text = serde_json::to_string_pretty(&result).context("序列化合并后的 version.json 失败")?;
     fs::write(&json_path, text)
         .with_context(|| format!("写入合并后的 version.json 失败: {:?}", json_path))?;
-    let vanilla_jar = versions_root.join(mc_version).join(format!("{}.jar", mc_version));
+    let vanilla_jar = versions_root
+        .join(mc_version)
+        .join(format!("{}.jar", mc_version));
     let target_jar = version_dir.join(format!("{}.jar", instance_name));
     if vanilla_jar.exists() {
         let _ = fs::copy(&vanilla_jar, &target_jar);
     }
-    let vanilla_natives = versions_root.join(mc_version).join(format!("{}-natives", mc_version));
+    let vanilla_natives = versions_root
+        .join(mc_version)
+        .join(format!("{}-natives", mc_version));
     let target_natives = version_dir.join(format!("{}-natives", instance_name));
     if vanilla_natives.exists() {
         let _ = dircpy(&vanilla_natives, &target_natives);

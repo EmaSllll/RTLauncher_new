@@ -1,8 +1,8 @@
+use crate::downloader::dwPatch::get_minecraft_dir;
 use crate::downloader::forge_installer;
 use crate::downloader::mod_loader_installer_shared::pick_java_executable;
 use crate::downloader::original_dwl::process_version;
-use crate::downloader::dwPatch::get_minecraft_dir;
-use crate::downloader::shared_utils::{sanitize_instance_name, merge_version_jsons_to_instance};
+use crate::downloader::shared_utils::{merge_version_jsons_to_instance, sanitize_instance_name};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -37,9 +37,7 @@ fn forge_active_tasks() -> &'static Mutex<HashMap<u64, ForgeActiveTaskInfo>> {
     INSTANCE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 #[tauri::command]
-pub async fn get_forge_versions(
-    mc_version: String,
-) -> Result<Vec<ForgeVersion>, String> {
+pub async fn get_forge_versions(mc_version: String) -> Result<Vec<ForgeVersion>, String> {
     let version_names = forge_installer::get_forge_versions(&mc_version)
         .await
         .map_err(|e| format!("获取 Forge 版本失败: {}", e))?;
@@ -60,8 +58,7 @@ pub async fn download_and_install_forge(
 ) -> Result<u64, String> {
     let task_id = FORGE_TASK_COUNTER.fetch_add(1, Ordering::SeqCst);
     let minecraft_path = get_minecraft_dir()?;
-    std::fs::create_dir_all(&minecraft_path)
-        .map_err(|e| format!("创建目录失败: {}", e))?;
+    std::fs::create_dir_all(&minecraft_path).map_err(|e| format!("创建目录失败: {}", e))?;
     let (tx, mut rx) = tokio::sync::mpsc::channel::<f64>(64);
     let cancel = Arc::new(AtomicBool::new(false));
     {
@@ -133,9 +130,16 @@ pub async fn download_and_install_forge(
             });
             let mc_path_str = mc_path_b.to_string_lossy().to_string();
             let java = pick_java_executable(&version_b);
-            forge_installer::install_forge(&version_b, &forge_ver_b, &mc_path_str, &java, Some(tx2), Some(original_ready))
-                .await
-                .map_err(|e| e.to_string())
+            forge_installer::install_forge(
+                &version_b,
+                &forge_ver_b,
+                &mc_path_str,
+                &java,
+                Some(tx2),
+                Some(original_ready),
+            )
+            .await
+            .map_err(|e| e.to_string())
         });
         let (original_result, forge_result) = tokio::join!(original_handle, forge_handle);
         let original_result = original_result.unwrap_or_else(|e| Err(e.to_string()));
@@ -219,9 +223,7 @@ pub async fn download_and_install_forge(
 }
 #[tauri::command]
 pub async fn cancel_forge_download(taskId: u64) -> Result<(), String> {
-    let tasks = forge_active_tasks()
-        .lock()
-        .map_err(|e| e.to_string())?;
+    let tasks = forge_active_tasks().lock().map_err(|e| e.to_string())?;
     if let Some(info) = tasks.get(&taskId) {
         info.cancel.store(true, Ordering::SeqCst);
     }

@@ -1,14 +1,14 @@
+use futures::stream::{self, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
-use futures::stream::{self, StreamExt};
-use tokio::fs::{File, OpenOptions};
-use tokio::io::{AsyncReadExt, AsyncWriteExt, AsyncSeekExt};
 use std::time::Duration;
 use tauri::Emitter;
+use tokio::fs::{File, OpenOptions};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 const JAVA_MANIFEST_URL: &str = "https://launchermeta.mojang.com/v1/products/java-runtime/2ec0cc96c44e5a76b9c8b7c39df7210883d12871/all.json";
 // 减少并发下载数，避免被服务器限流
@@ -127,14 +127,19 @@ fn get_platform_identifier() -> &'static str {
 #[tauri::command]
 pub async fn get_java_versions() -> Result<Vec<JavaVersionInfo>, String> {
     let client = crate::http_client::shared_client().await;
-    let response = client.get(JAVA_MANIFEST_URL).send().await
+    let response = client
+        .get(JAVA_MANIFEST_URL)
+        .send()
+        .await
         .map_err(|e| format!("获取Java版本列表失败: {}", e))?;
 
     if !response.status().is_success() {
         return Err(format!("获取Java版本列表失败: HTTP {}", response.status()));
     }
 
-    let manifest: JavaManifest = response.json().await
+    let manifest: JavaManifest = response
+        .json()
+        .await
         .map_err(|e| format!("解析Java版本列表失败: {}", e))?;
 
     let platform = get_platform_identifier();
@@ -142,7 +147,9 @@ pub async fn get_java_versions() -> Result<Vec<JavaVersionInfo>, String> {
         return Err("不支持的系统或架构".to_string());
     }
 
-    let platform_data = manifest.platforms.get(platform)
+    let platform_data = manifest
+        .platforms
+        .get(platform)
         .ok_or_else(|| format!("未找到平台 {} 的Java版本", platform))?;
 
     let mut versions = Vec::new();
@@ -170,42 +177,64 @@ pub async fn download_java_runtime(
     window: tauri::Window,
 ) -> Result<DownloadResult, String> {
     let client = crate::http_client::shared_client().await;
-    let response = client.get(JAVA_MANIFEST_URL).send().await
+    let response = client
+        .get(JAVA_MANIFEST_URL)
+        .send()
+        .await
         .map_err(|e| format!("获取Java版本列表失败: {}", e))?;
 
     if !response.status().is_success() {
         return Err(format!("获取Java版本列表失败: HTTP {}", response.status()));
     }
 
-    let manifest: JavaManifest = response.json().await
+    let manifest: JavaManifest = response
+        .json()
+        .await
         .map_err(|e| format!("解析Java版本列表失败: {}", e))?;
 
     let platform = get_platform_identifier();
-    let platform_data = manifest.platforms.get(platform)
+    let platform_data = manifest
+        .platforms
+        .get(platform)
         .ok_or_else(|| format!("未找到平台 {} 的Java版本", platform))?;
 
-    let runtimes = platform_data.runtimes.get(&runtime_name)
+    let runtimes = platform_data
+        .runtimes
+        .get(&runtime_name)
         .ok_or_else(|| format!("未找到 Java 版本: {}", runtime_name))?;
 
-    let runtime = runtimes.first()
+    let runtime = runtimes
+        .first()
         .ok_or_else(|| format!("Java 版本 {} 无可用下载", runtime_name))?;
 
     let version_name = &runtime.version.name;
     let manifest_url = &runtime.manifest.url;
 
-    let files_response = client.get(manifest_url).send().await
+    let files_response = client
+        .get(manifest_url)
+        .send()
+        .await
         .map_err(|e| format!("获取Java文件列表失败: {}", e))?;
 
     if !files_response.status().is_success() {
-        return Err(format!("获取Java文件列表失败: HTTP {}", files_response.status()));
+        return Err(format!(
+            "获取Java文件列表失败: HTTP {}",
+            files_response.status()
+        ));
     }
 
-    let files_manifest: JavaFilesManifest = files_response.json().await
+    let files_manifest: JavaFilesManifest = files_response
+        .json()
+        .await
         .map_err(|e| format!("解析Java文件列表失败: {}", e))?;
 
     let mut download_tasks = Vec::new();
     let java_dir = PathBuf::from(&base_path).join(&runtime_name);
-    let java_exe_name = if cfg!(windows) { "bin/java.exe" } else { "bin/java" };
+    let java_exe_name = if cfg!(windows) {
+        "bin/java.exe"
+    } else {
+        "bin/java"
+    };
     let mut java_relative_path: Option<String> = None;
 
     for (file_path, file_info) in &files_manifest.files {
@@ -239,25 +268,36 @@ pub async fn download_java_runtime(
         .map(|p| java_dir.join(p))
         .unwrap_or_else(|| java_dir.join(java_exe_name));
 
-    download_java_files(download_tasks, task_id, window.clone()).await
+    download_java_files(download_tasks, task_id, window.clone())
+        .await
         .map_err(|e| {
-            let _ = window.emit("java-download-finished", serde_json::json!({
-                "task_id": task_id,
-                "success": false,
-                "error": e
-            }));
+            let _ = window.emit(
+                "java-download-finished",
+                serde_json::json!({
+                    "task_id": task_id,
+                    "success": false,
+                    "error": e
+                }),
+            );
             e
         })?;
 
-    let _ = window.emit("java-download-finished", serde_json::json!({
-        "task_id": task_id,
-        "success": true,
-        "error": null
-    }));
+    let _ = window.emit(
+        "java-download-finished",
+        serde_json::json!({
+            "task_id": task_id,
+            "success": true,
+            "error": null
+        }),
+    );
 
     Ok(DownloadResult {
-        message: format!("Java {} ({}) 已成功下载到: {}",
-                         runtime_name, version_name, java_dir.display()),
+        message: format!(
+            "Java {} ({}) 已成功下载到: {}",
+            runtime_name,
+            version_name,
+            java_dir.display()
+        ),
         java_path: java_bin.to_string_lossy().to_string(),
     })
 }
@@ -282,10 +322,13 @@ async fn download_java_files(
             } else {
                 100.0
             };
-            let _ = window_clone.emit("java-download-progress", serde_json::json!({
-                "task_id": task_id,
-                "percent": percent
-            }));
+            let _ = window_clone.emit(
+                "java-download-progress",
+                serde_json::json!({
+                    "task_id": task_id,
+                    "percent": percent
+                }),
+            );
             if done >= total {
                 break;
             }
@@ -310,10 +353,13 @@ async fn download_java_files(
     progress_reporter.abort();
     let _ = progress_reporter.await;
 
-    let _ = window.emit("java-download-progress", serde_json::json!({
-        "task_id": task_id,
-        "percent": 100.0
-    }));
+    let _ = window.emit(
+        "java-download-progress",
+        serde_json::json!({
+            "task_id": task_id,
+            "percent": 100.0
+        }),
+    );
 
     let mut errors = Vec::new();
     for result in results {
@@ -346,7 +392,8 @@ async fn download_java_file(
 
     // 创建目录
     if let Some(parent) = task.target_path.parent() {
-        tokio::fs::create_dir_all(parent).await
+        tokio::fs::create_dir_all(parent)
+            .await
             .map_err(|e| format!("创建目录失败: {}", e))?;
     }
 
@@ -354,7 +401,8 @@ async fn download_java_file(
     download_file_with_resumable_retry(&client, &task.url, &task.target_path, task.size).await?;
 
     // SHA1 校验
-    let mut file = File::open(&task.target_path).await
+    let mut file = File::open(&task.target_path)
+        .await
         .map_err(|e| format!("打开文件失败: {}", e))?;
 
     if !check_sha1(&mut file, &task.sha1).await.unwrap_or(false) {
@@ -397,9 +445,7 @@ async fn download_file_with_resumable_retry(
 
     for attempt in 0..MAX_FILE_RETRIES {
         // 计算当前磁盘上已有字节数（作为断点续传起点）
-        let current_bytes = std::fs::metadata(target_path)
-            .map(|m| m.len())
-            .unwrap_or(0);
+        let current_bytes = std::fs::metadata(target_path).map(|m| m.len()).unwrap_or(0);
 
         // 已有完整文件则直接成功
         if expected_size > 0 && current_bytes == expected_size {
@@ -414,7 +460,12 @@ async fn download_file_with_resumable_retry(
             );
             eprintln!(
                 "[Java下载] 第{}次重试 ({}/{}), 已下载 {} bytes, 等待 {}ms 后继续: {}",
-                attempt, attempt, MAX_FILE_RETRIES - 1, current_bytes, backoff_ms, url
+                attempt,
+                attempt,
+                MAX_FILE_RETRIES - 1,
+                current_bytes,
+                backoff_ms,
+                url
             );
             tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
         }
@@ -425,7 +476,10 @@ async fn download_file_with_resumable_retry(
                 last_error = Some(e.clone());
                 eprintln!(
                     "[Java下载] 尝试 {}/{} 失败: {} (URL: {})",
-                    attempt + 1, MAX_FILE_RETRIES, e, url
+                    attempt + 1,
+                    MAX_FILE_RETRIES,
+                    e,
+                    url
                 );
             }
         }
@@ -454,10 +508,8 @@ async fn download_chunk(
 
     if start_offset > 0 {
         // 断点续传：从 start_offset 开始下载剩余字节
-        request_builder = request_builder.header(
-            reqwest::header::RANGE,
-            format!("bytes={}-", start_offset),
-        );
+        request_builder =
+            request_builder.header(reqwest::header::RANGE, format!("bytes={}-", start_offset));
     }
 
     let response = request_builder
@@ -556,15 +608,23 @@ async fn write_response_to_file(
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("读取数据失败: {}", e))?;
         downloaded_bytes.fetch_add(chunk.len() as u64, Ordering::Relaxed);
-        writer.write_all(&chunk).await
+        writer
+            .write_all(&chunk)
+            .await
             .map_err(|e| format!("写入文件失败: {}", e))?;
     }
 
     // 取消 stall 检测器（正常完成）
     stall_handle.abort();
 
-    writer.flush().await.map_err(|e| format!("刷新缓冲区失败: {}", e))?;
-    writer.into_inner().sync_all().await
+    writer
+        .flush()
+        .await
+        .map_err(|e| format!("刷新缓冲区失败: {}", e))?;
+    writer
+        .into_inner()
+        .sync_all()
+        .await
         .map_err(|e| format!("同步文件失败: {}", e))?;
 
     Ok(())
@@ -586,12 +646,20 @@ async fn write_response_to_file_from_start(
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| format!("读取数据失败: {}", e))?;
-        writer.write_all(&chunk).await
+        writer
+            .write_all(&chunk)
+            .await
             .map_err(|e| format!("写入文件失败: {}", e))?;
     }
 
-    writer.flush().await.map_err(|e| format!("刷新缓冲区失败: {}", e))?;
-    writer.into_inner().sync_all().await
+    writer
+        .flush()
+        .await
+        .map_err(|e| format!("刷新缓冲区失败: {}", e))?;
+    writer
+        .into_inner()
+        .sync_all()
+        .await
         .map_err(|e| format!("同步文件失败: {}", e))?;
 
     Ok(())
@@ -605,7 +673,9 @@ async fn check_sha1(file: &mut File, expected: &str) -> Result<bool, String> {
     let mut reader = tokio::io::BufReader::with_capacity(DOWNLOAD_BUFFER_SIZE, file);
 
     loop {
-        let n = reader.read(&mut buf).await
+        let n = reader
+            .read(&mut buf)
+            .await
             .map_err(|e| format!("读取文件失败: {}", e))?;
         if n == 0 {
             break;

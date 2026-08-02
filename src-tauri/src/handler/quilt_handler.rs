@@ -1,6 +1,6 @@
-use crate::downloader::quilt_installer;
 use crate::downloader::dwPatch::get_minecraft_dir;
-use crate::downloader::shared_utils::{sanitize_instance_name, merge_version_jsons_to_instance};
+use crate::downloader::quilt_installer;
+use crate::downloader::shared_utils::{merge_version_jsons_to_instance, sanitize_instance_name};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -45,28 +45,32 @@ fn quilt_active_tasks() -> &'static Mutex<HashMap<u64, QuiltActiveTaskInfo>> {
 
 /// 获取指定Minecraft版本的Quilt Loader版本列表
 #[tauri::command]
-pub async fn get_quilt_loader_versions(
-    mc_version: String,
-) -> Result<Vec<QuiltVersion>, String> {
-    let version_names = quilt_installer::get_quilt_loader_versions(&mc_version).await
+pub async fn get_quilt_loader_versions(mc_version: String) -> Result<Vec<QuiltVersion>, String> {
+    let version_names = quilt_installer::get_quilt_loader_versions(&mc_version)
+        .await
         .map_err(|e| format!("获取 Quilt Loader 版本失败: {}", e))?;
-    Ok(version_names.into_iter().map(|v| QuiltVersion {
-        id: v.clone(),
-        version: v,
-    }).collect())
+    Ok(version_names
+        .into_iter()
+        .map(|v| QuiltVersion {
+            id: v.clone(),
+            version: v,
+        })
+        .collect())
 }
 
 /// 获取指定Minecraft版本的Quilt API版本列表
 #[tauri::command]
-pub async fn get_quilt_api_versions(
-    mc_version: String,
-) -> Result<Vec<QuiltVersion>, String> {
-    let version_names = quilt_installer::get_quilt_api_versions(&mc_version).await
+pub async fn get_quilt_api_versions(mc_version: String) -> Result<Vec<QuiltVersion>, String> {
+    let version_names = quilt_installer::get_quilt_api_versions(&mc_version)
+        .await
         .map_err(|e| format!("获取 Quilt API 版本失败: {}", e))?;
-    Ok(version_names.into_iter().map(|v| QuiltVersion {
-        id: v.clone(),
-        version: v,
-    }).collect())
+    Ok(version_names
+        .into_iter()
+        .map(|v| QuiltVersion {
+            id: v.clone(),
+            version: v,
+        })
+        .collect())
 }
 
 /// 安装Quilt Loader
@@ -88,7 +92,10 @@ pub async fn install_quilt_loader(
     .map_err(|e| format!("安装 Quilt Loader 失败: {}", e))?;
 
     Ok(QuiltInstallResult {
-        message: format!("Quilt Loader {} 已成功安装到 Minecraft {}", loader_version, mc_version)
+        message: format!(
+            "Quilt Loader {} 已成功安装到 Minecraft {}",
+            loader_version, mc_version
+        ),
     })
 }
 
@@ -111,7 +118,10 @@ pub async fn install_quilt_api(
     .map_err(|e| format!("安装 Quilt API 失败: {}", e))?;
 
     Ok(QuiltInstallResult {
-        message: format!("Quilt API {} 已成功安装到 Minecraft {}", api_version, mc_version)
+        message: format!(
+            "Quilt API {} 已成功安装到 Minecraft {}",
+            api_version, mc_version
+        ),
     })
 }
 
@@ -144,18 +154,24 @@ pub async fn download_and_install_quilt(
     let task_id_clone = task_id;
     tokio::spawn(async move {
         while let Some(percent) = rx.recv().await {
-            let _ = app_clone.emit("quilt-download-progress", QuiltDownloadProgressPayload {
-                task_id: task_id_clone,
-                percent,
-            });
+            let _ = app_clone.emit(
+                "quilt-download-progress",
+                QuiltDownloadProgressPayload {
+                    task_id: task_id_clone,
+                    percent,
+                },
+            );
         }
     });
 
     // 立即发送初始进度事件
-    let _ = app.emit("quilt-download-progress", QuiltDownloadProgressPayload {
-        task_id,
-        percent: 0.0,
-    });
+    let _ = app.emit(
+        "quilt-download-progress",
+        QuiltDownloadProgressPayload {
+            task_id,
+            percent: 0.0,
+        },
+    );
 
     let app_finish = app.clone();
     let version = mc_version.clone();
@@ -180,10 +196,15 @@ pub async fn download_and_install_quilt(
                     let _ = tx_for_original.send(percent * 0.6).await;
                 }
             });
-            crate::downloader::original_dwl::process_version(&version_a, &mc_path_a, tx1, cancel_clone_a.clone())
-                .await
-                .map(|_| ())
-                .map_err(|e| e.to_string())
+            crate::downloader::original_dwl::process_version(
+                &version_a,
+                &mc_path_a,
+                tx1,
+                cancel_clone_a.clone(),
+            )
+            .await
+            .map(|_| ())
+            .map_err(|e| e.to_string())
         });
 
         // --- Task B: Quilt 安装 (60-100%) ---
@@ -257,21 +278,27 @@ pub async fn download_and_install_quilt(
         let was_cancelled = cancel_clone.load(Ordering::SeqCst);
 
         if was_cancelled {
-            let _ = app_finish.emit("quilt-download-finished", QuiltDownloadFinishedPayload {
-                task_id,
-                success: false,
-                error: Some("已取消".to_string()),
-            });
+            let _ = app_finish.emit(
+                "quilt-download-finished",
+                QuiltDownloadFinishedPayload {
+                    task_id,
+                    success: false,
+                    error: Some("已取消".to_string()),
+                },
+            );
             return;
         }
 
         // 优先报告原版下载错误
         if let Err(e) = original_result {
-            let _ = app_finish.emit("quilt-download-finished", QuiltDownloadFinishedPayload {
-                task_id,
-                success: false,
-                error: Some(format!("原版下载失败: {}", e)),
-            });
+            let _ = app_finish.emit(
+                "quilt-download-finished",
+                QuiltDownloadFinishedPayload {
+                    task_id,
+                    success: false,
+                    error: Some(format!("原版下载失败: {}", e)),
+                },
+            );
             return;
         }
 
@@ -300,19 +327,25 @@ pub async fn download_and_install_quilt(
                     }
                 }
 
-                let _ = app_finish.emit("quilt-download-finished", QuiltDownloadFinishedPayload {
-                    task_id,
-                    success: true,
-                    error: None,
-                });
+                let _ = app_finish.emit(
+                    "quilt-download-finished",
+                    QuiltDownloadFinishedPayload {
+                        task_id,
+                        success: true,
+                        error: None,
+                    },
+                );
             }
             Err(e) => {
                 println!("Quilt 安装失败: {}", e);
-                let _ = app_finish.emit("quilt-download-finished", QuiltDownloadFinishedPayload {
-                    task_id,
-                    success: false,
-                    error: Some(e),
-                });
+                let _ = app_finish.emit(
+                    "quilt-download-finished",
+                    QuiltDownloadFinishedPayload {
+                        task_id,
+                        success: false,
+                        error: Some(e),
+                    },
+                );
             }
         }
     });

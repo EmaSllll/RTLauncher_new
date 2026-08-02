@@ -33,6 +33,7 @@ export interface CurseforgeFileEntry {
   fileID: number;
   display_name?: string;
   required?: boolean;
+  category?: string;
 }
 
 export type ModpackInstance =
@@ -48,13 +49,15 @@ export type ModpackInstance =
         minecraft: string;
         "fabric-loader"?: string;
         forge?: string;
-        "neoforge-loader"?: string;
+        neoforge?: string;
         "quilt-loader"?: string;
       };
       /// 格式标记（用于区分 curseforge）
       format: "modrinth";
       /// 扩展字段（UI 用，不参与 mrpack 规范校验）
       loader?: string;
+      loader_version?: string;
+      author?: string;
       optifine?: boolean;
       optifine_version?: string | null;
       cross_loader?: boolean;
@@ -64,10 +67,13 @@ export type ModpackInstance =
   | {
       format: "curseforge";
       name: string;
+      version: string;
+      author: string;
       created_at: number;
       updated_at: number;
       game_version: string;
       loader?: string;
+      loader_version?: string;
       optifine?: boolean;
       optifine_version?: string | null;
       cross_loader?: boolean;
@@ -166,4 +172,17 @@ export function useModpackInstances() {
   }, []);
 
   return { instances, loading, reload };
+}
+
+/** 将内部工程导出为标准 .mrpack 或 CurseForge .zip。 */
+export async function exportInstance(
+  name: string,
+  outputPath: string,
+  minecraftPath?: string,
+): Promise<string> {
+  return await invoke<string>("export_modpack_instance", {
+    name,
+    outputPath,
+    minecraftPath: minecraftPath || null,
+  });
 }

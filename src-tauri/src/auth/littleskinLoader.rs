@@ -193,7 +193,8 @@ impl LittleSkinClient {
         let _ = webbrowser::open(&authorize_url);
 
         let bind_address = self.redirect_uri.replace("http://", "");
-        let listener = TcpListener::bind(&bind_address).map_err(|e| format!("无法绑定地址: {}", e))?;
+        let listener =
+            TcpListener::bind(&bind_address).map_err(|e| format!("无法绑定地址: {}", e))?;
 
         let code_clone = Arc::clone(&self.code);
         let start_time = Instant::now();
@@ -207,8 +208,7 @@ impl LittleSkinClient {
                         let lines: Vec<&str> = request.split('\r').collect();
                         let request_line = lines[0].trim();
                         if let Some(url) = request_line.split_whitespace().nth(1) {
-                            if let Ok(parsed_url) =
-                                Url::parse(&format!("http://localhost{}", url))
+                            if let Ok(parsed_url) = Url::parse(&format!("http://localhost{}", url))
                             {
                                 let query_pairs: HashMap<_, _> =
                                     parsed_url.query_pairs().into_owned().collect();
@@ -231,8 +231,7 @@ impl LittleSkinClient {
                 let _ = handle.join();
                 let token_response = self.request_token(&code)?;
                 let player_info = self.get_player_info(&token_response.access_token);
-                let player_data: Value =
-                    serde_json::from_str(&player_info).unwrap_or(Value::Null);
+                let player_data: Value = serde_json::from_str(&player_info).unwrap_or(Value::Null);
 
                 let conn = Connection::open(super::db_path()).map_err(|e| e.to_string())?;
                 ensure_tables(&conn)?;
@@ -252,10 +251,15 @@ impl LittleSkinClient {
                         let uuid = format_uuid(&raw_uuid);
                         let tid_skin = first.get("tid_skin").and_then(|t| t.as_i64());
 
-                        eprintln!("[LittleSkin OAuth] 玩家信息: name={}, raw_uuid={}, formatted_uuid={}", name, raw_uuid, uuid);
+                        eprintln!(
+                            "[LittleSkin OAuth] 玩家信息: name={}, raw_uuid={}, formatted_uuid={}",
+                            name, raw_uuid, uuid
+                        );
 
                         // 下载真实皮肤 PNG 到本地 (供 3D 展示)
-                        if let Err(e) = crate::auth::official::download_littleskin_skin_with_name(&uuid, &name) {
+                        if let Err(e) =
+                            crate::auth::official::download_littleskin_skin_with_name(&uuid, &name)
+                        {
                             eprintln!("[LittleSkin OAuth] 皮肤下载失败（非致命）: {}", e);
                         }
 
@@ -405,8 +409,13 @@ pub fn authenticate_with_credentials(
         // 如果没有可用角色，使用 selectedProfile 或 user 信息
         if let Some(sp) = &parsed.selected_profile {
             let formatted_uuid = format_uuid(&sp.id);
-            if let Err(e) = crate::auth::official::download_littleskin_skin_with_name(&formatted_uuid, &sp.name) {
-                eprintln!("[LittleSkin登录] 角色 {} 皮肤下载失败（非致命）: {}", sp.name, e);
+            if let Err(e) =
+                crate::auth::official::download_littleskin_skin_with_name(&formatted_uuid, &sp.name)
+            {
+                eprintln!(
+                    "[LittleSkin登录] 角色 {} 皮肤下载失败（非致命）: {}",
+                    sp.name, e
+                );
             }
             results.push(LittleSkinAccountResult {
                 name: sp.name.clone(),
@@ -416,8 +425,13 @@ pub fn authenticate_with_credentials(
             });
         } else if let Some(user) = &parsed.user {
             let formatted_uuid = format_uuid(&user.id);
-            let uname = user.username.clone().unwrap_or_else(|| "Player".to_string());
-            if let Err(e) = crate::auth::official::download_littleskin_skin_with_name(&formatted_uuid, &uname) {
+            let uname = user
+                .username
+                .clone()
+                .unwrap_or_else(|| "Player".to_string());
+            if let Err(e) =
+                crate::auth::official::download_littleskin_skin_with_name(&formatted_uuid, &uname)
+            {
                 eprintln!("[LittleSkin登录] 用户皮肤下载失败（非致命）: {}", e);
             }
             results.push(LittleSkinAccountResult {
@@ -432,8 +446,14 @@ pub fn authenticate_with_credentials(
     } else {
         for profile in &parsed.available_profiles {
             let formatted_uuid = format_uuid(&profile.id);
-            if let Err(e) = crate::auth::official::download_littleskin_skin_with_name(&formatted_uuid, &profile.name) {
-                eprintln!("[LittleSkin登录] 角色 {} 皮肤下载失败（非致命）: {}", profile.name, e);
+            if let Err(e) = crate::auth::official::download_littleskin_skin_with_name(
+                &formatted_uuid,
+                &profile.name,
+            ) {
+                eprintln!(
+                    "[LittleSkin登录] 角色 {} 皮肤下载失败（非致命）: {}",
+                    profile.name, e
+                );
             }
             results.push(LittleSkinAccountResult {
                 name: profile.name.clone(),
@@ -452,14 +472,7 @@ pub fn authenticate_with_credentials(
     let conn = Connection::open(super::db_path()).map_err(|e| e.to_string())?;
     ensure_tables(&conn)?;
     for r in &results {
-        upsert_player(
-            &conn,
-            &r.uuid,
-            &r.name,
-            &r.access_token,
-            None,
-            None,
-        )?;
+        upsert_player(&conn, &r.uuid, &r.name, &r.access_token, None, None)?;
     }
 
     Ok(results)
