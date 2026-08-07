@@ -16,7 +16,6 @@ import {
   Search,
   Loader2,
   CheckCircle2,
-  Circle,
   ChevronDown,
   ChevronLeft,
 } from "lucide-react";
@@ -24,6 +23,7 @@ import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useI18n, type TranslationKey } from "@/components/i18n/use-i18n";
 import { useLaunchContext } from "./launch-provider";
+import { LoaderIcon, inferLoaderKind, type LoaderKind } from "@/components/launch/loader-icon";
 
 /** 解析后的版本信息 */
 interface ParsedVersion {
@@ -257,11 +257,26 @@ export function VersionSelectorDialog({ open: controlledOpen, onOpenChange, comp
     return [...vanillaVersions, ...loaderVersions];
   }, [currentMcNode, selectedLoader]);
 
-  // 第一步：过滤 MC 版本
+  // 第一步：过滤 MC 版本（同时搜索子版本实例名）
   const filteredMcTree = useMemo(() => {
-    if (!mcSearchQuery) return mcTree;
     const q = mcSearchQuery.toLowerCase();
-    return mcTree.filter((n) => n.mcVersion.toLowerCase().includes(q));
+    const wrapped = mcTree.map((n) => {
+      const matchingInstances: ParsedVersion[] = [];
+      if (q) {
+        for (const loaderType of Object.keys(n.loaders)) {
+          for (const inst of n.loaders[loaderType]) {
+            if (inst.name.toLowerCase().includes(q)) {
+              matchingInstances.push(inst);
+            }
+          }
+        }
+      }
+      return { node: n, matchingInstances, matchesMc: q ? n.mcVersion.toLowerCase().includes(q) : true };
+    });
+
+    if (!q) return wrapped;
+
+    return wrapped.filter((item) => item.matchesMc || item.matchingInstances.length > 0);
   }, [mcTree, mcSearchQuery]);
 
   // 第二步：过滤 loader
@@ -428,7 +443,8 @@ export function VersionSelectorDialog({ open: controlledOpen, onOpenChange, comp
                   </p>
                 </div>
               ) : (
-                filteredMcTree.map((node) => {
+                filteredMcTree.map((item) => {
+                  const node = item.node;
                   const totalCount = Object.keys(node.loaders).reduce(
                     (sum, k) => sum + (node.loaders[k]?.length || 0),
                     0
@@ -445,15 +461,33 @@ export function VersionSelectorDialog({ open: controlledOpen, onOpenChange, comp
                       whileHover={{ scale: 1.01 }}
                       whileTap={{ scale: 0.99 }}
                     >
-                      <Circle className="size-4 shrink-0 opacity-40" />
+                      <LoaderIcon kind="vanilla" className="size-6 shrink-0" />
 
                       <div className="flex-1 min-w-0 overflow-hidden">
                         <div className="font-medium text-sm truncate">
                           {node.mcVersion}
                         </div>
-                        <div className="text-[11px] text-muted-foreground/70 mt-1">
-                          {t("launch.versionSelector.totalCountSubversions", { totalCount: totalCount })}
-                        </div>
+                        {mcSearchQuery && item.matchingInstances.length > 0 ? (
+                          <div className="text-[11px] text-muted-foreground/70 mt-1 flex flex-wrap gap-1">
+                            {item.matchingInstances.slice(0, 5).map((inst) => (
+                              <span
+                                key={inst.name}
+                                className="inline-block px-1.5 py-0.5 rounded bg-accent/60 text-foreground/80 truncate max-w-[120px]"
+                              >
+                                {inst.name}
+                              </span>
+                            ))}
+                            {item.matchingInstances.length > 5 && (
+                              <span className="text-muted-foreground/50">
+                                +{item.matchingInstances.length - 5}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="text-[11px] text-muted-foreground/70 mt-1">
+                            {t("launch.versionSelector.totalCountSubversions", { totalCount: totalCount })}
+                          </div>
+                        )}
                       </div>
 
                       <ChevronDown className="size-4 shrink-0 text-muted-foreground rotate-[-90deg]" />
@@ -494,7 +528,7 @@ export function VersionSelectorDialog({ open: controlledOpen, onOpenChange, comp
                       whileHover={count > 0 ? { scale: 1.01 } : {}}
                       whileTap={count > 0 ? { scale: 0.99 } : {}}
                     >
-                      <Circle className="size-4 shrink-0 opacity-40" />
+                      <LoaderIcon kind={inferLoaderKind(item.type) as LoaderKind} className="size-7 shrink-0" />
 
                       <div className="flex-1 min-w-0 overflow-hidden">
                         <div className="flex items-center gap-2">
@@ -555,9 +589,14 @@ export function VersionSelectorDialog({ open: controlledOpen, onOpenChange, comp
                       whileTap={{ scale: 0.99 }}
                     >
                       {isSelected ? (
-                        <CheckCircle2 className="size-4 shrink-0 text-primary" />
+                        <div className="shrink-0 flex items-center">
+                          <CheckCircle2 className="size-4 shrink-0 text-primary" />
+                        </div>
                       ) : (
-                        <Circle className="size-4 shrink-0 opacity-40" />
+                        <LoaderIcon
+                          kind={inferLoaderKind(version.loaderType) as LoaderKind}
+                          className="size-6 shrink-0"
+                        />
                       )}
 
                       <div className="flex-1 min-w-0 overflow-hidden">

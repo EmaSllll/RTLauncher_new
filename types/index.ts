@@ -134,6 +134,8 @@ export type LoaderVersion = {
   isRecommended?: boolean;
   /** 完整的文件名（包括.jar后缀），用于OptiFine等需要完整文件名的加载器 */
   filename?: string;
+  /** 官方下载链接（用于OptiFine双源回退） */
+  official_url?: string;
 };
 
 /**
@@ -200,6 +202,8 @@ export type LaunchConfig = {
   yggdrasilApi: string;
   /** 预取数据 */
   prefetchedData: string;
+  /** 用户自定义 JVM 参数：空格/换行分隔，支持引号包裹；将被插入到默认 JVM 参数之后、主类之前 */
+  customJvmArgs: string;
 };
 
 /**
@@ -225,6 +229,50 @@ export type LaunchProgress = {
   /** 进度百分比 (0-100) */
   percentage: number;
 };
+
+export interface LaunchStageTiming {
+  /** 阶段 ID */
+  id: string;
+  /** 阶段名（用户友好） */
+  name: string;
+  /** 是否完成 */
+  completed: boolean;
+  /** 进入阶段的时间戳（Date.now ms） */
+  enteredAt: number | null;
+  /** 完成阶段的时间戳（Date.now ms） */
+  completedAt: number | null;
+  /** 该阶段的耗时毫秒数 */
+  durationMs: number | null;
+  /** 该阶段收到的日志数量 */
+  logCount: number;
+}
+
+export interface Log4jLogEntry {
+  timestamp: string;
+  level: string;
+  message: string;
+  logger?: string;
+  relatedProblem?: string;
+}
+
+export interface LaunchAnalysisReport {
+  startedAt: number | null;
+  endedAt: number | null;
+  totalDurationMs: number | null;
+  finalStatus: "idle" | "running" | "stopped" | "error" | "timeout" | "in_progress";
+  exitCode: number | null;
+  stages: LaunchStageTiming[];
+  detectedModCount: number | null;
+  detectedLoader: string | null;
+  detectedMcVersion: string | null;
+  warnCount: number;
+  errorCount: number;
+  errorSamples: string[];
+  failureHints: string[];
+  totalLogLines: number;
+  log4jLogs: Log4jLogEntry[];
+  launchParameters?: string;
+}
 
 /**
  * 侧边栏标签页配置
