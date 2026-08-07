@@ -309,7 +309,7 @@ export default function CheckUpdatePage() {
                   {t("checkUpdate.checkForUpdates")}
                 </Button>
 
-                {info.status === "available" && (
+                {(info.status === "available" || info.status === "downloading") && (
                   <Button
                     onClick={handleDownload}
                     disabled={info.status === "downloading"}
@@ -320,7 +320,7 @@ export default function CheckUpdatePage() {
                   </Button>
                 )}
 
-                {info.status === "downloaded" && (
+                {(info.status === "downloaded" || info.status === "installing") && (
                   <Button
                     onClick={handleInstall}
                     disabled={info.status === "installing"}
