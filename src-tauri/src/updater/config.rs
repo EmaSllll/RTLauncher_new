@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const CONFIG_FILE_NAME: &str = "launcher.json";
 const MIN_CHECK_INTERVAL_SECONDS: i64 = 24 * 3600;
 
-const UPDATE_ENDPOINT: &str = "https://gitcode.com/bubulaladdi/RTLauncher/releases/download/工具/latest.json";
+const UPDATE_ENDPOINT: &str = "https://api.gitcode.com/api/v5/repos/bubulaladdi/RTLauncher/releases";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateConfig {
@@ -189,4 +189,29 @@ pub fn get_current_os() -> String {
     }
 
     "unknown".to_string()
+}
+
+pub fn matches_asset_name(asset_name: &str) -> bool {
+    let os = get_current_os();
+
+    if asset_name.contains(&os) {
+        return true;
+    }
+
+    match os.as_str() {
+        "windows-x86_64" | "windows-aarch64" => {
+            asset_name.ends_with(".exe")
+                && !asset_name.contains("macos")
+                && !asset_name.contains("linux")
+        }
+        "macos-aarch64" | "macos-x86_64" => {
+            asset_name.contains("macos")
+                || asset_name.contains("darwin")
+                || asset_name.ends_with(".dmg")
+        }
+        "linux-x86_64" | "linux-aarch64" => {
+            asset_name.contains("linux")
+        }
+        _ => false,
+    }
 }

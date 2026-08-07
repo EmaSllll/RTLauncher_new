@@ -6,30 +6,28 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use super::config::{
-    get_current_os, get_update_config, get_update_endpoint, save_update_config,
+    get_current_os, get_update_config, get_update_endpoint, matches_asset_name, save_update_config,
     should_check_update, UpdateStatus,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AssetInfo {
-    pub os: String,
-    pub url: String,
+struct GitCodeAsset {
     pub name: String,
+    pub browser_download_url: String,
+    #[serde(default, rename = "type")]
+    pub asset_type: Option<String>,
     #[serde(default)]
     pub size: Option<u64>,
-    #[serde(default)]
-    pub sha256: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UpdateResponse {
-    pub version: String,
+struct GitCodeRelease {
+    pub tag_name: String,
+    pub name: String,
     #[serde(default)]
-    pub release_notes: Option<String>,
+    pub prerelease: bool,
     #[serde(default)]
-    pub published_at: Option<String>,
-    #[serde(default)]
-    pub assets: Vec<AssetInfo>,
+    pub assets: Vec<GitCodeAsset>,
 }
 
 #[derive(Clone)]
@@ -58,6 +56,11 @@ impl UpdateFetcher {
         self.is_downloading.load(Ordering::SeqCst)
     }
 
+    fn extract_version(input: &str) -> Option<String> {
+        let re = regex::Regex::new(r"(\d+\.\d+\.\d+(?:\.\d+)?)").ok()?;
+        re.captures(input).map(|c| c.get(1).unwrap().as_str().to_string())
+    }
+
     pub async fn check_for_update(&self) -> Result<UpdateCheckResult, String> {
         if !should_check_update() {
             let cfg = get_update_config();
@@ -77,7 +80,6 @@ impl UpdateFetcher {
         let _ = save_update_config(cfg.clone());
 
         let endpoint = get_update_endpoint();
-        let current_os = get_current_os();
 
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
@@ -86,7 +88,8 @@ impl UpdateFetcher {
 
         let response = client
             .get(&endpoint)
-            .header("User-Agent", "RTLauncher-UpdateChecker")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .header("Accept", "application/json")
             .send()
             .await
             .map_err(|e| format!("请求更新信息失败: {}", e))?;
@@ -98,26 +101,47 @@ impl UpdateFetcher {
             return Err(format!("服务器返回错误: {}", status));
         }
 
-        let update_response: UpdateResponse = response
+        let releases: Vec<GitCodeRelease> = response
             .json()
             .await
             .map_err(|e| format!("解析更新信息失败: {}", e))?;
 
-        let current_version = env!("CARGO_PKG_VERSION").to_string();
-        let target_os = current_os.clone();
+        if releases.is_empty() {
+            cfg.status = UpdateStatus::Idle;
+            let _ = save_update_config(cfg);
+            return Ok(UpdateCheckResult {
+                needs_check: true,
+                update_available: false,
+                current_version: env!("CARGO_PKG_VERSION").to_string(),
+                target_version: None,
+                message: "当前没有可用的发布版本".to_string(),
+            });
+        }
 
-        let matching_asset = update_response
+        let current_version = env!("CARGO_PKG_VERSION").to_string();
+        let current_os = get_current_os();
+
+        let release = releases
+            .iter()
+            .find(|r| !r.prerelease)
+            .unwrap_or(&releases[0]);
+
+        let release_version = Self::extract_version(&release.name)
+            .or_else(|| Self::extract_version(&release.tag_name))
+            .unwrap_or_else(|| release.name.clone());
+
+        let matching_asset = release
             .assets
             .iter()
-            .find(|a| a.os == current_os || a.os == target_os);
+            .find(|a| matches_asset_name(&a.name));
 
-        let has_update = update_response.version != current_version && matching_asset.is_some();
+        let has_update = release_version != current_version && matching_asset.is_some();
 
         if has_update {
             if let Some(asset) = matching_asset {
-                cfg.target_version = Some(update_response.version.clone());
-                cfg.target_os = Some(target_os);
-                cfg.download_url = Some(asset.url.clone());
+                cfg.target_version = Some(release_version);
+                cfg.target_os = Some(current_os);
+                cfg.download_url = Some(asset.browser_download_url.clone());
                 cfg.file_size = asset.size;
                 cfg.status = UpdateStatus::Available;
             }
@@ -188,7 +212,9 @@ impl UpdateFetcher {
 
         let response = client
             .get(&download_url)
-            .header("User-Agent", "RTLauncher-Updater")
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .header("Accept", "*/*")
+            .header("Referer", "https://gitcode.com/")
             .send()
             .await
             .map_err(|e| format!("下载更新失败: {}", e))?;

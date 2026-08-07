@@ -1,6 +1,6 @@
 [package]
 name = "rtlauncher"
-version = "0.1.0"
+version = "1.0.0"
 default-run = "rtlauncher"
 description = "RTLauncher - A Modern Minecraft Launcher"
 authors = ["Lighting-Team"]
